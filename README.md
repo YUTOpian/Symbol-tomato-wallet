@@ -1,4 +1,4 @@
-# Symbol Simple Wallet
+# Symbol tomato Wallet
 
 **このアプリでは、ニーモニックや秘密鍵の入力が不要です**  
 ブラウザだけで即使える、安全・シンプルなSymbol (XYM) Webウォレットです。
