@@ -1,0 +1,292 @@
+/* ============================================================
+   🍅 Tomato Theme
+   base.css / wallet.css を読み込んだ後にこのファイルを読み込むことで、
+   配色をトマト（熟した実＝赤 / 育っている実＝緑）に上書きする。
+============================================================ */
+
+:root {
+  --tomato-red: #e0432b;
+  --tomato-red-dark: #b8321d;
+  --tomato-red-light: #ff6b52;
+  --tomato-green: #5a9b3f;
+  --tomato-green-light: #7fc357;
+  --tomato-cream: #fff4e8;
+  --tomato-bg: #1b1210;
+  --tomato-card: #2a1a16;
+  --tomato-card-border: #43261f;
+  --tomato-text-muted: #d8b9ae;
+}
+
+/* ------------------------------------------------------------
+   全体背景・文字色
+------------------------------------------------------------ */
+body {
+  background: radial-gradient(circle at top, #241512 0%, var(--tomato-bg) 65%);
+  color: var(--tomato-cream);
+}
+
+header {
+  background: linear-gradient(135deg, var(--tomato-red-dark), var(--tomato-red));
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+header h2::before {
+  content: "🍅 ";
+}
+
+.header-info,
+#network-label,
+#node-info-header,
+#node-height-header {
+  color: #ffe7dd;
+}
+
+/* ------------------------------------------------------------
+   カード
+------------------------------------------------------------ */
+.card {
+  background: var(--tomato-card);
+  border: 1px solid var(--tomato-card-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* ------------------------------------------------------------
+   ボタン
+------------------------------------------------------------ */
+.button-primary,
+button {
+  background: linear-gradient(135deg, var(--tomato-red), var(--tomato-red-dark));
+  color: #fff;
+}
+
+.button-primary:hover,
+button:hover {
+  background: linear-gradient(135deg, var(--tomato-red-light), var(--tomato-red));
+}
+
+/* ------------------------------------------------------------
+   入力欄
+------------------------------------------------------------ */
+.input-box,
+input,
+textarea,
+select {
+  background: #1c110d;
+  border: 1px solid var(--tomato-card-border);
+  color: var(--tomato-cream);
+}
+
+.input-box:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--tomato-red-light);
+  box-shadow: 0 0 0 2px rgba(224, 67, 43, 0.25);
+}
+
+/* ------------------------------------------------------------
+   ステータス色
+------------------------------------------------------------ */
+.status-success {
+  color: var(--tomato-green-light);
+}
+.status-error {
+  color: #ff8a75;
+}
+
+/* ------------------------------------------------------------
+   取引カード: 未承認=成長中(緑) / 確定していく過程を意識した配色
+------------------------------------------------------------ */
+.tx-item {
+  background: var(--tomato-card);
+  border: 1px solid var(--tomato-card-border);
+}
+
+.tx-item.unconfirmed {
+  background: #24361c !important;
+  border: 1px solid var(--tomato-green) !important;
+  animation: growingPulse 1.8s infinite ease-in-out;
+}
+.tx-item.unconfirmed .tx-title,
+.tx-item.unconfirmed .tx-status,
+.tx-item.unconfirmed .tx-time {
+  color: var(--tomato-green-light) !important;
+}
+
+@keyframes growingPulse {
+  0%   { box-shadow: 0 0 0 rgba(127, 195, 87, 0); }
+  50%  { box-shadow: 0 0 14px rgba(127, 195, 87, 0.55); }
+  100% { box-shadow: 0 0 0 rgba(127, 195, 87, 0); }
+}
+
+.tx-amount-send { color: var(--tomato-red-light); }
+.tx-amount-receive { color: var(--tomato-green-light); }
+
+/* ============================================================
+   送金先アドレス情報ボックス (recipientInfo.js)
+============================================================ */
+.recipient-info-box {
+  margin: -6px 0 12px;
+  border-radius: 10px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  transition: all 0.15s ease;
+}
+
+.recipient-info-box:empty {
+  margin: 0;
+}
+
+.recipient-info-row,
+.recipient-info-sub {
+  padding: 8px 12px;
+}
+
+.recipient-info-title {
+  font-weight: bold;
+  padding-bottom: 2px;
+}
+
+.recipient-info-sub {
+  padding-top: 0;
+  color: var(--tomato-text-muted);
+}
+
+.recipient-info-loading {
+  color: var(--tomato-text-muted);
+  font-style: italic;
+}
+
+.recipient-info-ok {
+  background: rgba(90, 155, 63, 0.15);
+  border: 1px solid var(--tomato-green);
+}
+.recipient-info-ok .recipient-info-title {
+  color: var(--tomato-green-light);
+}
+
+.recipient-info-new {
+  background: rgba(224, 67, 43, 0.12);
+  border: 1px solid var(--tomato-red);
+}
+.recipient-info-new .recipient-info-title {
+  color: var(--tomato-red-light);
+}
+
+.recipient-info-warn {
+  background: rgba(224, 160, 43, 0.15);
+  border: 1px solid #e0a02b;
+  color: #ffd98a;
+}
+
+/* ============================================================
+   送金トラッキング (txStatusTracker.js)
+============================================================ */
+.tx-tracking {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.track-card {
+  background: var(--tomato-card);
+  border: 1px solid var(--tomato-card-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.track-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.track-card-title {
+  font-weight: bold;
+  color: var(--tomato-cream);
+}
+
+.track-card-link {
+  font-size: 12px;
+  color: var(--tomato-red-light);
+  text-decoration: none;
+}
+.track-card-link:hover {
+  text-decoration: underline;
+}
+
+.track-card-sub {
+  font-size: 12.5px;
+  color: var(--tomato-text-muted);
+  margin-bottom: 2px;
+}
+
+.track-mono {
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.track-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 6px;
+  padding-left: 2px;
+}
+
+.track-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--tomato-text-muted);
+}
+
+.track-step-icon {
+  width: 20px;
+  text-align: center;
+}
+
+.track-step-done {
+  color: var(--tomato-red-light);
+  font-weight: bold;
+}
+.track-step-active {
+  color: var(--tomato-green-light);
+  font-weight: bold;
+}
+.track-step-failed {
+  color: #ff5c5c;
+  font-weight: bold;
+}
+.track-step-pending {
+  opacity: 0.55;
+}
+
+.track-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--tomato-card-border);
+  font-size: 13px;
+}
+
+.track-footer-ok { color: var(--tomato-red-light); font-weight: bold; }
+.track-footer-fail { color: #ff5c5c; font-weight: bold; }
+.track-footer-warn { color: #ffd98a; }
+.track-footer-pending { color: var(--tomato-text-muted); }
+
+/* ------------------------------------------------------------
+   ポップアップ通知もトマト色に
+------------------------------------------------------------ */
+.popup-card {
+  background: rgba(42, 26, 22, 0.97);
+  border: 1px solid var(--tomato-card-border);
+  color: var(--tomato-cream);
+}
