@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Symbol Tomato Wallet</title>
+  <title>Symbol Simple Wallet</title>
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/wallet.css" />
   <link rel="stylesheet" href="css/tomato-theme.css" />
@@ -1031,49 +1031,22 @@
   </div>
 
   <!-- ============================================================
-       複数送信メニュー
-  ============================================================ -->
-  <div id="multisend-menu-page" class="page">
-    <div class="card">
-      <h2>複数送信</h2>
-      <button id="back-advanced-multisend-menu" class="button-primary">← 戻る</button>
-
-      <div class="settings-menu">
-        <button id="menu-multisend-manual" class="settings-menu-item">
-          ✏️ 手動設定
-        </button>
-        <button id="menu-multisend-csv" class="settings-menu-item">
-          📄 CSVインポート
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       複数送信 CSVインポート
-  ============================================================ -->
-  <div id="multisend-csv-page" class="page">
-    <div class="card">
-      <h2>CSVインポート</h2>
-      <button id="back-multisend-menu-csv" class="button-primary">← 戻る</button>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        1行目はヘッダー行として「address,mosaic,amount,message」を想定しています。
-        mosaicはモザイクID(16進)、またはネームスペース名（例: symbol.xym）どちらでも入力できます。
-      </p>
-
-      <input id="multisend-csv-file" class="input-box" type="file" accept=".csv,text/csv">
-      <div id="multisend-csv-status"></div>
-    </div>
-  </div>
-
-  <!-- ============================================================
        複数送信 一覧編集・送信画面(手動設定・CSVインポート共通)
   ============================================================ -->
   <div id="multisend-list-page" class="page">
     <div class="card">
-      <h2>複数送信リスト</h2>
+      <div class="card-title-row">
+        <h2>複数送信リスト</h2>
+        <button id="multisend-csv-btn" class="account-hide-btn">📄 CSVインポート</button>
+      </div>
       <button id="back-multisend-menu-list" class="button-primary">← 戻る</button>
+
+      <input id="multisend-csv-file" class="input-box" type="file" accept=".csv,text/csv" style="display:none;">
+      <p style="font-size:12px;color:#94a3b8;">
+        CSVは1行目をヘッダー行「address,mosaic,amount,message」として想定しています。
+        mosaicはモザイクID(16進)、またはネームスペース名（例: symbol.xym）どちらでも入力できます。
+      </p>
+      <div id="multisend-csv-status"></div>
 
       <div id="multisend-rows"></div>
 
