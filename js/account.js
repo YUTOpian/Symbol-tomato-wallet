@@ -275,6 +275,18 @@ export async function refreshAccount() {
       ? `${formatMosaicAmount(xym.amount, xym.divisibility)} XYM`
       : "0.000 XYM";
 
+    // 送金画面で選択中のモザイクがあれば、保有数量の表示もここで同期する
+    // (着金などでmosaicInfoが更新された時、選択中の残高表示が古いまま
+    //  取り残されないようにするため)
+    const selectedIdEl = document.getElementById("selected-mosaic-id");
+    const selectedBalanceEl = document.getElementById("selected-mosaic-balance");
+    if (selectedIdEl && selectedBalanceEl && selectedIdEl.value) {
+      const info = appState.mosaicInfo[selectedIdEl.value.toUpperCase()];
+      selectedBalanceEl.textContent = info
+        ? formatMosaicAmount(info.amount, info.divisibility)
+        : "0";
+    }
+
     setStatus("account-status", "取得成功", "success");
   } catch(e) {
     console.error(e);

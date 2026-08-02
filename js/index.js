@@ -383,6 +383,9 @@ window.addEventListener("load", async () => {
     document.getElementById("selected-mosaic-id").value = 
       item.querySelector(".mosaic-id")?.textContent;
 
+    document.getElementById("selected-mosaic-balance").textContent =
+      item.querySelector(".mosaic-amount")?.textContent ?? "---";
+
     cameFromMosaicList = false;
     if (backSendBtn) backSendBtn.textContent = "← モザイク選択へ戻る";
     showPage(transferPage);
