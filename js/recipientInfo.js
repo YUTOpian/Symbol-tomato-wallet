@@ -4,19 +4,24 @@
 // 目的:
 //   「XEMBookで送金先を事前に確認してから送る」という運用を、
 //   ウォレット単体で完結できるようにする。
-//   入力ミス・宛先が未使用アドレスであることなどを、送信前に気付けるようにする。
+//   銀行振込で相手名義が表示されるのと同じ感覚で、
+//   宛先の「見覚えのある情報」を送信前に確認できるようにする。
 //
 // 表示する内容:
-//   - アドレス形式が正しいか
-//   - 自分自身への送金でないか
+//   - アドレス形式が正しいか / 自分自身への送金でないか
 //   - チェーン上に存在するアカウントか(受信履歴があるか)
-//   - 存在する場合: 保有XYM残高 / 保有モザイク数 / 最終アクティビティ日時
+//   - 存在する場合:
+//       - 紐づくネームスペース名(あれば。銀行の「口座名義」に相当)
+//       - 保有XYM残高 / 保有モザイク数
+//       - 最終アクティビティ日時
+//       - 直近の送受信履歴(簡易プレビュー)
 
 import { appState } from "./config.js";
-import { formatMosaicAmount } from "./utils.js";
+import { formatMosaicAmount, hexToBytes } from "./utils.js";
 
 const DEBOUNCE_MS = 500;
 const XYM_IDS = ["72C0212E67A08BCE", "6BED913FA20223F8"];
+const HISTORY_LIMIT = 4;
 
 let debounceTimer = null;
 let currentRequestId = 0;
@@ -58,26 +63,111 @@ function formatRelativeTime(unixMs) {
   return `${Math.floor(days / 365)}年以上前`;
 }
 
+// REST APIのアドレス表現は 16進(48文字) と base32(39文字) が混在するため統一する
+function normalizeMaybeHexAddress(addr) {
+  if (!addr || typeof addr !== "string") return null;
+  if (addr.length === 39) return addr.toUpperCase();
+  if (addr.length === 48 && /^[0-9A-Fa-f]+$/.test(addr) && appState.sdkSymbol) {
+    try {
+      return new appState.sdkSymbol.Address(hexToBytes(addr)).toString();
+    } catch {
+      return addr;
+    }
+  }
+  return addr;
+}
+
 /* ============================================================
-   最終アクティビティ(直近の確認済みトランザクション日時)を1件だけ取得
+   宛先に紐づくネームスペース名を取得する(銀行の「口座名義」相当)
+   → その住所を所有し、かつ自分自身にアドレスエイリアスを設定している
+     ネームスペースだけを対象にする(いわゆる「〇〇.symbol」名義表示)
 ============================================================ */
-async function fetchLastActivity(address, signal) {
+async function fetchLinkedNamespaceNames(address, signal) {
+  try {
+    const params = new URLSearchParams({ ownerAddress: address, pageSize: 100 });
+    const res = await fetch(`${appState.NODE}/namespaces?${params}`, { signal });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const items = json.data ?? [];
+
+    const ownIdOf = (ns) => (ns.depth === 1 ? ns.level0 : ns.depth === 2 ? ns.level1 : ns.level2);
+
+    const aliased = items.filter((item) => {
+      const alias = item.namespace?.alias;
+      if (!alias || alias.type !== 2) return false; // 2 = Address Alias
+      return normalizeMaybeHexAddress(alias.address) === address;
+    });
+
+    if (aliased.length === 0) return [];
+
+    const ids = aliased.map((item) => ownIdOf(item.namespace));
+    const namesRes = await fetch(`${appState.NODE}/namespaces/names`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ namespaceIds: ids }),
+      signal,
+    });
+    const namesJson = await namesRes.json();
+    return (namesJson || []).map((n) => n.name).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/* ============================================================
+   直近の送受信履歴(簡易プレビュー)を取得する
+============================================================ */
+async function fetchHistoryPreview(address, signal) {
   try {
     const params = new URLSearchParams({
       address,
       order: "desc",
-      pageSize: 1,
+      pageSize: HISTORY_LIMIT,
     });
     const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`, { signal });
+    if (!res.ok) return [];
     const json = await res.json();
-    const item = (json.data ?? [])[0];
-    if (!item || !appState.epochAdjustment) return null;
-    const ts = item.meta?.timestamp;
-    if (!ts) return null;
-    return Number(appState.epochAdjustment) * 1000 + Number(ts);
+    const items = json.data ?? [];
+
+    return items.map((item) => {
+      const tx = item.transaction;
+      const meta = item.meta;
+      const recipientAddr = normalizeMaybeHexAddress(tx.recipientAddress);
+      const isReceive = recipientAddr === address;
+
+      const mosaics = tx.mosaics || [];
+      const xymEntry = mosaics.find((m) => XYM_IDS.includes(String(m.id).toUpperCase()));
+      let amountText;
+      if (xymEntry) {
+        amountText = formatMosaicAmount(xymEntry.amount, 6) + " XYM";
+      } else if (mosaics.length > 0) {
+        amountText = `モザイク ${mosaics.length}種`;
+      } else {
+        amountText = "取引(モザイク移動なし)";
+      }
+
+      const ts = meta?.timestamp;
+      const timeMs = ts && appState.epochAdjustment ? Number(appState.epochAdjustment) * 1000 + Number(ts) : null;
+
+      return { isReceive, amountText, timeMs };
+    });
   } catch {
-    return null;
+    return [];
   }
+}
+
+function renderHistoryHtml(history) {
+  if (history.length === 0) {
+    return `<div class="recipient-info-history-empty">まだ取引履歴がありません</div>`;
+  }
+  return history
+    .map((h) => {
+      const dirLabel = h.isReceive ? "↙ 受信" : "↗ 送信";
+      const dirClass = h.isReceive ? "recipient-info-history-in" : "recipient-info-history-out";
+      const timeText = formatRelativeTime(h.timeMs) ?? "---";
+      return `<div class="recipient-info-history-row ${dirClass}"><span>${dirLabel}</span><span>${h.amountText}</span><span class="recipient-info-time">${timeText}</span></div>`;
+    })
+    .join("");
 }
 
 async function lookup(rawAddress) {
@@ -151,17 +241,32 @@ async function lookup(rawAddress) {
     const xymText = xymEntry ? formatMosaicAmount(xymEntry.amount, 6) + " XYM" : "0 XYM";
     const otherMosaicCount = mosaics.filter((m) => !XYM_IDS.includes(String(m.id).toUpperCase())).length;
 
-    const lastActivityMs = await fetchLastActivity(address, controller.signal);
+    // ネームスペース名と履歴は並行して取得する
+    const [namespaceNames, history] = await Promise.all([
+      fetchLinkedNamespaceNames(address, controller.signal),
+      fetchHistoryPreview(address, controller.signal),
+    ]);
+
     if (requestId !== currentRequestId) return;
 
+    const lastActivityMs = history[0]?.timeMs ?? null;
     const activityText = lastActivityMs
       ? `最終アクティビティ: ${formatRelativeTime(lastActivityMs)}`
       : "最終アクティビティ: 不明";
 
+    const namespaceHtml = namespaceNames.length
+      ? `<div class="recipient-info-namespace">🏷 ネームスペース: <b>${namespaceNames.join(", ")}</b></div>`
+      : "";
+
     render(
       `<div class="recipient-info-row recipient-info-title">🍅 有効なアカウントです</div>` +
+      namespaceHtml +
       `<div class="recipient-info-sub">保有残高: <b>${xymText}</b>${otherMosaicCount ? ` ／ 他モザイク ${otherMosaicCount}種` : ""}</div>` +
-      `<div class="recipient-info-sub">${activityText}</div>`,
+      `<div class="recipient-info-sub">${activityText}</div>` +
+      `<div class="recipient-info-history">` +
+      `<div class="recipient-info-history-title">直近の送受信</div>` +
+      renderHistoryHtml(history) +
+      `</div>`,
       "ok"
     );
   } catch (e) {
