@@ -921,112 +921,85 @@
   </div>
 
   <!-- ============================================================
-       マルチシグメニュー
+       マルチシグ(送金・署名・設定をタブで切り替え)
   ============================================================ -->
-  <div id="multisig-menu-page" class="page">
+  <div id="multisig-page" class="page">
     <div class="card">
       <h2>マルチシグ</h2>
       <button id="back-advanced-multisig-menu" class="button-primary">← 戻る</button>
 
-      <div class="settings-menu">
-        <button id="menu-multisig-send" class="settings-menu-item">
-          💸 マルチシグ送金
-        </button>
-        <button id="menu-multisig-sign" class="settings-menu-item">
-          ✍️ マルチシグ署名
-        </button>
-        <button id="menu-multisig-settings" class="settings-menu-item">
-          ⚙️ マルチシグ設定
-        </button>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-multisig-tab="send">💸 送金</button>
+        <button class="tab-btn" data-multisig-tab="sign">✍️ 署名</button>
+        <button class="tab-btn" data-multisig-tab="settings">⚙️ 設定</button>
       </div>
-    </div>
-  </div>
 
-  <!-- ============================================================
-       マルチシグ設定
-  ============================================================ -->
-  <div id="multisig-settings-page" class="page">
-    <div class="card">
-      <h2>マルチシグ設定</h2>
-      <button id="back-multisig-menu-settings" class="button-primary">← 戻る</button>
+      <!-- ----- 送金タブ ----- -->
+      <div class="tab-panel" data-multisig-panel="send">
+        <p style="font-size:13px;color:#94a3b8;">
+          自分が連署者になっているマルチシグアカウントから送金を提案します
+          （提案時に10XYMのハッシュロック担保が一時的に必要です。必要な承認数に応じて、
+          他の連署者が「署名」タブから承認するまで確定しません）。
+        </p>
 
-      <p style="font-size:13px;color:#94a3b8;">
-        設定対象は、今ログイン中のアカウント自身です。追加する連署者の同意（署名）が必要なため、
-        提案後は各連署者がそれぞれ「マルチシグ署名」画面から承認する必要があります
-        （提案時に10XYMのハッシュロック担保が一時的に必要です）。
-      </p>
+        <p><b>送金元マルチシグアカウント：</b></p>
+        <select id="multisig-send-from-select" class="input-box">
+          <option value="">-- 読み込み中... --</option>
+        </select>
 
-      <h3>現在の状態</h3>
-      <div id="multisig-info">読み込み中...</div>
+        <p><b>宛先アドレス：</b></p>
+        <input id="multisig-send-recipient" class="input-box" placeholder="宛先アドレス">
 
-      <hr>
+        <p><b>送金額（XYM）：</b></p>
+        <input id="multisig-send-amount" class="input-box" type="number" min="0" step="any" value="0">
 
-      <h3>変更内容</h3>
+        <p><b>メッセージ（任意）：</b></p>
+        <textarea id="multisig-send-message" class="input-box" placeholder="メッセージ"></textarea>
 
-      <p><b>追加する連署者アドレス（1行に1つ）：</b></p>
-      <textarea id="multisig-add-addresses" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+        <button id="submit-multisig-send-btn" class="button-primary">この内容で提案する</button>
+        <div id="multisig-send-status"></div>
+      </div>
 
-      <p><b>削除する連署者アドレス（1行に1つ）：</b></p>
-      <textarea id="multisig-remove-addresses" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+      <!-- ----- 署名タブ ----- -->
+      <div class="tab-panel" data-multisig-panel="sign" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          自分の連署が必要な、保留中のトランザクション一覧です。
+          ※ SSS Extensionログイン中は連署に対応していません（ニーモニック/秘密鍵ログインでご利用ください）。
+        </p>
 
-      <p><b>最小承認者数の増減（minApprovalDelta）：</b></p>
-      <input id="multisig-min-approval-delta" class="input-box" type="number" value="0">
+        <div id="multisig-pending-list">読み込み中...</div>
+      </div>
 
-      <p><b>最小削除承認者数の増減（minRemovalDelta）：</b></p>
-      <input id="multisig-min-removal-delta" class="input-box" type="number" value="0">
+      <!-- ----- 設定タブ ----- -->
+      <div class="tab-panel" data-multisig-panel="settings" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          設定対象は、今ログイン中のアカウント自身です。追加する連署者の同意（署名）が必要なため、
+          提案後は各連署者がそれぞれ「署名」タブから承認する必要があります
+          （提案時に10XYMのハッシュロック担保が一時的に必要です）。
+        </p>
 
-      <button id="submit-multisig-settings-btn" class="button-primary">この内容で提案する</button>
-      <div id="multisig-settings-status"></div>
-    </div>
-  </div>
+        <h3>現在の状態</h3>
+        <div id="multisig-info">読み込み中...</div>
 
-  <!-- ============================================================
-       マルチシグ送金
-  ============================================================ -->
-  <div id="multisig-send-page" class="page">
-    <div class="card">
-      <h2>マルチシグ送金</h2>
-      <button id="back-multisig-menu-send" class="button-primary">← 戻る</button>
+        <hr>
 
-      <p style="font-size:13px;color:#94a3b8;">
-        自分が連署者になっているマルチシグアカウントから送金を提案します
-        （提案時に10XYMのハッシュロック担保が一時的に必要です。必要な承認数に応じて、
-        他の連署者が「マルチシグ署名」から承認するまで確定しません）。
-      </p>
+        <h3>変更内容</h3>
 
-      <p><b>送金元マルチシグアカウント：</b></p>
-      <select id="multisig-send-from-select" class="input-box">
-        <option value="">-- 読み込み中... --</option>
-      </select>
+        <p><b>追加する連署者アドレス（1行に1つ）：</b></p>
+        <textarea id="multisig-add-addresses" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
 
-      <p><b>宛先アドレス：</b></p>
-      <input id="multisig-send-recipient" class="input-box" placeholder="宛先アドレス">
+        <p><b>削除する連署者アドレス（1行に1つ）：</b></p>
+        <textarea id="multisig-remove-addresses" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
 
-      <p><b>送金額（XYM）：</b></p>
-      <input id="multisig-send-amount" class="input-box" type="number" min="0" step="any" value="0">
+        <p><b>最小承認者数の増減（minApprovalDelta）：</b></p>
+        <input id="multisig-min-approval-delta" class="input-box" type="number" value="0">
 
-      <p><b>メッセージ（任意）：</b></p>
-      <textarea id="multisig-send-message" class="input-box" placeholder="メッセージ"></textarea>
+        <p><b>最小削除承認者数の増減（minRemovalDelta）：</b></p>
+        <input id="multisig-min-removal-delta" class="input-box" type="number" value="0">
 
-      <button id="submit-multisig-send-btn" class="button-primary">この内容で提案する</button>
-      <div id="multisig-send-status"></div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       マルチシグ署名
-  ============================================================ -->
-  <div id="multisig-sign-page" class="page">
-    <div class="card">
-      <h2>マルチシグ署名</h2>
-      <button id="back-multisig-menu-sign" class="button-primary">← 戻る</button>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        自分の連署が必要な、保留中のトランザクション一覧です。
-        ※ SSS Extensionログイン中は連署に対応していません（ニーモニック/秘密鍵ログインでご利用ください）。
-      </p>
-
-      <div id="multisig-pending-list">読み込み中...</div>
+        <button id="submit-multisig-settings-btn" class="button-primary">この内容で提案する</button>
+        <div id="multisig-settings-status"></div>
+      </div>
     </div>
   </div>
 
