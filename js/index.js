@@ -133,10 +133,7 @@ window.addEventListener("load", async () => {
   const namespacePage = document.getElementById("namespace-page");
   const mosaicPage = document.getElementById("mosaic-page");
   const metadataPage = document.getElementById("metadata-page");
-  const multisigMenuPage = document.getElementById("multisig-menu-page");
-  const multisigSettingsPage = document.getElementById("multisig-settings-page");
-  const multisigSendPage = document.getElementById("multisig-send-page");
-  const multisigSignPage = document.getElementById("multisig-sign-page");
+  const multisigPage = document.getElementById("multisig-page");
   const multisendListPage = document.getElementById("multisend-list-page");
   const apostilleMenuPage = document.getElementById("apostille-menu-page");
   const apostilleCreatePage = document.getElementById("apostille-create-page");
@@ -578,16 +575,11 @@ window.addEventListener("load", async () => {
   // マルチシグ
   // ============================
   document.getElementById("menu-multisig")?.addEventListener("click", () => {
-    showPage(multisigMenuPage);
+    showPage(multisigPage);
+    activateMultisigTab("send");
   });
 
-  document.getElementById("menu-multisig-settings")?.addEventListener("click", async () => {
-    showPage(multisigSettingsPage);
-    await loadMultisigInfo();
-  });
-
-  document.getElementById("menu-multisig-send")?.addEventListener("click", async () => {
-    showPage(multisigSendPage);
+  async function loadMultisigSendTab() {
     const select = document.getElementById("multisig-send-from-select");
     select.innerHTML = `<option value="">-- 読み込み中... --</option>`;
     try {
@@ -599,11 +591,23 @@ window.addEventListener("load", async () => {
       console.error("fetchCosignatoryOfAddresses error:", e);
       select.innerHTML = `<option value="">-- 取得に失敗しました --</option>`;
     }
-  });
+  }
 
-  document.getElementById("menu-multisig-sign")?.addEventListener("click", async () => {
-    showPage(multisigSignPage);
-    await loadPendingPartialTransactions();
+  function activateMultisigTab(tab) {
+    document.querySelectorAll("#multisig-page .tab-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.multisigTab === tab);
+    });
+    document.querySelectorAll("#multisig-page .tab-panel").forEach(panel => {
+      panel.style.display = panel.dataset.multisigPanel === tab ? "" : "none";
+    });
+
+    if (tab === "send") loadMultisigSendTab();
+    else if (tab === "sign") loadPendingPartialTransactions();
+    else if (tab === "settings") loadMultisigInfo();
+  }
+
+  document.querySelectorAll("#multisig-page .tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => activateMultisigTab(btn.dataset.multisigTab));
   });
 
   document.getElementById("submit-multisig-settings-btn")?.addEventListener("click", async () => {
@@ -631,7 +635,7 @@ window.addEventListener("load", async () => {
       });
       setStatus(
         "multisig-settings-status",
-        `✅ 提案を送信しました。Hash: ${hash}\n追加した連署者は、それぞれ「マルチシグ署名」から承認してください。`,
+        `✅ 提案を送信しました。Hash: ${hash}\n追加した連署者は、それぞれ「署名」タブから承認してください。`,
         "success"
       );
       document.getElementById("multisig-add-addresses").value = "";
@@ -662,7 +666,7 @@ window.addEventListener("load", async () => {
       const hash = await sendFromMultisig({ multisigAddress, recipientAddress, amountXym, message });
       setStatus(
         "multisig-send-status",
-        `✅ 送金を提案しました。Hash: ${hash}\n必要な承認数に応じて、他の連署者が「マルチシグ署名」から承認する必要があります。`,
+        `✅ 送金を提案しました。Hash: ${hash}\n必要な承認数に応じて、他の連署者が「署名」タブから承認する必要があります。`,
         "success"
       );
     } catch (e) {
@@ -2210,9 +2214,6 @@ window.addEventListener("load", async () => {
   document.getElementById("back-advanced-mosaic")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-advanced-metadata")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-advanced-multisig-menu")?.addEventListener("click", () => showPage(advancedPage));
-  document.getElementById("back-multisig-menu-settings")?.addEventListener("click", () => showPage(multisigMenuPage));
-  document.getElementById("back-multisig-menu-send")?.addEventListener("click", () => showPage(multisigMenuPage));
-  document.getElementById("back-multisig-menu-sign")?.addEventListener("click", () => showPage(multisigMenuPage));
   document.getElementById("back-multisend-menu-list")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-advanced-apostille-menu")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-apostille-menu-create")?.addEventListener("click", () => showPage(apostilleMenuPage));
