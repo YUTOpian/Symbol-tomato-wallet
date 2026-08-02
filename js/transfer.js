@@ -7,6 +7,7 @@ import { setStatus } from "./ui.js";
 import { getRecipientPublicKey } from "./account.js";
 import { hexToBytes } from "./utils.js";
 import { signAndAnnounceTx, encryptMessageLocally } from "./auth.js";
+import { trackOutgoingTransaction } from "./txStatusTracker.js";
 
 export async function sendTx() {
   /*
@@ -160,7 +161,14 @@ export async function sendTx() {
   try {
     setStatus("tx-status", "確認画面を表示しています...");
     const hash = await signAndAnnounceTx(tx, confirmInfo);
-    setStatus("tx-status", `送金しました。\nHash: ${hash}`, "success");
+    setStatus("tx-status", `送金をノードへ送信しました。着金確認を追跡します。\nHash: ${hash}`, "success");
+
+    trackOutgoingTransaction({
+      hash,
+      recipient: recipientRaw,
+      mosaicLabel: mosaicName,
+      amountText: `${amountStr} 数量`,
+    });
   } catch (e) {
     if (e?.cancelled) {
       setStatus("tx-status", "送金をキャンセルしました。");

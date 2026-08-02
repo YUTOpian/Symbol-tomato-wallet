@@ -2,6 +2,7 @@
 
 import { appState, NetworkType, getXymMosaicIdHex } from "./config.js";
 import { sendTx } from "./transfer.js";
+import "./recipientInfo.js";
 import { loadRecentTx, initLiveTx } from "./transactions.js";
 import { initWebSocket } from "./ws.js";
 import { selectNode } from "./nodeSelector.js";
