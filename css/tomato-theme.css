@@ -365,6 +365,48 @@ select:focus {
   background: rgba(224, 67, 43, 0.1);
 }
 
+/* ============================================================
+   タブ切り替え(マルチシグ: 送金 / 署名 / 設定 など)
+============================================================ */
+.tab-bar {
+  display: flex;
+  gap: 6px;
+  margin: 14px 0 16px;
+  border-bottom: 1px solid var(--tomato-card-border);
+}
+
+.tab-btn {
+  flex: 1;
+  margin-top: 0;
+  background: transparent;
+  color: var(--tomato-text-muted);
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  padding: 10px 6px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.tab-btn:hover {
+  background: rgba(224, 67, 43, 0.08);
+  color: var(--tomato-cream);
+}
+
+.tab-btn.active {
+  color: var(--tomato-red-light);
+  border-bottom-color: var(--tomato-red);
+}
+
+.tab-panel {
+  animation: tabFadeIn 0.15s ease;
+}
+
+@keyframes tabFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* ------------------------------------------------------------
    ポップアップ通知もトマト色に
 ------------------------------------------------------------ */
