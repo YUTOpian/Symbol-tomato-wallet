@@ -6,6 +6,7 @@
   <title>Symbol Simple Wallet</title>
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/wallet.css" />
+  <link rel="stylesheet" href="css/tomato-theme.css" />
 </head>
 <body>
 
@@ -273,6 +274,7 @@
 
       <input type="hidden" id="selected-mosaic-id">
       <input id="tx-recipient" class="input-box" placeholder="宛先アドレス">
+      <div id="recipient-info-box" class="recipient-info-box"></div>
       <input id="tx-amount" class="input-box" type="number" placeholder="数量">
       <textarea id="tx-message" class="input-box" placeholder="メッセージ（任意）"></textarea>
 
@@ -285,6 +287,7 @@
 
       <button id="btn-transfer" class="button-primary">送金する</button>
       <div id="tx-status"></div>
+      <div id="tx-tracking" class="tx-tracking"></div>
     </div>
   </div>
 
