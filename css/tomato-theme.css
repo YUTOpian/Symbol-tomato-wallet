@@ -124,6 +124,32 @@ select:focus {
 .tx-amount-send { color: var(--tomato-red-light); }
 .tx-amount-receive { color: var(--tomato-green-light); }
 
+.tx-address,
+.tx-message {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.tx-address-label,
+.tx-message-label {
+  font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+  font-weight: bold;
+  color: var(--tomato-cream);
+  white-space: nowrap;
+}
+
+.tx-address-value {
+  font-family: monospace;
+  word-break: break-all;
+  color: var(--tomato-text-muted);
+}
+
+.tx-message-value {
+  color: var(--tomato-text-muted);
+}
+
 /* ============================================================
    送金先アドレス情報ボックス (recipientInfo.js)
 ============================================================ */
@@ -325,6 +351,19 @@ select:focus {
 .track-footer-fail { color: #ff5c5c; font-weight: bold; }
 .track-footer-warn { color: #ffd98a; }
 .track-footer-pending { color: var(--tomato-text-muted); }
+
+.track-more-btn {
+  width: 100%;
+  margin-top: 0;
+  background: transparent;
+  border: 1px dashed var(--tomato-card-border);
+  color: var(--tomato-red-light);
+  font-size: 13px;
+  padding: 8px;
+}
+.track-more-btn:hover {
+  background: rgba(224, 67, 43, 0.1);
+}
 
 /* ------------------------------------------------------------
    ポップアップ通知もトマト色に
