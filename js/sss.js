@@ -7,8 +7,9 @@ import { appState, NetworkType } from "./config.js";
 import { selectNode } from "./nodeSelector.js";
 import { initSdk } from "./sdk.js";
 import { setStatus, setText } from "./ui.js";
-import { refreshAccount } from "./account.js";
-import { loadRecentTx } from "./transactions.js";
+import { refreshAccount, initLiveBalanceRefresh } from "./account.js";
+import { loadRecentTx, initLiveTx } from "./transactions.js";
+import { initWebSocket } from "./ws.js";
 import { getSSSStatusHtml } from "./utils.js";
 
 /* ------------------------------------------------------
@@ -101,6 +102,11 @@ async function internalConnect(isAuto) {
 
     await refreshAccount();
     await loadRecentTx();
+
+    const currentAddress = appState.currentAddress.toString();
+    initWebSocket(currentAddress);
+    initLiveTx(currentAddress);
+    initLiveBalanceRefresh(currentAddress);
   } catch(e) {
     console.error("internalConnect error:", e);
   } finally {

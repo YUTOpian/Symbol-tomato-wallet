@@ -9,7 +9,7 @@ import {
 } from "./config.js";
 import { setStatus, setText } from "./ui.js";
 import { initSdk } from "./sdk.js";
-import { refreshAccount } from "./account.js";
+import { refreshAccount, initLiveBalanceRefresh } from "./account.js";
 import { loadRecentTx, initLiveTx } from "./transactions.js";
 import { initWebSocket, closeWebSocket } from "./ws.js";
 import { renderNodeInfoHtml } from "./utils.js";
@@ -115,6 +115,7 @@ export async function applyNodeChange() {
       const address = appState.currentAddress.toString();
       initWebSocket(address);
       initLiveTx(address);
+      initLiveBalanceRefresh(address);
     }
 
     const infoEl = document.getElementById("node-info");

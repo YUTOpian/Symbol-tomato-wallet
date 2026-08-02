@@ -5,7 +5,7 @@
 import { appState, NetworkType } from "./config.js";
 import { selectNode } from "./nodeSelector.js";
 import { initSdk } from "./sdk.js";
-import { refreshAccount } from "./account.js";
+import { refreshAccount, initLiveBalanceRefresh } from "./account.js";
 import { loadRecentTx, initLiveTx } from "./transactions.js";
 import { initWebSocket, closeWebSocket } from "./ws.js";
 import { setText } from "./ui.js";
@@ -260,6 +260,7 @@ export async function switchToAccount(id) {
   const address = appState.currentAddress.toString();
   initWebSocket(address);
   initLiveTx(address);
+  initLiveBalanceRefresh(address);
 
   await persistAccounts();
 }
@@ -315,6 +316,7 @@ export async function switchNetwork(networkType) {
   const address2 = appState.currentAddress.toString();
   initWebSocket(address2);
   initLiveTx(address2);
+  initLiveBalanceRefresh(address2);
 
   await persistAccounts();
 }

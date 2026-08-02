@@ -18,13 +18,17 @@
 
 import { appState } from "./config.js";
 import { formatMosaicAmount, hexToBytes } from "./utils.js";
+import { subscribe, addCallback } from "./ws.js";
 
 const DEBOUNCE_MS = 500;
 const XYM_IDS = ["72C0212E67A08BCE", "6BED913FA20223F8"];
 const HISTORY_LIMIT = 4;
+const SILENT_REFRESH_MS = 20000; // WSが効かない場合のフォールバック間隔
 
 let debounceTimer = null;
 let currentRequestId = 0;
+let silentRefreshTimer = null;
+const liveSubscribedAddresses = new Set();
 
 function box() {
   return document.getElementById("recipient-info-box");
@@ -42,6 +46,43 @@ function clear() {
   if (!el) return;
   el.innerHTML = "";
   el.className = "recipient-info-box";
+  stopSilentRefresh();
+}
+
+function stopSilentRefresh() {
+  if (silentRefreshTimer) {
+    clearInterval(silentRefreshTimer);
+    silentRefreshTimer = null;
+  }
+}
+
+function startSilentRefresh(address) {
+  stopSilentRefresh();
+  silentRefreshTimer = setInterval(() => {
+    const input = document.getElementById("tx-recipient");
+    if (input && normalizeAddress(input.value) === address) {
+      lookup(address, { silent: true });
+    } else {
+      stopSilentRefresh();
+    }
+  }, SILENT_REFRESH_MS);
+}
+
+/* ============================================================
+   このアドレス宛の着金をWebSocketで検知したら、その場で再取得する
+   (ページを開いたまま、相手の残高・履歴の変化にすぐ気付けるように)
+============================================================ */
+function subscribeForLiveUpdates(address) {
+  if (liveSubscribedAddresses.has(address)) return;
+  liveSubscribedAddresses.add(address);
+
+  subscribe(`confirmedAdded/${address}`);
+  addCallback(`confirmedAdded/${address}`, () => {
+    const input = document.getElementById("tx-recipient");
+    if (input && normalizeAddress(input.value) === address) {
+      lookup(address, { silent: true });
+    }
+  });
 }
 
 function normalizeAddress(raw) {
@@ -170,7 +211,7 @@ function renderHistoryHtml(history) {
     .join("");
 }
 
-async function lookup(rawAddress) {
+async function lookup(rawAddress, { silent = false } = {}) {
   const requestId = ++currentRequestId;
   const address = normalizeAddress(rawAddress);
 
@@ -180,6 +221,7 @@ async function lookup(rawAddress) {
   }
 
   if (!isValidLength(address)) {
+    stopSilentRefresh();
     render(
       `<div class="recipient-info-row">⚠️ アドレスの形式が正しくありません（39文字）</div>`,
       "warn"
@@ -188,6 +230,7 @@ async function lookup(rawAddress) {
   }
 
   if (appState.currentAddress && address === appState.currentAddress.toString()) {
+    stopSilentRefresh();
     render(
       `<div class="recipient-info-row">🍅 これは自分自身のアドレスです</div>`,
       "warn"
@@ -204,11 +247,15 @@ async function lookup(rawAddress) {
     // eslint-disable-next-line no-new
     new appState.sdkSymbol.Address(address);
   } catch {
+    stopSilentRefresh();
     render(`<div class="recipient-info-row">⚠️ アドレスのチェックサムが正しくありません</div>`, "warn");
     return;
   }
 
-  render(`<div class="recipient-info-row recipient-info-loading">🔎 送金先を確認しています…</div>`, "loading");
+  if (!silent) {
+    stopSilentRefresh();
+    render(`<div class="recipient-info-row recipient-info-loading">🔎 送金先を確認しています…</div>`, "loading");
+  }
 
   const controller = new AbortController();
 
@@ -269,6 +316,10 @@ async function lookup(rawAddress) {
       `</div>`,
       "ok"
     );
+
+    // 表示中に着金があったらその場で更新されるようにしておく
+    subscribeForLiveUpdates(address);
+    startSilentRefresh(address);
   } catch (e) {
     if (e.name === "AbortError") return;
     console.warn("recipientInfo lookup error:", e);

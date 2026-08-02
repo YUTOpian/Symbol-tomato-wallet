@@ -4,6 +4,7 @@
 import { appState } from "./config.js";
 import { setText, setStatus } from "./ui.js";
 import { formatMosaicAmount } from "./utils.js";
+import { addCallback } from "./ws.js";
 
 function toHexMosaicId(id) {
   if (typeof id === "string") {
@@ -279,6 +280,23 @@ export async function refreshAccount() {
     console.error(e);
     setStatus("account-status", "取得に失敗しました", "error");
   }
+}
+
+/*
+  着金(自分宛の確定トランザクション)を検知したら、
+  保有残高・保有モザイク一覧をすぐに再取得して画面に反映する。
+  ノード切替・アカウント切替のたびに呼ばれても二重登録しないよう、
+  アドレスごとに一度だけ登録する。
+*/
+const liveBalanceRegisteredAddresses = new Set();
+
+export function initLiveBalanceRefresh(address) {
+  if (!address || liveBalanceRegisteredAddresses.has(address)) return;
+  liveBalanceRegisteredAddresses.add(address);
+
+  addCallback(`confirmedAdded/${address}`, () => {
+    refreshAccount();
+  });
 }
 
 /*
