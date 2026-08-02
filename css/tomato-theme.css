@@ -183,6 +183,50 @@ select:focus {
   color: #ffd98a;
 }
 
+.recipient-info-namespace {
+  padding: 0 12px 6px;
+  font-size: 13px;
+  color: var(--tomato-cream);
+}
+
+.recipient-info-history {
+  border-top: 1px dashed var(--tomato-card-border);
+  padding: 6px 12px 10px;
+}
+
+.recipient-info-history-title {
+  font-size: 11.5px;
+  color: var(--tomato-text-muted);
+  margin-bottom: 4px;
+  letter-spacing: 0.3px;
+}
+
+.recipient-info-history-empty {
+  font-size: 12.5px;
+  color: var(--tomato-text-muted);
+  font-style: italic;
+}
+
+.recipient-info-history-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 2px 0;
+}
+
+.recipient-info-history-in {
+  color: var(--tomato-green-light);
+}
+.recipient-info-history-out {
+  color: var(--tomato-red-light);
+}
+
+.recipient-info-time {
+  color: var(--tomato-text-muted);
+  white-space: nowrap;
+}
+
 /* ============================================================
    送金トラッキング (txStatusTracker.js)
 ============================================================ */
