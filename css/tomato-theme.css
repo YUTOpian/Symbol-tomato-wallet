@@ -290,3 +290,29 @@ select:focus {
   border: 1px solid var(--tomato-card-border);
   color: var(--tomato-cream);
 }
+
+/* ============================================================
+   複数送信: 行ごとの宛先確認バッジ (multisendRecipientCheck.js)
+============================================================ */
+.multisend-row {
+  position: relative;
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+  border-bottom: 1px dashed var(--tomato-card-border);
+}
+
+.ms-row-badge {
+  font-size: 12px;
+  padding: 4px 2px 6px;
+  min-height: 14px;
+}
+
+.ms-badge-ok {
+  color: var(--tomato-green-light);
+}
+.ms-badge-new {
+  color: var(--tomato-red-light);
+}
+.ms-badge-warn {
+  color: #ffd98a;
+}
