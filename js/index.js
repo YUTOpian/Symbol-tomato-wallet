@@ -81,6 +81,8 @@ import {
   cosignPending,
 } from "./multisig.js";
 import { parseCsv, sendMultiTransfer } from "./multisend.js";
+import { checkMultisendRows } from "./multisendRecipientCheck.js";
+import { trackOutgoingTransaction } from "./txStatusTracker.js";
 import { computeFileHash, createApostille, searchApostilleTransactions } from "./apostille.js";
 import {
   loadAccountRestrictions,
@@ -700,8 +702,15 @@ window.addEventListener("load", async () => {
       <input class="input-box ms-amount" type="number" min="0" step="any" placeholder="数量" value="${data.amount}">
       <input class="input-box ms-message" placeholder="メッセージ" value="${data.message}">
       <button class="account-hide-btn" data-action="remove-row">削除</button>
+      <div class="ms-row-badge"></div>
     `;
     container.appendChild(row);
+
+    // アドレスを編集したら、そのバッジは古い結果なのでクリアしておく
+    row.querySelector(".ms-address")?.addEventListener("input", () => {
+      const badge = row.querySelector(".ms-row-badge");
+      if (badge) badge.innerHTML = "";
+    });
   }
 
   function clearMultisendRows() {
@@ -771,6 +780,21 @@ window.addEventListener("load", async () => {
     btn.closest(".multisend-row")?.remove();
   });
 
+  document.getElementById("multisend-check-btn")?.addEventListener("click", async () => {
+    const rows = readMultisendRows();
+    if (rows.length === 0) {
+      setStatus("multisend-status", "送金先を1件以上入力してください。", "error");
+      return;
+    }
+    setStatus("multisend-status", "宛先を確認しています…");
+    const summary = await checkMultisendRows();
+    setStatus(
+      "multisend-status",
+      `確認完了: 正常 ${summary.okCount}件 ／ 未使用アドレス ${summary.newCount}件 ／ 要確認 ${summary.warnCount}件`,
+      summary.newCount + summary.warnCount > 0 ? "error" : "success"
+    );
+  });
+
   document.getElementById("multisend-submit-btn")?.addEventListener("click", async () => {
     const rows = readMultisendRows();
 
@@ -779,12 +803,33 @@ window.addEventListener("load", async () => {
       return;
     }
 
-    if (!confirm(`${rows.length}件の送金を1つのトランザクションとして送信します。よろしいですか？`)) return;
+    setStatus("multisend-status", "送信前に宛先を確認しています…");
+    const summary = await checkMultisendRows();
+
+    let confirmMessage = `${rows.length}件の送金を1つのトランザクションとして送信します。よろしいですか？`;
+    if (summary.newCount + summary.warnCount > 0) {
+      confirmMessage =
+        `⚠️ ${summary.newCount}件の未使用アドレス、${summary.warnCount}件の要確認の宛先が含まれています。\n` +
+        `各行の確認結果をよくご確認のうえ、それでも送信しますか？`;
+    }
+
+    if (!confirm(confirmMessage)) {
+      setStatus("multisend-status", "送信をキャンセルしました。", "default");
+      return;
+    }
 
     setStatus("multisend-status", "送信中...");
     try {
       const hash = await sendMultiTransfer(rows);
-      setStatus("multisend-status", `✅ 送信しました。Hash: ${hash}`, "success");
+      setStatus("multisend-status", `送金をノードへ送信しました。着金確認を追跡します。\nHash: ${hash}`, "success");
+
+      trackOutgoingTransaction({
+        hash,
+        recipient: `${rows.length}件の宛先（複数送信）`,
+        mosaicLabel: "複数送信",
+        amountText: "",
+        containerId: "multisend-tracking",
+      });
     } catch (e) {
       console.error("sendMultiTransfer error:", e);
       setStatus("multisend-status", e.message || "送信に失敗しました。", "error");

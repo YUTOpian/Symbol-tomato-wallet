@@ -19,8 +19,8 @@ const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15分でポーリングは打ち切�
 const trackedHashes = new Set();
 let wsHooksRegisteredForAddress = null;
 
-function container() {
-  return document.getElementById("tx-tracking");
+function container(containerId) {
+  return document.getElementById(containerId || "tx-tracking");
 }
 
 function getExplorerUrl(hash) {
@@ -43,8 +43,8 @@ function stepHtml(step, label, state) {
   return `<div class="track-step track-step-${state}"><span class="track-step-icon">${icon}</span><span>${label}</span></div>`;
 }
 
-function renderCard({ hash, recipient, mosaicLabel, amountText, steps, footerHtml }) {
-  const el = container();
+function renderCard({ hash, recipient, mosaicLabel, amountText, steps, footerHtml, containerId }) {
+  const el = container(containerId);
   if (!el) return;
 
   const existing = document.getElementById(cardId(hash));
@@ -105,7 +105,7 @@ function footerFor(state, detail) {
    opts: { hash, recipient, mosaicLabel, amountText }
 ============================================================ */
 export function trackOutgoingTransaction(opts) {
-  const { hash, recipient, mosaicLabel = "", amountText = "" } = opts;
+  const { hash, recipient, mosaicLabel = "", amountText = "", containerId } = opts;
   if (!hash || trackedHashes.has(hash)) return;
   trackedHashes.add(hash);
 
@@ -119,6 +119,7 @@ export function trackOutgoingTransaction(opts) {
       amountText,
       steps: buildSteps(state),
       footerHtml: footerFor(state, detail),
+      containerId,
     });
   };
 
