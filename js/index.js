@@ -137,8 +137,6 @@ window.addEventListener("load", async () => {
   const multisigSettingsPage = document.getElementById("multisig-settings-page");
   const multisigSendPage = document.getElementById("multisig-send-page");
   const multisigSignPage = document.getElementById("multisig-sign-page");
-  const multisendMenuPage = document.getElementById("multisend-menu-page");
-  const multisendCsvPage = document.getElementById("multisend-csv-page");
   const multisendListPage = document.getElementById("multisend-list-page");
   const apostilleMenuPage = document.getElementById("apostille-menu-page");
   const apostilleCreatePage = document.getElementById("apostille-create-page");
@@ -730,20 +728,19 @@ window.addEventListener("load", async () => {
   }
 
   document.getElementById("menu-multisend")?.addEventListener("click", () => {
-    showPage(multisendMenuPage);
-  });
-
-  document.getElementById("menu-multisend-manual")?.addEventListener("click", () => {
     clearMultisendRows();
     renderMultisendRow();
     setStatus("multisend-status", "", "default");
+    setStatus("multisend-csv-status", "", "default");
     showPage(multisendListPage);
   });
 
-  document.getElementById("menu-multisend-csv")?.addEventListener("click", () => {
-    document.getElementById("multisend-csv-file").value = "";
-    setStatus("multisend-csv-status", "", "default");
-    showPage(multisendCsvPage);
+  document.getElementById("multisend-csv-btn")?.addEventListener("click", () => {
+    const fileInput = document.getElementById("multisend-csv-file");
+    if (fileInput) {
+      fileInput.value = "";
+      fileInput.click();
+    }
   });
 
   document.getElementById("multisend-csv-file")?.addEventListener("change", async e => {
@@ -761,8 +758,7 @@ window.addEventListener("load", async () => {
 
       clearMultisendRows();
       rows.forEach(r => renderMultisendRow(r));
-      setStatus("multisend-status", `CSVから${rows.length}件読み込みました。内容を確認してください。`, "success");
-      showPage(multisendListPage);
+      setStatus("multisend-csv-status", `CSVから${rows.length}件読み込みました。内容を確認してください。`, "success");
     } catch (err) {
       console.error("CSV parse error:", err);
       setStatus("multisend-csv-status", "CSVの読み込みに失敗しました。", "error");
@@ -2217,9 +2213,7 @@ window.addEventListener("load", async () => {
   document.getElementById("back-multisig-menu-settings")?.addEventListener("click", () => showPage(multisigMenuPage));
   document.getElementById("back-multisig-menu-send")?.addEventListener("click", () => showPage(multisigMenuPage));
   document.getElementById("back-multisig-menu-sign")?.addEventListener("click", () => showPage(multisigMenuPage));
-  document.getElementById("back-advanced-multisend-menu")?.addEventListener("click", () => showPage(advancedPage));
-  document.getElementById("back-multisend-menu-csv")?.addEventListener("click", () => showPage(multisendMenuPage));
-  document.getElementById("back-multisend-menu-list")?.addEventListener("click", () => showPage(multisendMenuPage));
+  document.getElementById("back-multisend-menu-list")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-advanced-apostille-menu")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-apostille-menu-create")?.addEventListener("click", () => showPage(apostilleMenuPage));
   document.getElementById("back-apostille-menu-verify")?.addEventListener("click", () => showPage(apostilleMenuPage));
