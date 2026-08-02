@@ -1,0 +1,1030 @@
+/* ============================================================
+   Wallet UI 全体
+============================================================ */
+
+body {
+  margin: 0;
+  font-family: "Inter", "Noto Sans JP", sans-serif;
+  background: #0f172a;
+  color: white;
+}
+
+/* -----------------------------
+   各カード（共通）
+----------------------------- */
+.card {
+  background: #1e293b;
+  padding: 20px 50px;
+  border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  margin-bottom: 20px;
+}
+
+/* -----------------------------
+   入力欄
+----------------------------- */
+.input-box {
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-sizing: border-box;
+  padding: 10px;
+  width: 100%;
+  color: white;
+  margin-bottom: 12px;
+}
+
+/* -----------------------------
+   ボタン
+----------------------------- */
+.button-primary {
+  background: #4f46e5;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+}
+.button-primary:hover {
+  background: #6366f1;
+}
+
+/* ============================================================
+   ウォレット操作ボタン
+============================================================ */
+
+.wallet-actions {
+
+  display:flex;
+
+  gap:12px;
+
+  margin-top:20px;
+
+  margin-bottom:20px;
+
+}
+
+
+.wallet-action-btn {
+
+  flex:1;
+
+  padding:14px;
+
+  border:none;
+
+  border-radius:12px;
+
+  color:white;
+
+  font-size:16px;
+
+  font-weight:bold;
+
+  cursor:pointer;
+
+}
+
+
+.send-btn {
+
+  background:#4f46e5;
+
+}
+
+
+.receive-btn {
+
+  background:#059669;
+
+}
+
+
+.wallet-action-btn:hover {
+
+  opacity:0.85;
+
+}
+
+
+
+/* ============================================================
+   ポップアップ通知（右上固定）
+============================================================ */
+.popup-card {
+  position: fixed;
+  right: 16px;
+  top: 80px;
+  background: rgba(30, 41, 59, 0.95);
+  padding: 12px 16px;
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  color: white;
+  font-size: 14px;
+  line-height: 1.5;
+  z-index: 9000;
+  min-width: 260px;
+  max-width: 320px;
+}
+
+.popup-title {
+  font-weight: bold;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+/* ============================================================
+   取引履歴カード（全改訂版）
+============================================================ */
+
+/* 1件の TX カード */
+.tx-item {
+  background: #1f2937;
+  padding: 16px 18px;
+  border-radius: 12px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  transition: 0.2s;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.tx-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* アイコン */
+.tx-item img {
+  width: 46px;
+  height: 46px;
+  border-radius: 6px;
+}
+
+/* 内容 */
+.tx-body {
+  flex: 1;
+}
+
+/* タイトル（メッセージ） */
+.tx-title {
+  font-size: 17px;
+  color: #fff;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+/* 状態（CONFIRMED / UNCONFIRMED） */
+.tx-status {
+  font-size: 12px;
+  color: #9ca3af;
+  letter-spacing: 0.3px;
+}
+
+/* 日時 */
+.tx-time {
+  font-size: 12px;
+  color: #d1d5db;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ============================================================
+   UNCONFIRMED（未承認）／ カード強制ハイライト
+============================================================ */
+.tx-item.unconfirmed {
+  background: #fff1a8 !important;
+  border: 1px solid #facc15 !important;
+  animation: pendingBlink 1.8s infinite ease-in-out;
+}
+
+/* テキスト色も変更 */
+.tx-item.unconfirmed .tx-title {
+  color: #6b5e00 !important;
+}
+.tx-item.unconfirmed .tx-status {
+  color: #7a6300 !important;
+}
+.tx-item.unconfirmed .tx-time {
+  color: #7a6300 !important;
+}
+
+/* 点滅アニメーション */
+@keyframes pendingBlink {
+  0%   { box-shadow: 0 0 0 rgba(250, 204, 21, 0); }
+  50%  { box-shadow: 0 0 14px rgba(250, 204, 21, 0.85); }
+  100% { box-shadow: 0 0 0 rgba(250, 204, 21, 0); }
+}
+
+/* ============================================================
+   ステータスの色付け（成功 / エラー / 情報）
+============================================================ */
+.status-success {
+  color: #4ade80;
+}
+.status-error {
+  color: #f87171;
+}
+.status-info {
+  color: #93c5fd;
+}
+
+
+#account-address {
+  word-break: break-all;
+  white-space: normal;
+}
+
+
+/* アドレス行（コピー横並び） */
+.address-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.address-text {
+  flex: 1;
+  word-break: break-all;
+  white-space: normal;
+}
+
+/* コピーボタン */
+.copy-btn {
+  background: #4f46e5;
+  border: none;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.copy-btn:hover {
+  background: #6366f1;
+}
+
+/* トランザクション amount 色分け */
+.tx-amount-send {
+  color: #f87171; /* 赤 */
+  font-weight: bold;
+}
+.tx-amount-receive {
+  color: #4ade80; /* 緑 */
+  font-weight: bold;
+}
+
+/* -----------------------------------------------------
+   address-row の横並び調整
+----------------------------------------------------- */
+.address-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* アドレスの折り返し */
+.address-text {
+  max-width: 85%;
+  overflow-wrap: break-word;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+/* コピーアイコン */
+.copy-btn {
+  background: #4f46e5;
+  color: white;
+  border: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.copy-btn:hover {
+  background: #6366f1;
+}
+
+/* ==========================
+   モバイル完全最適化（決定版）
+========================== */
+@media (max-width: 768px) {
+
+  /* ===== 全体の左右余白 ===== */
+  body {
+    padding: 0;
+    margin: 0;
+  }
+
+  .container {
+    padding: 10px 20px 40px 20px;
+    gap: 32px;
+  }
+
+  /* ===== Header ===== */
+  header {
+    padding: 22px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: left;
+  }
+
+  header h2 {
+    font-size: 24px;
+    margin: 0;
+    line-height: 1.3;
+  }
+
+  .header-info {
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .header-info p {
+    margin: 0;
+  }
+
+  /* ===== Card ===== */
+  .card {
+    padding: 22px 20px;
+    border-radius: 18px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  }
+
+  .card h2 {
+    font-size: 20px;
+    margin-bottom: 18px;
+    line-height: 1.4;
+  }
+
+  /* ===== アドレス表示行 ===== */
+  .address-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .address-text {
+    font-size: 15px;
+    word-break: break-all;
+    line-height: 1.45;
+  }
+
+  .copy-btn {
+    padding: 10px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+
+  /* ===== 入力欄 ===== */
+  input.input-box,
+  select.input-box,
+  textarea.input-box {
+    width: 100%;
+    padding: 14px 14px;
+    font-size: 15px;
+    border-radius: 12px;
+    margin-bottom: 14px;
+    box-sizing: border-box;
+  }
+
+  textarea.input-box {
+    min-height: 120px;
+  }
+
+  /* ===== 送金ボタン ===== */
+  .button-primary {
+    width: 100%;
+    text-align: center;
+    padding: 16px 0;
+    font-size: 17px;
+    font-weight: 600;
+    margin-top: 6px;
+    border-radius: 12px;
+  }
+
+  /* ===== TXカード ===== */
+  .tx-item {
+    padding: 18px 16px;
+    border-radius: 16px;
+    margin-bottom: 12px;
+  }
+
+  .tx-title {
+    font-size: 16px;
+  }
+}
+
+
+/* ============================================================
+   保有モザイク一覧
+============================================================ */
+
+#mosaic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.mosaic-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px;
+
+  padding: 14px 16px;
+
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mosaic-item:hover {
+  background: #1e3a8a;
+  border-color: #6366f1;
+  transform: translateY(-2px);
+}
+
+.mosaic-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.mosaic-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.mosaic-id {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 4px;
+  word-break: break-all;
+}
+
+.mosaic-right {
+  text-align: right;
+}
+
+.mosaic-amount {
+  font-size: 18px;
+  font-weight: bold;
+  color: #4ade80;
+}
+
+.mosaic-label {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* ============================================================
+   送金カード
+============================================================ */
+
+.selected-mosaic {
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+
+.selected-mosaic-name {
+  font-size: 18px;
+  font-weight: bold;
+  color: #fff;
+}
+
+.selected-mosaic-balance {
+  margin-top: 6px;
+  color: #4ade80;
+  font-size: 15px;
+}
+
+/* ============================================================
+   モバイル
+============================================================ */
+
+@media (max-width: 768px) {
+
+  .mosaic-item {
+    padding: 16px;
+  }
+
+  .mosaic-name {
+    font-size: 17px;
+  }
+
+  .mosaic-amount {
+    font-size: 19px;
+  }
+
+  .selected-mosaic {
+    padding: 16px;
+  }
+}
+
+/* ============================================================
+   モザイク送金ポップアップ
+============================================================ */
+
+#transfer-dialog {
+  background: #1e293b;
+  color: white;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 0;
+  width: 90%;
+  max-width: 420px;
+}
+
+
+/* 背景暗幕 */
+#transfer-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+
+/* dialog内のカード調整 */
+#transfer-dialog .card {
+  margin: 0;
+  background: #1e293b;
+  color: white;
+  border-radius: 16px;
+}
+
+/* ============================================================
+   送金モザイク選択 横スライドパネル
+============================================================ */
+
+
+
+/* 表示状態 */
+
+#send-panel.active {
+
+  right: 0;
+
+}
+
+
+
+
+/* パネルタイトル */
+
+#send-panel h2 {
+
+  margin-top: 0;
+
+}
+
+
+
+/* 閉じるボタン */
+
+#close-send-panel {
+
+  background: transparent;
+
+  color:white;
+
+  border:none;
+
+  font-size:24px;
+
+  float:right;
+
+  cursor:pointer;
+
+}
+
+
+
+
+/* 選択説明 */
+
+.send-description {
+
+  margin:20px 0;
+
+  font-size:18px;
+
+  font-weight:bold;
+
+}
+
+
+
+
+/* 送金画面のモザイク一覧 */
+
+#send-mosaic-list {
+
+  display:flex;
+
+  flex-direction:column;
+
+  gap:12px;
+
+}
+
+/* ==========================
+   ページ切替
+========================== */
+
+.page {
+
+    display:none;
+
+    animation: slideIn 0.25s ease;
+
+}
+
+
+.page.active {
+
+    display:block;
+
+}
+
+
+
+@keyframes slideIn {
+
+    from {
+
+        transform:translateX(30px);
+
+        opacity:0;
+
+    }
+
+
+    to {
+
+        transform:translateX(0);
+
+        opacity:1;
+
+    }
+
+}
+
+/* ==========================================
+   タブ
+========================================== */
+
+.wallet-tabs {
+  display: flex;
+  margin-top: 16px;
+  border-bottom: 1px solid #444;
+}
+
+.wallet-tab {
+  flex: 1;
+  padding: 12px;
+  background: transparent;
+  color: #999;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 15px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.wallet-tab:hover {
+  color: #fff;
+}
+
+.wallet-tab.active {
+  color: #00d4ff;
+  border-bottom: 3px solid #00d4ff;
+  font-weight: bold;
+}
+
+.wallet-panel {
+  display: none;
+  padding-top: 15px;
+}
+
+.wallet-panel.active {
+  display: block;
+}
+
+/* ============================================================
+   ハーベスト状態バッジ
+============================================================ */
+.harvest-badge {
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: bold;
+  font-size: 15px;
+  margin: 10px 0;
+  background: #334155;
+  color: #e5e7eb;
+}
+
+.harvest-badge.active {
+  background: #064e3b;
+  color: #4ade80;
+  border: 1px solid #16a34a;
+}
+
+.harvest-badge.partial {
+  background: #78350f;
+  color: #fbbf24;
+  border: 1px solid #d97706;
+}
+
+.harvest-badge.inactive {
+  background: #3f1d1d;
+  color: #f87171;
+  border: 1px solid #dc2626;
+}
+
+/* ============================================================
+   設定メニュー(歯車ボタン・メニュー項目・手数料オプション)
+============================================================ */
+.card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-title-row h2 {
+  margin: 0;
+}
+
+.settings-gear-btn {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+.settings-gear-btn:hover {
+  background: #334155;
+}
+
+.settings-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.settings-menu-item {
+  width: 100%;
+  text-align: left;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 16px;
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-menu-item:hover {
+  background: #1e3a8a;
+  border-color: #6366f1;
+}
+
+#fee-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.fee-option {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fee-option:hover {
+  border-color: #6366f1;
+}
+
+.fee-option.selected {
+  border-color: #4ade80;
+  background: #064e3b;
+}
+
+.fee-option-title {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.fee-option-value {
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+/* ============================================================
+   アカウント切替(チェブロン・一覧行)
+============================================================ */
+.title-with-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chevron-btn {
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chevron-btn:hover {
+  background: #334155;
+}
+
+#account-switcher-list,
+#hidden-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.account-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 12px 14px;
+  transition: all 0.2s ease;
+}
+
+.account-row:hover {
+  background: #1e3a8a;
+  border-color: #6366f1;
+}
+
+.account-row.active {
+  background: #1e3a8a;
+  border-color: #6366f1;
+}
+
+.account-row-main {
+  flex: 1;
+  cursor: pointer;
+}
+
+.account-row-label {
+  font-weight: 600;
+  color: #fff;
+}
+
+.account-row-sub {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+.account-hide-btn {
+  background: #334155;
+  border: none;
+  color: #e5e7eb;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.account-hide-btn:hover {
+  background: #475569;
+}
+
+/* ============================================================
+   モザイク→ネームスペース 後付けリンク
+============================================================ */
+.mosaic-link-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.mosaic-link-row .mosaic-link-select {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+/* ============================================================
+   複数送信リスト
+============================================================ */
+#multisend-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.multisend-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 0.7fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.multisend-row input {
+  margin-bottom: 0;
+}
+
+.multisend-row .account-hide-btn {
+  padding: 8px 10px;
+}
+
+@media (max-width: 768px) {
+  .multisend-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   トランザクション確認ダイアログ(共通)
+============================================================ */
+#tx-confirm-dialog {
+  background: #1e293b;
+  color: white;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 0;
+  width: 90%;
+  max-width: 460px;
+}
+
+#tx-confirm-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+#tx-confirm-dialog .card {
+  margin: 0;
+  background: #1e293b;
+  color: white;
+  border-radius: 16px;
+}
+
+.confirm-tx-row {
+  padding: 8px 0;
+  border-bottom: 1px solid #334155;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.confirm-tx-row:last-child {
+  border-bottom: none;
+}
+
+#confirm-tx-details .confirm-tx-row {
+  padding: 8px 0;
+}
+
+.confirm-tx-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.confirm-tx-actions button {
+  flex: 1;
+  margin-top: 0;
+}
