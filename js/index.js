@@ -821,7 +821,7 @@ window.addEventListener("load", async () => {
     setStatus("multisend-status", "送信中...");
     try {
       const hash = await sendMultiTransfer(rows);
-      setStatus("multisend-status", `送金をノードへ送信しました。着金確認を追跡します。\nHash: ${hash}`, "success");
+      setStatus("multisend-status", "", "default");
 
       trackOutgoingTransaction({
         hash,

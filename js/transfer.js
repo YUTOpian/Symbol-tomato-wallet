@@ -161,7 +161,7 @@ export async function sendTx() {
   try {
     setStatus("tx-status", "確認画面を表示しています...");
     const hash = await signAndAnnounceTx(tx, confirmInfo);
-    setStatus("tx-status", `送金をノードへ送信しました。着金確認を追跡します。\nHash: ${hash}`, "success");
+    setStatus("tx-status", "", "default");
 
     trackOutgoingTransaction({
       hash,

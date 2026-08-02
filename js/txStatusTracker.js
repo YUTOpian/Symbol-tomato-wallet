@@ -54,6 +54,7 @@ function renderCard({ hash, recipient, mosaicLabel, amountText, steps, footerHtm
         <span class="track-card-title">送金の追跡</span>
         <a class="track-card-link" href="${getExplorerUrl(hash)}" target="_blank" rel="noopener">Explorerで見る ↗</a>
       </div>
+      <div class="track-card-sub">Hash: <span class="track-mono">${hash}</span></div>
       <div class="track-card-sub">宛先: <span class="track-mono">${recipient}</span></div>
       <div class="track-card-sub">${mosaicLabel} ${amountText}</div>
       <div class="track-steps">${steps}</div>
