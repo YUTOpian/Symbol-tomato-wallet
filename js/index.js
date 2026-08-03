@@ -138,10 +138,7 @@ window.addEventListener("load", async () => {
   const metadataPage = document.getElementById("metadata-page");
   const multisigPage = document.getElementById("multisig-page");
   const multisendListPage = document.getElementById("multisend-list-page");
-  const apostilleMenuPage = document.getElementById("apostille-menu-page");
-  const apostilleCreatePage = document.getElementById("apostille-create-page");
-  const apostilleVerifyPage = document.getElementById("apostille-verify-page");
-  const apostilleHistoryPage = document.getElementById("apostille-history-page");
+  const apostillePage = document.getElementById("apostille-page");
   const restrictionMenuPage = document.getElementById("restriction-menu-page");
   const restrictionAddressPage = document.getElementById("restriction-address-page");
   const restrictionMosaicPage = document.getElementById("restriction-mosaic-page");
@@ -1026,33 +1023,48 @@ window.addEventListener("load", async () => {
   // アポスティーユ
   // ============================
   document.getElementById("menu-apostille")?.addEventListener("click", () => {
-    showPage(apostilleMenuPage);
+    showPage(apostillePage);
+    activateApostilleTab("create");
   });
 
-  document.getElementById("menu-apostille-create")?.addEventListener("click", () => {
+  function resetApostilleCreateTab() {
     document.getElementById("apostille-create-file").value = "";
     document.getElementById("apostille-create-hash").textContent = "";
     document.getElementById("apostille-owner-address").value = "";
     document.getElementById("apostille-metadata-key").value = "";
     document.getElementById("apostille-metadata-value").value = "";
     setStatus("apostille-create-status", "", "default");
-    showPage(apostilleCreatePage);
-  });
+  }
 
-  document.getElementById("menu-apostille-verify")?.addEventListener("click", () => {
+  function resetApostilleVerifyTab() {
     document.getElementById("apostille-verify-file").value = "";
     document.getElementById("apostille-verify-hash").textContent = "";
     document.getElementById("apostille-verify-result").innerHTML = "";
     setStatus("apostille-verify-status", "", "default");
-    showPage(apostilleVerifyPage);
-  });
+  }
 
-  document.getElementById("menu-apostille-history")?.addEventListener("click", () => {
+  function resetApostilleHistoryTab() {
     document.getElementById("apostille-history-file").value = "";
     document.getElementById("apostille-history-hash").textContent = "";
     document.getElementById("apostille-history-list").innerHTML = "";
     setStatus("apostille-history-status", "", "default");
-    showPage(apostilleHistoryPage);
+  }
+
+  function activateApostilleTab(tab) {
+    document.querySelectorAll("#apostille-page .tab-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.apostilleTab === tab);
+    });
+    document.querySelectorAll("#apostille-page .tab-panel").forEach(panel => {
+      panel.style.display = panel.dataset.apostillePanel === tab ? "" : "none";
+    });
+
+    if (tab === "create") resetApostilleCreateTab();
+    else if (tab === "verify") resetApostilleVerifyTab();
+    else if (tab === "history") resetApostilleHistoryTab();
+  }
+
+  document.querySelectorAll("#apostille-page .tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => activateApostilleTab(btn.dataset.apostilleTab));
   });
 
   let apostilleCreateHash = null;
@@ -2401,9 +2413,6 @@ window.addEventListener("load", async () => {
   document.getElementById("back-advanced-multisig-menu")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-multisend-menu-list")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-advanced-apostille-menu")?.addEventListener("click", () => showPage(advancedPage));
-  document.getElementById("back-apostille-menu-create")?.addEventListener("click", () => showPage(apostilleMenuPage));
-  document.getElementById("back-apostille-menu-verify")?.addEventListener("click", () => showPage(apostilleMenuPage));
-  document.getElementById("back-apostille-menu-history")?.addEventListener("click", () => showPage(apostilleMenuPage));
   document.getElementById("back-advanced-restriction-menu")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-restriction-menu-account")?.addEventListener("click", () => showPage(restrictionMenuPage));
   document.getElementById("back-restriction-menu-mosaic-top")?.addEventListener("click", () => showPage(restrictionMenuPage));
