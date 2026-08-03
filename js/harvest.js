@@ -19,6 +19,7 @@ import { appState, MAINNET_NODEWATCH_URL, TESTNET_NODEWATCH_URL, NetworkType } f
 import { setStatus } from "./ui.js";
 import { signPayloadLocally, estimateFeeFromTx } from "./auth.js";
 import { requestTxConfirmation, formatTxDeadline, TxCancelledError } from "./txConfirm.js";
+import { trackOutgoingTransaction } from "./txStatusTracker.js";
 
 /* ============================================================
    委任先ノード候補の読み込み（NodeWatchから取得しプルダウンに反映）
@@ -485,7 +486,12 @@ export async function startHarvest() {
         : "① AccountKeyLink / ② VrfKeyLink / ③ NodeKeyLink をSSSで署名してください..."
     );
     const aggHash = await announceKeyLinks(remoteKeyPair, vrfKeyPair, nodePublicKey, harvestNodeUrl);
-    setLine(`鍵リンクTx送信済み (${aggHash.slice(0, 12)}...) 承認待ち...`);
+    setLine("鍵リンクTxを送信しました。承認を待っています...");
+    trackOutgoingTransaction({
+      hash: aggHash,
+      label: "ハーベスト設定の追跡（鍵リンク）",
+      containerId: "harvest-tracking",
+    });
 
     await waitConfirmed(aggHash);
     setLine("鍵リンク承認完了。④ 委任リクエストを送信します...");
@@ -496,7 +502,12 @@ export async function startHarvest() {
       nodePublicKey
     );
 
-    setLine(`✅ 委任リクエスト送信完了 (${delegationHash.slice(0, 12)}...)。ノード側の反映をお待ちください。`);
+    setLine("✅ 委任リクエスト送信完了。ノード側の反映をお待ちください。");
+    trackOutgoingTransaction({
+      hash: delegationHash,
+      label: "ハーベスト設定の追跡（委任リクエスト）",
+      containerId: "harvest-tracking",
+    });
     alert(
       "委任ハーベスティングの設定リクエストを送信しました。\n" +
       "ノードが承諾すると数分〜数十分程度でハーベストが始まる場合があります。\n" +
@@ -611,7 +622,12 @@ export async function stopHarvest() {
       typeLabel: "委任ハーベスティング解除",
       details: [{ label: "解除対象", value: summary || "(なし)" }],
     });
-    setLine(`解除Tx送信済み (${hash.slice(0, 12)}...) 承認待ち...`);
+    setLine("解除トランザクションを送信しました。承認を待っています...");
+    trackOutgoingTransaction({
+      hash,
+      label: "ハーベスト解除の追跡",
+      containerId: "harvest-tracking",
+    });
 
     await waitConfirmed(hash);
 
