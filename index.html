@@ -466,7 +466,7 @@
         <label id="backup-result-label" style="font-size:13px;color:#94a3b8;"></label>
         <textarea id="backup-result-value" class="input-box" readonly style="min-height:80px;word-break:break-all;"></textarea>
         <div style="display:flex;gap:10px;margin-top:10px;">
-          <button id="backup-copy-btn" class="account-hide-btn" style="flex:1;">コピー</button>
+          <button id="backup-copy-btn" class="account-hide-btn" style="flex:1;">📋 コピー</button>
           <button id="backup-hide-result-btn" class="button-primary" style="flex:1;">隠す</button>
         </div>
       </div>
@@ -616,7 +616,10 @@
       <h2>ニーモニックでアカウント追加</h2>
       <button id="back-add-account-mnemonic" class="button-primary">← 戻る</button>
 
-      <textarea id="add-mnemonic-input" class="input-box" placeholder="単語をスペース区切りで入力"></textarea>
+      <p style="font-size:12px;color:#94a3b8;margin-bottom:4px;">
+        フレーズ全体をどこか1マスに貼り付けると、自動ですべてのマスに割り振られます。
+      </p>
+      <div id="add-mnemonic-input-grid" class="mnemonic-input-grid"></div>
 
       <p><b>アカウントインデックス：</b></p>
       <input id="add-mnemonic-index" class="input-box" type="number" min="0" value="0">
