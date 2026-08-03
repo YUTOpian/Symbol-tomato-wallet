@@ -40,7 +40,7 @@ export async function generateNewMnemonic() {
    導出パスはSymbol公式ウォレットと同じ m/44'/4343'/{account}'/0'/0'
    ({account}を変えることで同じニーモニックから複数アカウントを導出できる)
 ============================================================ */
-async function deriveFromMnemonic(mnemonicPhrase, accountIndex = 0) {
+export async function deriveFromMnemonic(mnemonicPhrase, accountIndex = 0) {
   const [bip39, wordlistModule, hdkeyModule] = await Promise.all([
     import("https://esm.sh/@scure/bip39@2.2.0"),
     import("https://esm.sh/@scure/bip39@2.2.0/wordlists/english"),

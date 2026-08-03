@@ -28,6 +28,7 @@ import {
   logout,
   lockSession,
   generateNewMnemonic,
+  deriveFromMnemonic,
   switchToAccount,
   setAccountHidden,
   addAccountFromMnemonic,
@@ -207,14 +208,50 @@ window.addEventListener("load", async () => {
     showPage(createNewPage);
     setStatus("create-new-status", "", "default");
     const mnemonicEl = document.getElementById("create-new-mnemonic");
-    mnemonicEl.textContent = "生成中...";
+    const privateKeyEl = document.getElementById("create-new-privatekey");
+    mnemonicEl.innerHTML = "生成中...";
+    privateKeyEl.textContent = "生成中...";
+    delete privateKeyEl.dataset.privatekey;
     try {
       const mnemonic = await generateNewMnemonic();
-      mnemonicEl.textContent = mnemonic;
       mnemonicEl.dataset.mnemonic = mnemonic;
+      mnemonicEl.innerHTML = mnemonic
+        .trim()
+        .split(/\s+/)
+        .map((word, i) => `<span class="mnemonic-word"><b>${i + 1}.</b>${word}</span>`)
+        .join("");
+
+      const privateKeyHex = await deriveFromMnemonic(mnemonic, 0);
+      privateKeyEl.textContent = privateKeyHex;
+      privateKeyEl.dataset.privatekey = privateKeyHex;
     } catch (e) {
       console.error("generateNewMnemonic error:", e);
-      mnemonicEl.textContent = "生成に失敗しました。";
+      mnemonicEl.innerHTML = "生成に失敗しました。";
+      privateKeyEl.textContent = "---";
+    }
+  });
+
+  document.getElementById("create-new-mnemonic-copy-btn")?.addEventListener("click", async () => {
+    const phrase = document.getElementById("create-new-mnemonic")?.dataset.mnemonic;
+    if (!phrase) return;
+    try {
+      await navigator.clipboard.writeText(phrase);
+      showPopup("ニーモニックをコピーしました");
+    } catch (e) {
+      console.error("clipboard error:", e);
+      showPopup("コピーに失敗しました", true);
+    }
+  });
+
+  document.getElementById("create-new-privatekey-copy-btn")?.addEventListener("click", async () => {
+    const key = document.getElementById("create-new-privatekey")?.dataset.privatekey;
+    if (!key) return;
+    try {
+      await navigator.clipboard.writeText(key);
+      showPopup("秘密鍵をコピーしました");
+    } catch (e) {
+      console.error("clipboard error:", e);
+      showPopup("コピーに失敗しました", true);
     }
   });
 
