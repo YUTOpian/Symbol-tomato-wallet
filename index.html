@@ -36,6 +36,9 @@
         <button id="choose-mnemonic" class="settings-menu-item">
           📝 ニーモニックをインポートする
         </button>
+        <button id="choose-privatekey" class="settings-menu-item">
+          🔑 秘密鍵をインポートする
+        </button>
         <button id="choose-sss" class="settings-menu-item">
           🧩 SSS Extensionと接続する
         </button>
@@ -132,6 +135,31 @@
 
       <button id="import-mnemonic-btn" class="button-primary">インポートする</button>
       <div id="mnemonic-import-status"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       秘密鍵インポート画面
+  ============================================================ -->
+  <div id="privatekey-import-page" class="page">
+    <div class="card">
+      <h2>秘密鍵のインポート</h2>
+      <button id="back-welcome-privatekey" class="button-primary">← 戻る</button>
+
+      <p style="font-size:13px;color:#94a3b8;">
+        64桁の秘密鍵(16進数)を入力してください。この端末以外には送信されません。
+      </p>
+
+      <input id="privatekey-import-input" class="input-box" placeholder="秘密鍵（64桁の16進数）">
+
+      <p><b>ネットワーク：</b></p>
+      <select id="privatekey-import-network-select" class="input-box">
+        <option value="mainnet">Mainnet</option>
+        <option value="testnet">Testnet</option>
+      </select>
+
+      <button id="import-privatekey-btn" class="button-primary">インポートする</button>
+      <div id="privatekey-import-status"></div>
     </div>
   </div>
 
