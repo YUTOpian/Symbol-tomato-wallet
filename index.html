@@ -334,7 +334,18 @@
     <div class="card">
       <h2>受け取り</h2>
       <button id="back-account-receive" class="button-primary">← 戻る</button>
-      <div id="receive-qrcode"></div>
+
+      <div class="receive-qr-columns">
+        <div class="receive-qr-column">
+          <div class="receive-qr-label">Symbol Wallet</div>
+          <div id="receive-qrcode-symbol"></div>
+        </div>
+        <div class="receive-qr-column">
+          <div class="receive-qr-label">EXYM Wallet</div>
+          <div id="receive-qrcode-exym"></div>
+        </div>
+      </div>
+
       <p id="receive-address" class="address-text"></p>
       <button id="copy-receive-address" class="button-primary">アドレスをコピー</button>
     </div>
@@ -374,6 +385,7 @@
       <button id="start-harvest-btn" class="button-primary">開始</button>
       <button id="stop-harvest-btn" class="button-primary">停止</button>
       <div id="harvest-status">状態確認中...</div>
+      <div id="harvest-tracking" class="tx-tracking"></div>
     </div>
   </div>
 
