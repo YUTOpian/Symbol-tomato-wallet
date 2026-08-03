@@ -499,6 +499,40 @@ select:focus {
   }
 }
 
+/* ============================================================
+   受け取り画面: Symbol Wallet / EXYM Wallet のQRコードを並べて表示
+============================================================ */
+.receive-qr-columns {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.receive-qr-column {
+  flex: 1;
+  min-width: 140px;
+  text-align: center;
+  background: #1c110d;
+  border: 1px solid var(--tomato-card-border);
+  border-radius: 10px;
+  padding: 12px 8px;
+}
+
+.receive-qr-label {
+  font-weight: bold;
+  color: var(--tomato-red-light);
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.receive-qr-column img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
 /* ------------------------------------------------------------
    ポップアップ通知もトマト色に
 ------------------------------------------------------------ */
