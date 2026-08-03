@@ -1168,9 +1168,9 @@
   </div>
 
   <!-- ============================================================
-       アカウント制限サブメニュー
+       アカウント制限(アドレス / モザイク / 操作をタブで切り替え)
   ============================================================ -->
-  <div id="restriction-account-menu-page" class="page">
+  <div id="restriction-account-page" class="page">
     <div class="card">
       <h2>アカウント制限</h2>
       <button id="back-restriction-menu-account" class="button-primary">← 戻る</button>
@@ -1179,24 +1179,104 @@
         今ログイン中のアカウント自身に対する制限です。自分の署名だけで設定できます。
       </p>
 
-      <div class="settings-menu">
-        <button id="menu-restriction-address" class="settings-menu-item">
-          📍 アカウントアドレス制限
-        </button>
-        <button id="menu-restriction-mosaic" class="settings-menu-item">
-          🪙 アカウントモザイク制限
-        </button>
-        <button id="menu-restriction-operation" class="settings-menu-item">
-          📄 アカウント操作制限
-        </button>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-restriction-account-tab="address">📍 アドレス</button>
+        <button class="tab-btn" data-restriction-account-tab="mosaic">🪙 モザイク</button>
+        <button class="tab-btn" data-restriction-account-tab="operation">📄 操作</button>
+      </div>
+
+      <!-- ----- アドレスタブ ----- -->
+      <div class="tab-panel" data-restriction-account-panel="address">
+        <p style="font-size:13px;color:#94a3b8;">
+          指定したアドレスからの受信、または指定したアドレスへの送信を許可／ブロックします。
+        </p>
+
+        <h3>現在の設定</h3>
+        <div id="restriction-current-address">読み込み中...</div>
+
+        <hr>
+
+        <label class="encrypt-option">
+          <input type="checkbox" id="restriction-address-block">
+          <span>ブロックリストにする（未チェックなら許可リスト）</span>
+        </label>
+        <label class="encrypt-option">
+          <input type="checkbox" id="restriction-address-outgoing">
+          <span>送信(自分発)に適用する（未チェックなら受信に適用）</span>
+        </label>
+
+        <p><b>追加するアドレス（1行に1つ）：</b></p>
+        <textarea id="restriction-address-add" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+
+        <p><b>削除するアドレス（1行に1つ）：</b></p>
+        <textarea id="restriction-address-remove" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+
+        <button id="restriction-address-submit" class="button-primary">この内容で設定する</button>
+        <div id="restriction-address-status"></div>
+      </div>
+
+      <!-- ----- モザイクタブ ----- -->
+      <div class="tab-panel" data-restriction-account-panel="mosaic" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          指定したモザイクの受信、または送信を許可／ブロックします。
+        </p>
+
+        <h3>現在の設定</h3>
+        <div id="restriction-current-mosaic">読み込み中...</div>
+
+        <hr>
+
+        <label class="encrypt-option">
+          <input type="checkbox" id="restriction-mosaic-block">
+          <span>ブロックリストにする（未チェックなら許可リスト）</span>
+        </label>
+        <label class="encrypt-option">
+          <input type="checkbox" id="restriction-mosaic-outgoing">
+          <span>送信(自分発)に適用する（未チェックなら受信に適用）</span>
+        </label>
+
+        <p><b>追加するモザイクID（1行に1つ、16進）：</b></p>
+        <textarea id="restriction-mosaic-add" class="input-box" placeholder="例: 72C0212E67A08BCE"></textarea>
+
+        <p><b>削除するモザイクID（1行に1つ、16進）：</b></p>
+        <textarea id="restriction-mosaic-remove" class="input-box" placeholder="例: 72C0212E67A08BCE"></textarea>
+
+        <button id="restriction-mosaic-submit" class="button-primary">この内容で設定する</button>
+        <div id="restriction-mosaic-status"></div>
+      </div>
+
+      <!-- ----- 操作タブ ----- -->
+      <div class="tab-panel" data-restriction-account-panel="operation" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          指定した種類のトランザクションの送信を許可／ブロックします（受信方向には適用できません）。
+        </p>
+
+        <h3>現在の設定</h3>
+        <div id="restriction-current-operation">読み込み中...</div>
+
+        <hr>
+
+        <label class="encrypt-option">
+          <input type="checkbox" id="restriction-operation-block">
+          <span>ブロックリストにする（未チェックなら許可リスト）</span>
+        </label>
+
+        <p><b>追加する種類：</b></p>
+        <select id="restriction-operation-add" class="input-box" multiple size="6"></select>
+
+        <p><b>削除する種類：</b></p>
+        <select id="restriction-operation-remove" class="input-box" multiple size="6"></select>
+
+        <button id="restriction-operation-submit" class="button-primary">この内容で設定する</button>
+        <div id="restriction-operation-status"></div>
       </div>
     </div>
   </div>
 
   <!-- ============================================================
-       モザイク制限サブメニュー
+       モザイク制限(グローバル制限 / アドレス制限をタブで切り替え)
   ============================================================ -->
-  <div id="restriction-mosaic-menu-page" class="page">
+  <div id="restriction-mosaicdef-page" class="page">
     <div class="card">
       <h2>モザイク制限</h2>
       <button id="back-restriction-menu-mosaic-top" class="button-primary">← 戻る</button>
@@ -1206,193 +1286,68 @@
         組み合わせて使います。制限を付けるにはモザイクが「制限設定可能(restrictable)」フラグ付きで作成されている必要があります。
       </p>
 
-      <div class="settings-menu">
-        <button id="menu-restriction-mosaic-global" class="settings-menu-item">
-          🌐 モザイクグローバル制限
-        </button>
-        <button id="menu-restriction-mosaic-address" class="settings-menu-item">
-          📍 モザイクアドレス制限
-        </button>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-restriction-mosaicdef-tab="global">🌐 グローバル制限</button>
+        <button class="tab-btn" data-restriction-mosaicdef-tab="address">📍 アドレス制限</button>
       </div>
-    </div>
-  </div>
 
-  <!-- ============================================================
-       アカウント制限(アドレス)
-  ============================================================ -->
-  <div id="restriction-address-page" class="page">
-    <div class="card">
-      <h2>アカウント制限（アドレス）</h2>
-      <button id="back-restriction-menu-address" class="button-primary">← 戻る</button>
+      <!-- ----- グローバル制限タブ ----- -->
+      <div class="tab-panel" data-restriction-mosaicdef-panel="global">
+        <p style="font-size:13px;color:#94a3b8;">
+          自分が作成したモザイクとやり取りするために、すべてのアカウントが満たすべき条件（キーと値のルール）を設定します。
+          初めて設定するキーの場合、旧制限値は「0」、旧制限タイプは「NONE」のままで構いません。
+        </p>
 
-      <p style="font-size:13px;color:#94a3b8;">
-        指定したアドレスからの受信、または指定したアドレスへの送信を許可／ブロックします。
-      </p>
+        <p><b>対象モザイクID（16進、自分が作成したもの）：</b></p>
+        <input id="mglobal-mosaic-id" class="input-box" placeholder="例: 72C0212E67A08BCE">
 
-      <h3>現在の設定</h3>
-      <div id="restriction-current-address">読み込み中...</div>
+        <p><b>参照モザイクID（任意。空欄なら対象モザイク自身を参照）：</b></p>
+        <input id="mglobal-reference-mosaic-id" class="input-box" placeholder="空欄可">
 
-      <hr>
+        <p><b>制限キー：</b></p>
+        <input id="mglobal-key" class="input-box" placeholder="例: KYC">
 
-      <label class="encrypt-option">
-        <input type="checkbox" id="restriction-address-block">
-        <span>ブロックリストにする（未チェックなら許可リスト）</span>
-      </label>
-      <label class="encrypt-option">
-        <input type="checkbox" id="restriction-address-outgoing">
-        <span>送信(自分発)に適用する（未チェックなら受信に適用）</span>
-      </label>
+        <p><b>旧制限値：</b></p>
+        <input id="mglobal-previous-value" class="input-box" type="number" min="0" value="0">
 
-      <p><b>追加するアドレス（1行に1つ）：</b></p>
-      <textarea id="restriction-address-add" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+        <p><b>新制限値：</b></p>
+        <input id="mglobal-new-value" class="input-box" type="number" min="0" value="1">
 
-      <p><b>削除するアドレス（1行に1つ）：</b></p>
-      <textarea id="restriction-address-remove" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+        <p><b>旧制限タイプ：</b></p>
+        <select id="mglobal-previous-type" class="input-box"></select>
 
-      <button id="restriction-address-submit" class="button-primary">この内容で設定する</button>
-      <div id="restriction-address-status"></div>
-    </div>
-  </div>
+        <p><b>新制限タイプ：</b></p>
+        <select id="mglobal-new-type" class="input-box"></select>
 
-  <!-- ============================================================
-       モザイク制限
-  ============================================================ -->
-  <div id="restriction-mosaic-page" class="page">
-    <div class="card">
-      <h2>モザイク制限</h2>
-      <button id="back-restriction-menu-mosaic" class="button-primary">← 戻る</button>
+        <button id="mglobal-submit" class="button-primary">この内容で設定する</button>
+        <div id="mglobal-status"></div>
+      </div>
 
-      <p style="font-size:13px;color:#94a3b8;">
-        指定したモザイクの受信、または送信を許可／ブロックします。
-      </p>
+      <!-- ----- アドレス制限タブ ----- -->
+      <div class="tab-panel" data-restriction-mosaicdef-panel="address" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          特定のアカウントに制限属性（値）を割り当てます。対応するモザイクグローバル制限の条件と比較され、
+          条件を満たしたアカウントだけがこのモザイクと取引できるようになります。
+        </p>
 
-      <h3>現在の設定</h3>
-      <div id="restriction-current-mosaic">読み込み中...</div>
+        <p><b>対象モザイクID（16進、自分が作成したもの）：</b></p>
+        <input id="maddress-mosaic-id" class="input-box" placeholder="例: 72C0212E67A08BCE">
 
-      <hr>
+        <p><b>制限キー（モザイクグローバル制限で使ったものと同じキー）：</b></p>
+        <input id="maddress-key" class="input-box" placeholder="例: KYC">
 
-      <label class="encrypt-option">
-        <input type="checkbox" id="restriction-mosaic-block">
-        <span>ブロックリストにする（未チェックなら許可リスト）</span>
-      </label>
-      <label class="encrypt-option">
-        <input type="checkbox" id="restriction-mosaic-outgoing">
-        <span>送信(自分発)に適用する（未チェックなら受信に適用）</span>
-      </label>
+        <p><b>対象アドレス：</b></p>
+        <input id="maddress-target" class="input-box" placeholder="値を割り当てたいアドレス">
 
-      <p><b>追加するモザイクID（1行に1つ、16進）：</b></p>
-      <textarea id="restriction-mosaic-add" class="input-box" placeholder="例: 72C0212E67A08BCE"></textarea>
+        <p><b>旧制限値（このアドレスに以前値を設定していなければ空欄のまま）：</b></p>
+        <input id="maddress-previous-value" class="input-box" placeholder="空欄可(未設定の場合は自動でFFFFFFFFFFFFFFFF扱い)">
 
-      <p><b>削除するモザイクID（1行に1つ、16進）：</b></p>
-      <textarea id="restriction-mosaic-remove" class="input-box" placeholder="例: 72C0212E67A08BCE"></textarea>
+        <p><b>新制限値：</b></p>
+        <input id="maddress-new-value" class="input-box" type="number" min="0" value="1">
 
-      <button id="restriction-mosaic-submit" class="button-primary">この内容で設定する</button>
-      <div id="restriction-mosaic-status"></div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       トランザクション制限(操作)
-  ============================================================ -->
-  <div id="restriction-operation-page" class="page">
-    <div class="card">
-      <h2>トランザクション制限</h2>
-      <button id="back-restriction-menu-operation" class="button-primary">← 戻る</button>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        指定した種類のトランザクションの送信を許可／ブロックします（受信方向には適用できません）。
-      </p>
-
-      <h3>現在の設定</h3>
-      <div id="restriction-current-operation">読み込み中...</div>
-
-      <hr>
-
-      <label class="encrypt-option">
-        <input type="checkbox" id="restriction-operation-block">
-        <span>ブロックリストにする（未チェックなら許可リスト）</span>
-      </label>
-
-      <p><b>追加する種類：</b></p>
-      <select id="restriction-operation-add" class="input-box" multiple size="6"></select>
-
-      <p><b>削除する種類：</b></p>
-      <select id="restriction-operation-remove" class="input-box" multiple size="6"></select>
-
-      <button id="restriction-operation-submit" class="button-primary">この内容で設定する</button>
-      <div id="restriction-operation-status"></div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       モザイクグローバル制限
-  ============================================================ -->
-  <div id="restriction-mosaic-global-page" class="page">
-    <div class="card">
-      <h2>モザイクグローバル制限</h2>
-      <button id="back-restriction-menu-mosaic-global" class="button-primary">← 戻る</button>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        自分が作成したモザイクとやり取りするために、すべてのアカウントが満たすべき条件（キーと値のルール）を設定します。
-        初めて設定するキーの場合、旧制限値は「0」、旧制限タイプは「NONE」のままで構いません。
-      </p>
-
-      <p><b>対象モザイクID（16進、自分が作成したもの）：</b></p>
-      <input id="mglobal-mosaic-id" class="input-box" placeholder="例: 72C0212E67A08BCE">
-
-      <p><b>参照モザイクID（任意。空欄なら対象モザイク自身を参照）：</b></p>
-      <input id="mglobal-reference-mosaic-id" class="input-box" placeholder="空欄可">
-
-      <p><b>制限キー：</b></p>
-      <input id="mglobal-key" class="input-box" placeholder="例: KYC">
-
-      <p><b>旧制限値：</b></p>
-      <input id="mglobal-previous-value" class="input-box" type="number" min="0" value="0">
-
-      <p><b>新制限値：</b></p>
-      <input id="mglobal-new-value" class="input-box" type="number" min="0" value="1">
-
-      <p><b>旧制限タイプ：</b></p>
-      <select id="mglobal-previous-type" class="input-box"></select>
-
-      <p><b>新制限タイプ：</b></p>
-      <select id="mglobal-new-type" class="input-box"></select>
-
-      <button id="mglobal-submit" class="button-primary">この内容で設定する</button>
-      <div id="mglobal-status"></div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       モザイクアドレス制限
-  ============================================================ -->
-  <div id="restriction-mosaic-address-page" class="page">
-    <div class="card">
-      <h2>モザイクアドレス制限</h2>
-      <button id="back-restriction-menu-mosaic-address" class="button-primary">← 戻る</button>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        特定のアカウントに制限属性（値）を割り当てます。対応するモザイクグローバル制限の条件と比較され、
-        条件を満たしたアカウントだけがこのモザイクと取引できるようになります。
-      </p>
-
-      <p><b>対象モザイクID（16進、自分が作成したもの）：</b></p>
-      <input id="maddress-mosaic-id" class="input-box" placeholder="例: 72C0212E67A08BCE">
-
-      <p><b>制限キー（モザイクグローバル制限で使ったものと同じキー）：</b></p>
-      <input id="maddress-key" class="input-box" placeholder="例: KYC">
-
-      <p><b>対象アドレス：</b></p>
-      <input id="maddress-target" class="input-box" placeholder="値を割り当てたいアドレス">
-
-      <p><b>旧制限値（このアドレスに以前値を設定していなければ空欄のまま）：</b></p>
-      <input id="maddress-previous-value" class="input-box" placeholder="空欄可(未設定の場合は自動でFFFFFFFFFFFFFFFF扱い)">
-
-      <p><b>新制限値：</b></p>
-      <input id="maddress-new-value" class="input-box" type="number" min="0" value="1">
-
-      <button id="maddress-submit" class="button-primary">この内容で設定する</button>
-      <div id="maddress-status"></div>
+        <button id="maddress-submit" class="button-primary">この内容で設定する</button>
+        <div id="maddress-status"></div>
+      </div>
     </div>
   </div>
 
