@@ -67,7 +67,8 @@
         他人に知られるとアカウントの資産を自由に操作されてしまいます。
       </p>
 
-      <div id="create-new-mnemonic" class="input-box" style="word-break:break-all; user-select: text;">生成中...</div>
+      <div id="create-new-mnemonic" class="mnemonic-grid" style="user-select: text;">生成中...</div>
+      <button id="create-new-mnemonic-copy-btn" class="account-hide-btn" type="button">📋 ニーモニックをコピー</button>
 
       <div style="margin-top:12px;">
         <label style="font-size:13px;color:#e5e7eb;display:flex;align-items:flex-start;gap:8px;">
@@ -81,6 +82,10 @@
           二度と表示できなくなります(より安全。秘密鍵のバックアップは引き続き可能です)。
         </p>
       </div>
+
+      <p><b>秘密鍵（アカウント番号 0）：</b></p>
+      <div id="create-new-privatekey" class="input-box" style="word-break:break-all; user-select: text; font-family: monospace; font-size: 12.5px;">生成中...</div>
+      <button id="create-new-privatekey-copy-btn" class="account-hide-btn" type="button">📋 秘密鍵をコピー</button>
 
       <p><b>ネットワーク：</b></p>
       <select id="create-new-network-select" class="input-box">
