@@ -140,13 +140,8 @@ window.addEventListener("load", async () => {
   const multisendListPage = document.getElementById("multisend-list-page");
   const apostillePage = document.getElementById("apostille-page");
   const restrictionMenuPage = document.getElementById("restriction-menu-page");
-  const restrictionAddressPage = document.getElementById("restriction-address-page");
-  const restrictionMosaicPage = document.getElementById("restriction-mosaic-page");
-  const restrictionOperationPage = document.getElementById("restriction-operation-page");
-  const restrictionAccountMenuPage = document.getElementById("restriction-account-menu-page");
-  const restrictionMosaicMenuPage = document.getElementById("restriction-mosaic-menu-page");
-  const restrictionMosaicGlobalPage = document.getElementById("restriction-mosaic-global-page");
-  const restrictionMosaicAddressPage = document.getElementById("restriction-mosaic-address-page");
+  const restrictionAccountPage = document.getElementById("restriction-account-page");
+  const restrictionMosaicdefPage = document.getElementById("restriction-mosaicdef-page");
   const offlineTxCreatePage = document.getElementById("offline-tx-create-page");
   const offlineBroadcastPage = document.getElementById("offline-broadcast-page");
 
@@ -1212,30 +1207,6 @@ window.addEventListener("load", async () => {
     showPage(restrictionMenuPage);
   });
 
-  document.getElementById("menu-restriction-account")?.addEventListener("click", () => {
-    showPage(restrictionAccountMenuPage);
-  });
-
-  document.getElementById("menu-restriction-mosaic-top")?.addEventListener("click", () => {
-    showPage(restrictionMosaicMenuPage);
-  });
-
-  document.getElementById("menu-restriction-address")?.addEventListener("click", async () => {
-    showPage(restrictionAddressPage);
-    await loadAccountRestrictions("restriction-current-address", "address");
-  });
-
-  document.getElementById("menu-restriction-mosaic")?.addEventListener("click", async () => {
-    showPage(restrictionMosaicPage);
-    await loadAccountRestrictions("restriction-current-mosaic", "mosaic");
-  });
-
-  document.getElementById("menu-restriction-operation")?.addEventListener("click", async () => {
-    populateOperationSelects();
-    showPage(restrictionOperationPage);
-    await loadAccountRestrictions("restriction-current-operation", "operation");
-  });
-
   function populateMosaicRestrictionTypeSelects() {
     const optionsHtml = MOSAIC_RESTRICTION_TYPE_OPTIONS.map(o => `<option value="${o.value}">${o.label}</option>`).join("");
     const prevSelect = document.getElementById("mglobal-previous-type");
@@ -1246,15 +1217,56 @@ window.addEventListener("load", async () => {
     newSelect.value = "EQ";
   }
 
-  document.getElementById("menu-restriction-mosaic-global")?.addEventListener("click", () => {
-    populateMosaicRestrictionTypeSelects();
-    setStatus("mglobal-status", "", "default");
-    showPage(restrictionMosaicGlobalPage);
+  async function activateRestrictionAccountTab(tab) {
+    document.querySelectorAll("#restriction-account-page .tab-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.restrictionAccountTab === tab);
+    });
+    document.querySelectorAll("#restriction-account-page .tab-panel").forEach(panel => {
+      panel.style.display = panel.dataset.restrictionAccountPanel === tab ? "" : "none";
+    });
+
+    if (tab === "address") {
+      await loadAccountRestrictions("restriction-current-address", "address");
+    } else if (tab === "mosaic") {
+      await loadAccountRestrictions("restriction-current-mosaic", "mosaic");
+    } else if (tab === "operation") {
+      populateOperationSelects();
+      await loadAccountRestrictions("restriction-current-operation", "operation");
+    }
+  }
+
+  document.getElementById("menu-restriction-account")?.addEventListener("click", () => {
+    showPage(restrictionAccountPage);
+    activateRestrictionAccountTab("address");
   });
 
-  document.getElementById("menu-restriction-mosaic-address")?.addEventListener("click", () => {
-    setStatus("maddress-status", "", "default");
-    showPage(restrictionMosaicAddressPage);
+  document.querySelectorAll("#restriction-account-page .tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => activateRestrictionAccountTab(btn.dataset.restrictionAccountTab));
+  });
+
+  function activateRestrictionMosaicdefTab(tab) {
+    document.querySelectorAll("#restriction-mosaicdef-page .tab-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.restrictionMosaicdefTab === tab);
+    });
+    document.querySelectorAll("#restriction-mosaicdef-page .tab-panel").forEach(panel => {
+      panel.style.display = panel.dataset.restrictionMosaicdefPanel === tab ? "" : "none";
+    });
+
+    if (tab === "global") {
+      populateMosaicRestrictionTypeSelects();
+      setStatus("mglobal-status", "", "default");
+    } else if (tab === "address") {
+      setStatus("maddress-status", "", "default");
+    }
+  }
+
+  document.getElementById("menu-restriction-mosaic-top")?.addEventListener("click", () => {
+    showPage(restrictionMosaicdefPage);
+    activateRestrictionMosaicdefTab("global");
+  });
+
+  document.querySelectorAll("#restriction-mosaicdef-page .tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => activateRestrictionMosaicdefTab(btn.dataset.restrictionMosaicdefTab));
   });
 
   document.getElementById("mglobal-submit")?.addEventListener("click", async () => {
@@ -2416,11 +2428,6 @@ window.addEventListener("load", async () => {
   document.getElementById("back-advanced-restriction-menu")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-restriction-menu-account")?.addEventListener("click", () => showPage(restrictionMenuPage));
   document.getElementById("back-restriction-menu-mosaic-top")?.addEventListener("click", () => showPage(restrictionMenuPage));
-  document.getElementById("back-restriction-menu-address")?.addEventListener("click", () => showPage(restrictionAccountMenuPage));
-  document.getElementById("back-restriction-menu-mosaic")?.addEventListener("click", () => showPage(restrictionAccountMenuPage));
-  document.getElementById("back-restriction-menu-operation")?.addEventListener("click", () => showPage(restrictionAccountMenuPage));
-  document.getElementById("back-restriction-menu-mosaic-global")?.addEventListener("click", () => showPage(restrictionMosaicMenuPage));
-  document.getElementById("back-restriction-menu-mosaic-address")?.addEventListener("click", () => showPage(restrictionMosaicMenuPage));
   document.getElementById("back-advanced-offline-tx")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-offline-broadcast")?.addEventListener("click", () => showPage(welcomePage));
 
