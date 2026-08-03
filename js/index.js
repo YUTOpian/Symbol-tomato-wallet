@@ -583,12 +583,9 @@ window.addEventListener("load", async () => {
   // ============================
   // 受取画面
   // ============================
-  document.getElementById("receive-btn")?.addEventListener("click", async () => {
-    showPage(receivePage);
-    const address = appState.currentAddress.toString();
-
-    document.getElementById("receive-address").textContent = address;
-    const qr = document.getElementById("receive-qrcode");
+  async function generateReceiveQR(walletName, address, elId) {
+    const qr = document.getElementById(elId);
+    if (!qr) return;
     qr.innerHTML = "読み込み中...";
 
     try {
@@ -599,7 +596,7 @@ window.addEventListener("load", async () => {
       // 他のSymbolウォレット(公式モバイルウォレット等)が読み込める
       // 形式(symbol-qr-library の AddressQR)でQRコードを生成する
       const addressQR = QRCodeGenerator.createExportAddress(
-        "Symbol Simple Wallet",
+        walletName,
         address,
         appState.networkType,
         appState.generationHash
@@ -608,13 +605,88 @@ window.addEventListener("load", async () => {
       const dataUrl = await firstValueFrom(addressQR.toBase64());
       qr.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
     } catch (e) {
-      console.error("AddressQR生成失敗、通常QRにフォールバック", e);
+      console.error(`AddressQR生成失敗(${walletName})、通常QRにフォールバック`, e);
       const dataUrl = await QRCode.toDataURL(address, {
-        width: 220,
+        width: 180,
         margin: 1
       });
       qr.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
     }
+  }
+
+  /*
+    EXYM Wallet形式: type=3 (未署名トランザクションのリクエストQR)
+    受取用として、宛先=自分・モザイク=XYM・数量=0(相手が入力する)・
+    メッセージなし・maxFee=0・signerPublicKeyは全ゼロ(スキャンした側の
+    ウォレットが自分の鍵で組み直して署名する前提のテンプレート)にした
+    未署名TransferTransactionのpayloadを、そのままJSONに埋め込む。
+  */
+  function buildReceiveRequestPayloadHex(address) {
+    const { descriptors, models } = appState.sdkSymbol;
+
+    const mosaic = new descriptors.UnresolvedMosaicDescriptor(
+      new models.UnresolvedMosaicId(BigInt("0x" + getXymMosaicIdHex())),
+      new models.Amount(0n)
+    );
+
+    const transferDescriptor = new descriptors.TransferTransactionV1Descriptor(
+      new appState.sdkSymbol.Address(address),
+      [mosaic],
+      new Uint8Array(0) // メッセージなし(サイズ0。プレーンメッセージの識別バイトも付けない)
+    );
+
+    const zeroPublicKey = new appState.sdkCore.PublicKey("0".repeat(64));
+
+    const tx = appState.facade.createTransactionFromTypedDescriptor(
+      transferDescriptor,
+      zeroPublicKey,
+      0,       // feeMultiplier=0 → maxFeeも0(実際に支払う側が組み直す時に設定する)
+      60 * 60  // 有効期限1時間(テンプレートなので目安)
+    );
+
+    return appState.sdkCore.utils.uint8ToHex(tx.serialize()).toUpperCase();
+  }
+
+  async function generateReceiveTransactionQR(address, elId) {
+    const qr = document.getElementById(elId);
+    if (!qr) return;
+    qr.innerHTML = "読み込み中...";
+
+    try {
+      if (!appState.generationHash || !appState.networkType || !appState.facade) {
+        throw new Error("ネットワーク情報が未取得です");
+      }
+
+      const payloadHex = buildReceiveRequestPayloadHex(address);
+      const qrJson = {
+        v: 3,
+        type: 3,
+        network_id: appState.networkType,
+        chain_id: appState.generationHash,
+        data: { payload: payloadHex },
+      };
+
+      const dataUrl = await QRCode.toDataURL(JSON.stringify(qrJson), {
+        width: 180,
+        margin: 1,
+      });
+      qr.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
+    } catch (e) {
+      console.error("EXYM Wallet用QR生成失敗", e);
+      qr.innerHTML = "QR生成に失敗しました";
+    }
+  }
+
+  document.getElementById("receive-btn")?.addEventListener("click", async () => {
+    showPage(receivePage);
+    const address = appState.currentAddress.toString();
+
+    document.getElementById("receive-address").textContent = address;
+
+    await Promise.all([
+      generateReceiveQR("Symbol Simple Wallet", address, "receive-qrcode-symbol"),
+      generateReceiveTransactionQR(address, "receive-qrcode-exym"),
+    ]);
   });
 
   // ============================
