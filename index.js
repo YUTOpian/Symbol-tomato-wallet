@@ -286,34 +286,110 @@ window.addEventListener("load", async () => {
   });
 
   // ============================
-  // ニーモニックインポート画面へ
+  // ニーモニック入力マス(1単語ずつ, 6列) - 複数画面で共通利用
+  // ============================
+  const DEFAULT_MNEMONIC_WORD_COUNT = 24;
+
+  function buildMnemonicInputGrid(gridId, count) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    grid.innerHTML = "";
+    for (let i = 0; i < count; i++) {
+      const cell = document.createElement("div");
+      cell.className = "mnemonic-word-cell";
+      cell.innerHTML = `<span class="mnemonic-word-num">${i + 1}.</span>`;
+      const input = document.createElement("input");
+      input.className = "mnemonic-word-input";
+      input.type = "text";
+      input.autocomplete = "off";
+      input.autocapitalize = "off";
+      input.spellcheck = false;
+      input.dataset.idx = String(i);
+      cell.appendChild(input);
+      grid.appendChild(cell);
+    }
+  }
+
+  function getMnemonicWordInputs(gridId) {
+    return Array.from(document.querySelectorAll(`#${gridId} .mnemonic-word-input`));
+  }
+
+  function focusMnemonicWordInput(gridId, idx) {
+    const inputs = getMnemonicWordInputs(gridId);
+    if (inputs[idx]) {
+      inputs[idx].focus();
+      inputs[idx].select();
+    }
+  }
+
+  // フレーズ全体をどこかのマスに貼り付けたら、単語数に合わせてマス目を
+  // 作り直し、全マスへ一斉に振り分ける
+  function distributeMnemonicPaste(gridId, text) {
+    const words = text.trim().split(/[\s\u3000]+/).filter(Boolean);
+    if (words.length === 0) return false;
+
+    buildMnemonicInputGrid(gridId, words.length);
+    const inputs = getMnemonicWordInputs(gridId);
+    words.forEach((w, i) => {
+      if (inputs[i]) inputs[i].value = w;
+    });
+    wireMnemonicWordInputEvents(gridId);
+    focusMnemonicWordInput(gridId, Math.min(words.length, inputs.length) - 1);
+    return true;
+  }
+
+  function wireMnemonicWordInputEvents(gridId) {
+    getMnemonicWordInputs(gridId).forEach((input, idx) => {
+      input.onpaste = (e) => {
+        const text = e.clipboardData?.getData("text") ?? "";
+        // 複数単語(=フレーズ全体)の貼り付けだけ横取りして一斉に振り分ける。
+        // 単語1つだけの貼り付けは、そのマスへの通常の貼り付けに任せる。
+        if (text.trim().split(/[\s\u3000]+/).filter(Boolean).length > 1) {
+          e.preventDefault();
+          distributeMnemonicPaste(gridId, text);
+        }
+      };
+
+      input.onkeydown = (e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          focusMnemonicWordInput(gridId, idx + 1);
+        } else if (e.key === "Backspace" && input.value === "" && idx > 0) {
+          e.preventDefault();
+          focusMnemonicWordInput(gridId, idx - 1);
+        } else if (e.key === "ArrowRight" && input.selectionStart === input.value.length) {
+          focusMnemonicWordInput(gridId, idx + 1);
+        } else if (e.key === "ArrowLeft" && input.selectionStart === 0) {
+          focusMnemonicWordInput(gridId, idx - 1);
+        }
+      };
+    });
+  }
+
+  function readMnemonicFromGrid(gridId) {
+    return getMnemonicWordInputs(gridId)
+      .map((input) => input.value.trim())
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function resetMnemonicInputGrid(gridId) {
+    buildMnemonicInputGrid(gridId, DEFAULT_MNEMONIC_WORD_COUNT);
+    wireMnemonicWordInputEvents(gridId);
+  }
+
+  // ============================
+  // ニーモニックインポート画面(ようこそ画面から)
   // ============================
   document.getElementById("choose-mnemonic")?.addEventListener("click", () => {
+    resetMnemonicInputGrid("mnemonic-input-grid");
     showPage(mnemonicImportPage);
   });
 
   document.getElementById("back-welcome-mnemonic")?.addEventListener("click", () => showPage(welcomePage));
 
-  // 貼り付け・入力し終えたタイミングで、6単語ごとに改行して見やすく整形する
-  // (実際の値としては空白区切りに正規化されるだけなので、判定への影響はない)
-  function formatMnemonicTextarea(el) {
-    const words = el.value.trim().split(/[\s\u3000]+/).filter(Boolean);
-    if (words.length === 0) return;
-    const lines = [];
-    for (let i = 0; i < words.length; i += 6) {
-      lines.push(words.slice(i, i + 6).join(" "));
-    }
-    el.value = lines.join("\n");
-  }
-
-  const mnemonicInputEl = document.getElementById("mnemonic-input");
-  mnemonicInputEl?.addEventListener("paste", () => {
-    setTimeout(() => formatMnemonicTextarea(mnemonicInputEl), 0);
-  });
-  mnemonicInputEl?.addEventListener("blur", () => formatMnemonicTextarea(mnemonicInputEl));
-
   document.getElementById("import-mnemonic-btn")?.addEventListener("click", async () => {
-    const mnemonicPhrase = document.getElementById("mnemonic-input").value.trim();
+    const mnemonicPhrase = readMnemonicFromGrid("mnemonic-input-grid");
     const networkChoice = document.getElementById("mnemonic-network-select").value;
     const networkType = networkChoice === "testnet" ? NetworkType.TESTNET : NetworkType.MAINNET;
     const exportable = !!document.getElementById("mnemonic-import-exportable-toggle")?.checked;
@@ -326,7 +402,7 @@ window.addEventListener("load", async () => {
     setStatus("mnemonic-import-status", "インポート中...");
     try {
       await loginWithMnemonic(mnemonicPhrase, networkType, 0, exportable);
-      document.getElementById("mnemonic-input").value = "";
+      resetMnemonicInputGrid("mnemonic-input-grid");
       setStatus("mnemonic-import-status", "", "default");
       showPage(passwordSetupPage);
     } catch (e) {
@@ -2044,6 +2120,7 @@ window.addEventListener("load", async () => {
   // ============================
   document.getElementById("menu-add-mnemonic")?.addEventListener("click", () => {
     document.getElementById("add-mnemonic-index").value = nextMnemonicAccountIndex();
+    resetMnemonicInputGrid("add-mnemonic-input-grid");
     showPage(addAccountMnemonicPage);
   });
 
@@ -2227,6 +2304,7 @@ window.addEventListener("load", async () => {
 
   document.getElementById("add-account-mnemonic-choice")?.addEventListener("click", () => {
     document.getElementById("add-mnemonic-index").value = nextMnemonicAccountIndex();
+    resetMnemonicInputGrid("add-mnemonic-input-grid");
     showPage(addAccountMnemonicPage);
   });
 
@@ -2235,7 +2313,7 @@ window.addEventListener("load", async () => {
   });
 
   document.getElementById("add-mnemonic-submit")?.addEventListener("click", async () => {
-    const mnemonicPhrase = document.getElementById("add-mnemonic-input").value.trim();
+    const mnemonicPhrase = readMnemonicFromGrid("add-mnemonic-input-grid");
     const accountIndex = parseInt(document.getElementById("add-mnemonic-index").value, 10) || 0;
     const label = document.getElementById("add-mnemonic-label").value;
 
@@ -2247,7 +2325,7 @@ window.addEventListener("load", async () => {
     setStatus("add-mnemonic-status", "追加中...");
     try {
       await addAccountFromMnemonic(mnemonicPhrase, accountIndex, label);
-      document.getElementById("add-mnemonic-input").value = "";
+      resetMnemonicInputGrid("add-mnemonic-input-grid");
       document.getElementById("add-mnemonic-label").value = "";
       updateSwitcherVisibility();
       goHome();
