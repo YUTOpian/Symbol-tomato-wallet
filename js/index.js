@@ -738,7 +738,15 @@ window.addEventListener("load", async () => {
     setStatus("metadata-status", "登録・更新中...");
     try {
       const hash = await setMetadata(type, targetId, key, value);
-      setStatus("metadata-status", `✅ リクエストを送信しました。Hash: ${hash}`, "success");
+      setStatus("metadata-status", "", "default");
+      trackOutgoingTransaction({
+        hash,
+        label: "メタデータ登録の追跡",
+        recipient: key,
+        targetLabel: "キー",
+        mosaicLabel: `対象: ${type === "namespace" ? "ネームスペース" : type === "mosaic" ? "モザイク" : "アドレス"}`,
+        containerId: "metadata-tracking",
+      });
       await loadOwnMetadataList();
     } catch (e) {
       console.error("setMetadata error:", e);
@@ -810,9 +818,16 @@ window.addEventListener("load", async () => {
       });
       setStatus(
         "multisig-settings-status",
-        `✅ 提案を送信しました。Hash: ${hash}\n追加した連署者は、それぞれ「署名」タブから承認してください。`,
+        "追加した連署者は、それぞれ「署名」タブから承認してください。",
         "success"
       );
+      trackOutgoingTransaction({
+        hash,
+        label: "マルチシグ設定の追跡",
+        recipient: `追加${additionAddresses.length}件 / 削除${deletionAddresses.length}件`,
+        targetLabel: "変更内容",
+        containerId: "multisig-settings-tracking",
+      });
       document.getElementById("multisig-add-addresses").value = "";
       document.getElementById("multisig-remove-addresses").value = "";
     } catch (e) {
@@ -1003,9 +1018,9 @@ window.addEventListener("load", async () => {
 
       trackOutgoingTransaction({
         hash,
-        recipient: `${rows.length}件の宛先（複数送信）`,
-        mosaicLabel: "複数送信",
-        amountText: "",
+        label: "複数送信の追跡",
+        recipient: `${rows.length}件`,
+        targetLabel: "送金先件数",
         containerId: "multisend-tracking",
       });
     } catch (e) {
@@ -1091,7 +1106,14 @@ window.addEventListener("load", async () => {
         metadataKey,
         metadataValue,
       });
-      setStatus("apostille-create-status", `✅ 作成しました。Hash: ${hash}`, "success");
+      setStatus("apostille-create-status", "", "default");
+      trackOutgoingTransaction({
+        hash,
+        label: "アポスティーユ作成の追跡",
+        recipient: file.name,
+        targetLabel: "ファイル",
+        containerId: "apostille-tracking",
+      });
     } catch (e) {
       console.error("createApostille error:", e);
       setStatus("apostille-create-status", e.message || "作成に失敗しました。", "error");
@@ -1617,7 +1639,14 @@ window.addEventListener("load", async () => {
     setStatus("root-namespace-status", "登録中...");
     try {
       const hash = await registerRootNamespace(name, duration);
-      setStatus("root-namespace-status", `✅ 登録リクエストを送信しました。Hash: ${hash}`, "success");
+      setStatus("root-namespace-status", "", "default");
+      trackOutgoingTransaction({
+        hash,
+        label: "ネームスペース登録の追跡（ルート）",
+        recipient: name,
+        targetLabel: "ネームスペース名",
+        containerId: "namespace-tracking",
+      });
       document.getElementById("root-namespace-name").value = "";
       document.getElementById("root-namespace-duration").value = "";
       updateRootNamespaceFeeEstimate();
@@ -1673,7 +1702,14 @@ window.addEventListener("load", async () => {
     setStatus("sub-namespace-status", "登録中...");
     try {
       const hash = await registerSubNamespace(parentId, subName);
-      setStatus("sub-namespace-status", `✅ 登録リクエストを送信しました。Hash: ${hash}`, "success");
+      setStatus("sub-namespace-status", "", "default");
+      trackOutgoingTransaction({
+        hash,
+        label: "ネームスペース登録の追跡（サブ）",
+        recipient: subName,
+        targetLabel: "ネームスペース名",
+        containerId: "namespace-tracking",
+      });
       document.getElementById("sub-namespace-name").value = "";
       updateSubNamespaceFeeEstimate();
       await loadOwnedNamespaces();
@@ -1913,7 +1949,12 @@ window.addEventListener("load", async () => {
     setStatus("mosaic-create-status", "作成中...");
     try {
       const hash = await createMosaic(readMosaicFormOptions());
-      setStatus("mosaic-create-status", `✅ 作成リクエストを送信しました。Hash: ${hash}`, "success");
+      setStatus("mosaic-create-status", "", "default");
+      trackOutgoingTransaction({
+        hash,
+        label: "モザイク作成の追跡",
+        containerId: "mosaic-tracking",
+      });
       await loadOwnedMosaicsWithAlias();
     } catch (e) {
       console.error("createMosaic error:", e);

@@ -1,16 +1,22 @@
 // txStatusTracker.js
-// 「送りっぱなし」をやめるための、送金の着金確認トラッカー。
+// 「送りっぱなし」をやめるための、着金・承認確認トラッカー。
 //
 // ノードへアナウンスした後、そのトランザクションが
 //   ノード受理 → 未承認プール → ブロック承認(確定)
-// のどの段階にあるかをリアルタイムに追跡し、#tx-tracking / #multisend-tracking に表示する。
+// のどの段階にあるかをリアルタイムに追跡し、機能ごとの追跡欄に表示する。
+// 送金・複数送信・モザイク作成・ネームスペース登録・メタデータ登録・
+// マルチシグ設定・アポスティーユ作成など、アナウンスを伴うあらゆる機能から呼べる
+// 共通モジュール。カードのタイトルは呼び出し側が指定する(例:「送金の追跡」
+// 「モザイク作成の追跡」)。
 //
 // WebSocket(confirmedAdded/unconfirmedAdded)を主に使いつつ、
 // ポーリング(/transactionStatus/{hash})でも並行して確認することで、
 // WSが切断・再接続中でも取りこぼさないようにしている。
 //
 // 表示は直近3件のみ、それ以上は「もっと見る」で直近10件まで展開する。
-// 直近の記録はlocalStorageに保存し、リロード後も表示・追跡を継続する。
+// 送金(#tx-tracking)のみ、直近の記録をlocalStorageに保存しリロード後も
+// 表示・追跡を継続する。それ以外の機能はリロードで消えてよい一時的な
+// 表示として扱う(セッション内のみ)。
 
 import { appState, NetworkType } from "./config.js";
 import { addCallback } from "./ws.js";
@@ -21,14 +27,17 @@ const VISIBLE_COLLAPSED = 3;
 const MAX_STORED = 10;
 const STORAGE_PREFIX = "tomatoWallet:txTracking:";
 
-// containerId ごとの状態: { records: [...], expanded: boolean }
+// リロードをまたいで保存・復元する対象のコンテナ(送金のみ)
+const PERSISTED_CONTAINER_IDS = ["tx-tracking"];
+
+// containerId ごとの状態: { records: [...], expanded: boolean, persist: boolean }
 const trackerState = {};
 
 // 二重にポーリング/WS処理を開始しないための管理(hash単位)
 const activeHashes = new Set();
 
 /* ============================================================
-   永続化
+   永続化(送金のみ)
 ============================================================ */
 function storageKey(containerId) {
   return STORAGE_PREFIX + containerId;
@@ -55,7 +64,12 @@ function saveStoredRecords(containerId, records) {
 
 function getState(containerId) {
   if (!trackerState[containerId]) {
-    trackerState[containerId] = { records: loadStoredRecords(containerId), expanded: false };
+    const persist = PERSISTED_CONTAINER_IDS.includes(containerId);
+    trackerState[containerId] = {
+      records: persist ? loadStoredRecords(containerId) : [],
+      expanded: false,
+      persist,
+    };
   }
   return trackerState[containerId];
 }
@@ -97,13 +111,13 @@ function buildSteps(state) {
   return [
     stepHtml("ノードへ送信", s1),
     stepHtml("未承認プールで検知", s2),
-    stepHtml("ブロックで承認(着金確定)", s3),
+    stepHtml("ブロックで承認(確定)", s3),
   ].join("");
 }
 
 function footerFor(state, detail) {
   if (state === "confirmed") {
-    return `<div class="track-footer track-footer-ok">✅ ブロックに取り込まれ、着金が確定しました。</div>`;
+    return `<div class="track-footer track-footer-ok">✅ ブロックに取り込まれ、確定しました。</div>`;
   }
   if (state === "failed") {
     return `<div class="track-footer track-footer-fail">✖ トランザクションが失敗しました${detail ? `（${detail}）` : ""}。</div>`;
@@ -115,16 +129,25 @@ function footerFor(state, detail) {
 }
 
 function cardHtml(record) {
-  const { hash, recipient, mosaicLabel, amountText, state, detail } = record;
+  const { hash, recipient, targetLabel, mosaicLabel, amountText, state, detail, label } = record;
+  const title = label || "送金の追跡";
+
+  const targetLine = recipient
+    ? `<div class="track-card-sub">${targetLabel || "宛先"}: <span class="track-mono">${recipient}</span></div>`
+    : "";
+  const detailLine = (mosaicLabel || amountText)
+    ? `<div class="track-card-sub">${mosaicLabel || ""} ${amountText || ""}</div>`
+    : "";
+
   return `
     <div class="track-card">
       <div class="track-card-head">
-        <span class="track-card-title">送金の追跡</span>
+        <span class="track-card-title">${title}</span>
         <a class="track-card-link" href="${getExplorerUrl(hash)}" target="_blank" rel="noopener">Explorerで見る ↗</a>
       </div>
       <div class="track-card-sub">Hash: <span class="track-mono">${hash}</span></div>
-      <div class="track-card-sub">宛先: <span class="track-mono">${recipient}</span></div>
-      <div class="track-card-sub">${mosaicLabel} ${amountText}</div>
+      ${targetLine}
+      ${detailLine}
       <div class="track-steps">${buildSteps(state)}</div>
       ${footerFor(state, detail)}
     </div>
@@ -176,7 +199,7 @@ function upsertRecord(containerId, hash, patch) {
     Object.assign(record, patch);
   }
 
-  saveStoredRecords(containerId, st.records);
+  if (st.persist) saveStoredRecords(containerId, st.records);
   renderList(containerId);
   return record;
 }
@@ -259,17 +282,33 @@ function beginTracking({ hash, containerId, startedAt }) {
 }
 
 /* ============================================================
-   出金トランザクションの追跡を開始する
-   opts: { hash, recipient, mosaicLabel, amountText, containerId }
+   アナウンス済みトランザクションの追跡を開始する
+   opts:
+     hash          : トランザクションハッシュ(必須)
+     containerId   : 表示先の要素id(省略時 "tx-tracking")
+     label         : カードタイトル(省略時 "送金の追跡")
+     recipient     : 対象の説明(宛先アドレス、ネームスペース名など。省略可)
+     targetLabel   : recipientの行ラベル(省略時 "宛先")
+     mosaicLabel, amountText : 補足の1行(モザイク名・数量など)
 ============================================================ */
 export function trackOutgoingTransaction(opts) {
-  const { hash, recipient, mosaicLabel = "", amountText = "", containerId = "tx-tracking" } = opts;
+  const {
+    hash,
+    recipient,
+    targetLabel,
+    mosaicLabel = "",
+    amountText = "",
+    containerId = "tx-tracking",
+    label,
+  } = opts;
   if (!hash) return;
 
   const record = upsertRecord(containerId, hash, {
     recipient,
+    targetLabel,
     mosaicLabel,
     amountText,
+    label,
     state: "announced",
   });
 
@@ -277,7 +316,7 @@ export function trackOutgoingTransaction(opts) {
 }
 
 /* ============================================================
-   リロード後の復元:
+   リロード後の復元(送金のみ):
    保存済みの記録をすぐ描画し、まだ確定していないものは追跡を再開する。
    NODE準備が整うまで(ログイン完了まで)少し待ってから追跡を再開する。
 ============================================================ */
@@ -304,4 +343,4 @@ function resumeFromStorage(containerId) {
   });
 }
 
-["tx-tracking", "multisend-tracking"].forEach(resumeFromStorage);
+PERSISTED_CONTAINER_IDS.forEach(resumeFromStorage);
