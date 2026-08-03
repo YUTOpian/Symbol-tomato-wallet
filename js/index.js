@@ -20,6 +20,7 @@ import {
 import {
   connectWithSSS,
   loginWithMnemonic,
+  loginWithPrivateKey,
   getVaultMode,
   restorePlainVault,
   unlockVault,
@@ -113,6 +114,7 @@ window.addEventListener("load", async () => {
   const welcomePage = document.getElementById("welcome-page");
   const createNewPage = document.getElementById("create-new-page");
   const mnemonicImportPage = document.getElementById("mnemonic-import-page");
+  const privatekeyImportPage = document.getElementById("privatekey-import-page");
   const passwordSetupPage = document.getElementById("password-setup-page");
   const unlockPage = document.getElementById("unlock-page");
   const accountPage = document.getElementById("account-page");
@@ -312,6 +314,37 @@ window.addEventListener("load", async () => {
     } catch (e) {
       console.error("loginWithMnemonic error:", e);
       setStatus("mnemonic-import-status", e.message || "インポートに失敗しました。", "error");
+    }
+  });
+
+  // ============================
+  // 秘密鍵インポート画面へ
+  // ============================
+  document.getElementById("choose-privatekey")?.addEventListener("click", () => {
+    showPage(privatekeyImportPage);
+  });
+
+  document.getElementById("back-welcome-privatekey")?.addEventListener("click", () => showPage(welcomePage));
+
+  document.getElementById("import-privatekey-btn")?.addEventListener("click", async () => {
+    const privateKeyHex = document.getElementById("privatekey-import-input").value.trim();
+    const networkChoice = document.getElementById("privatekey-import-network-select").value;
+    const networkType = networkChoice === "testnet" ? NetworkType.TESTNET : NetworkType.MAINNET;
+
+    if (!privateKeyHex) {
+      setStatus("privatekey-import-status", "秘密鍵を入力してください。", "error");
+      return;
+    }
+
+    setStatus("privatekey-import-status", "インポート中...");
+    try {
+      await loginWithPrivateKey(privateKeyHex, networkType);
+      document.getElementById("privatekey-import-input").value = "";
+      setStatus("privatekey-import-status", "", "default");
+      showPage(passwordSetupPage);
+    } catch (e) {
+      console.error("loginWithPrivateKey error:", e);
+      setStatus("privatekey-import-status", e.message || "インポートに失敗しました。", "error");
     }
   });
 

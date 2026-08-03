@@ -377,6 +377,30 @@ export async function loginWithMnemonic(mnemonicPhrase, networkType, accountInde
 }
 
 /* ============================================================
+   秘密鍵ログイン(初回ログイン用。ニーモニックを経由せず、
+   64桁の秘密鍵を直接インポートしてログインする)
+============================================================ */
+export async function loginWithPrivateKey(privateKeyHex, networkType, label) {
+  const normalized = privateKeyHex.trim().toUpperCase().replace(/^0X/, "");
+  if (!/^[0-9A-F]{64}$/.test(normalized)) {
+    throw new Error("秘密鍵の形式が正しくありません（64桁の16進数を入力してください）");
+  }
+
+  appState.networkType = networkType;
+
+  const id = crypto.randomUUID();
+  upsertAccount({
+    id,
+    label: label?.trim() || "インポートした鍵",
+    source: "privateKey",
+    privateKeyHex: normalized,
+    hidden: false,
+  });
+
+  await switchToAccount(id);
+}
+
+/* ============================================================
    アカウント追加（ログイン済みの状態で使う。SSS利用中でも呼べる）
 ============================================================ */
 function isDuplicatePrivateKey(privateKeyHex) {
