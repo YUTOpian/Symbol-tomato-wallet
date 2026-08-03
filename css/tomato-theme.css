@@ -407,6 +407,43 @@ select:focus {
   to { opacity: 1; }
 }
 
+/* ============================================================
+   新規作成: ニーモニックを6語ずつのグリッドで表示する
+============================================================ */
+.mnemonic-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #1c110d;
+  border: 1px solid var(--tomato-card-border);
+}
+
+.mnemonic-word {
+  font-size: 13px;
+  color: var(--tomato-cream);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mnemonic-word b {
+  color: var(--tomato-text-muted);
+  font-weight: normal;
+  margin-right: 3px;
+}
+
+@media (max-width: 480px) {
+  .mnemonic-grid {
+    gap: 5px 4px;
+    padding: 10px 6px;
+  }
+  .mnemonic-word {
+    font-size: 11px;
+  }
+}
+
 /* ------------------------------------------------------------
    ポップアップ通知もトマト色に
 ------------------------------------------------------------ */
