@@ -1071,9 +1071,9 @@
   </div>
 
   <!-- ============================================================
-       アポスティーユメニュー
+       アポスティーユ(作成・監査・承認・履歴をタブで切り替え)
   ============================================================ -->
-  <div id="apostille-menu-page" class="page">
+  <div id="apostille-page" class="page">
     <div class="card">
       <h2>アポスティーユ</h2>
       <button id="back-advanced-apostille-menu" class="button-primary">← 戻る</button>
@@ -1082,92 +1082,65 @@
         ファイルのハッシュ値をブロックチェーン上に記録して、存在証明・改ざん検知を行う機能です。
       </p>
 
-      <div class="settings-menu">
-        <button id="menu-apostille-create" class="settings-menu-item">
-          🆕 作成
-        </button>
-        <button id="menu-apostille-verify" class="settings-menu-item">
-          🔍 監査・承認
-        </button>
-        <button id="menu-apostille-history" class="settings-menu-item">
-          🕒 履歴
-        </button>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-apostille-tab="create">🆕 作成</button>
+        <button class="tab-btn" data-apostille-tab="verify">🔍 監査・承認</button>
+        <button class="tab-btn" data-apostille-tab="history">🕒 履歴</button>
       </div>
-    </div>
-  </div>
 
-  <!-- ============================================================
-       アポスティーユ作成
-  ============================================================ -->
-  <div id="apostille-create-page" class="page">
-    <div class="card">
-      <h2>アポスティーユ作成</h2>
-      <button id="back-apostille-menu-create" class="button-primary">← 戻る</button>
+      <!-- ----- 作成タブ ----- -->
+      <div class="tab-panel" data-apostille-panel="create">
+        <p><b>アポスティーユファイル選択：</b></p>
+        <input id="apostille-create-file" class="input-box" type="file">
+        <div id="apostille-create-hash" style="font-size:12px;color:#94a3b8;word-break:break-all;"></div>
 
-      <p><b>アポスティーユファイル選択：</b></p>
-      <input id="apostille-create-file" class="input-box" type="file">
-      <div id="apostille-create-hash" style="font-size:12px;color:#94a3b8;word-break:break-all;"></div>
+        <p><b>所有者(承認者)割り当て（任意）：</b></p>
+        <input id="apostille-owner-address" class="input-box" placeholder="空欄なら自分自身のアドレス">
 
-      <p><b>所有者(承認者)割り当て（任意）：</b></p>
-      <input id="apostille-owner-address" class="input-box" placeholder="空欄なら自分自身のアドレス">
+        <p><b>メタデータ追加（任意）：</b></p>
+        <input id="apostille-metadata-key" class="input-box" placeholder="メタデータキー">
+        <input id="apostille-metadata-value" class="input-box" placeholder="値（空欄ならファイルハッシュを使用）">
 
-      <p><b>メタデータ追加（任意）：</b></p>
-      <input id="apostille-metadata-key" class="input-box" placeholder="メタデータキー">
-      <input id="apostille-metadata-value" class="input-box" placeholder="値（空欄ならファイルハッシュを使用）">
+        <button id="apostille-create-btn" class="button-primary">アポスティーユ作成</button>
+        <div id="apostille-create-status"></div>
+      </div>
 
-      <button id="apostille-create-btn" class="button-primary">アポスティーユ作成</button>
-      <div id="apostille-create-status"></div>
-    </div>
-  </div>
+      <!-- ----- 監査・承認タブ ----- -->
+      <div class="tab-panel" data-apostille-panel="verify" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          監査したいファイルをアップロードすると、対象アドレスの取引履歴から一致する証明トランザクションを検索します
+          （直近の取引のみが検索対象です）。
+        </p>
 
-  <!-- ============================================================
-       アポスティーユ 監査・承認
-  ============================================================ -->
-  <div id="apostille-verify-page" class="page">
-    <div class="card">
-      <h2>監査・承認</h2>
-      <button id="back-apostille-menu-verify" class="button-primary">← 戻る</button>
+        <p><b>監査するファイル：</b></p>
+        <input id="apostille-verify-file" class="input-box" type="file">
+        <div id="apostille-verify-hash" style="font-size:12px;color:#94a3b8;word-break:break-all;"></div>
 
-      <p style="font-size:13px;color:#94a3b8;">
-        監査したいファイルをアップロードすると、対象アドレスの取引履歴から一致する証明トランザクションを検索します
-        （直近の取引のみが検索対象です）。
-      </p>
+        <p><b>検索対象アドレス（任意）：</b></p>
+        <input id="apostille-verify-address" class="input-box" placeholder="空欄なら自分自身のアドレス">
 
-      <p><b>監査するファイル：</b></p>
-      <input id="apostille-verify-file" class="input-box" type="file">
-      <div id="apostille-verify-hash" style="font-size:12px;color:#94a3b8;word-break:break-all;"></div>
+        <button id="apostille-verify-btn" class="button-primary">検証する</button>
+        <div id="apostille-verify-status"></div>
+        <div id="apostille-verify-result"></div>
+      </div>
 
-      <p><b>検索対象アドレス（任意）：</b></p>
-      <input id="apostille-verify-address" class="input-box" placeholder="空欄なら自分自身のアドレス">
+      <!-- ----- 履歴タブ ----- -->
+      <div class="tab-panel" data-apostille-panel="history" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          ファイルをアップロードすると、そのファイル(ハッシュ)に関する証明トランザクションの変遷を古い順に表示します。
+        </p>
 
-      <button id="apostille-verify-btn" class="button-primary">検証する</button>
-      <div id="apostille-verify-status"></div>
-      <div id="apostille-verify-result"></div>
-    </div>
-  </div>
+        <p><b>ファイル：</b></p>
+        <input id="apostille-history-file" class="input-box" type="file">
+        <div id="apostille-history-hash" style="font-size:12px;color:#94a3b8;word-break:break-all;"></div>
 
-  <!-- ============================================================
-       アポスティーユ 履歴
-  ============================================================ -->
-  <div id="apostille-history-page" class="page">
-    <div class="card">
-      <h2>履歴</h2>
-      <button id="back-apostille-menu-history" class="button-primary">← 戻る</button>
+        <p><b>検索対象アドレス（任意）：</b></p>
+        <input id="apostille-history-address" class="input-box" placeholder="空欄なら自分自身のアドレス">
 
-      <p style="font-size:13px;color:#94a3b8;">
-        ファイルをアップロードすると、そのファイル(ハッシュ)に関する証明トランザクションの変遷を古い順に表示します。
-      </p>
-
-      <p><b>ファイル：</b></p>
-      <input id="apostille-history-file" class="input-box" type="file">
-      <div id="apostille-history-hash" style="font-size:12px;color:#94a3b8;word-break:break-all;"></div>
-
-      <p><b>検索対象アドレス（任意）：</b></p>
-      <input id="apostille-history-address" class="input-box" placeholder="空欄なら自分自身のアドレス">
-
-      <button id="apostille-history-btn" class="button-primary">履歴を検索</button>
-      <div id="apostille-history-status"></div>
-      <div id="apostille-history-list"></div>
+        <button id="apostille-history-btn" class="button-primary">履歴を検索</button>
+        <div id="apostille-history-status"></div>
+        <div id="apostille-history-list"></div>
+      </div>
     </div>
   </div>
 
