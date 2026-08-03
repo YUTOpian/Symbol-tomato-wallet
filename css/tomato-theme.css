@@ -444,6 +444,61 @@ select:focus {
   }
 }
 
+/* ============================================================
+   ニーモニックインポート: 1単語ずつの入力マス(6列)
+============================================================ */
+.mnemonic-input-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px 6px;
+}
+
+.mnemonic-word-cell {
+  display: flex;
+  align-items: center;
+  background: #1c110d;
+  border: 1px solid var(--tomato-card-border);
+  border-radius: 6px;
+  padding: 0 4px 0 6px;
+}
+
+.mnemonic-word-cell:focus-within {
+  border-color: var(--tomato-red-light);
+  box-shadow: 0 0 0 2px rgba(224, 67, 43, 0.25);
+}
+
+.mnemonic-word-num {
+  font-size: 10.5px;
+  color: var(--tomato-text-muted);
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.mnemonic-word-input {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--tomato-cream);
+  font-size: 13px;
+  padding: 7px 2px;
+  outline: none;
+}
+
+@media (max-width: 480px) {
+  .mnemonic-input-grid {
+    gap: 5px 4px;
+  }
+  .mnemonic-word-num {
+    width: 13px;
+    font-size: 9px;
+  }
+  .mnemonic-word-input {
+    font-size: 11.5px;
+    padding: 6px 1px;
+  }
+}
+
 /* ------------------------------------------------------------
    ポップアップ通知もトマト色に
 ------------------------------------------------------------ */
