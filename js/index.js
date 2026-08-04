@@ -677,6 +677,25 @@ window.addEventListener("load", async () => {
     }
   }
 
+  // NFTDriveEX形式: "{symbol:アドレス}" というプレーンテキストをそのままQR化する
+  async function generateNftDriveExQR(address, elId) {
+    const qr = document.getElementById(elId);
+    if (!qr) return;
+    qr.innerHTML = "読み込み中...";
+
+    try {
+      const content = `{symbol:${address}}`;
+      const dataUrl = await QRCode.toDataURL(content, {
+        width: 180,
+        margin: 1,
+      });
+      qr.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
+    } catch (e) {
+      console.error("NFTDriveEX用QR生成失敗", e);
+      qr.innerHTML = "QR生成に失敗しました";
+    }
+  }
+
   document.getElementById("receive-btn")?.addEventListener("click", async () => {
     showPage(receivePage);
     const address = appState.currentAddress.toString();
@@ -686,6 +705,7 @@ window.addEventListener("load", async () => {
     await Promise.all([
       generateReceiveQR("Symbol Simple Wallet", address, "receive-qrcode-symbol"),
       generateReceiveTransactionQR(address, "receive-qrcode-exym"),
+      generateNftDriveExQR(address, "receive-qrcode-nftdriveex"),
     ]);
   });
 
