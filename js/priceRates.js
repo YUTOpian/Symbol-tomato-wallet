@@ -36,8 +36,10 @@ export async function getXymJpyRate() {
 }
 
 /* ============================================================
-   XYM/USD (Gate.io, USDTペアをUSD相当として扱う)
-   https://api.gateio.ws/api/v4/spot/tickers?currency_pair=XYM_USDT
+   XYM/USD
+   まずGate.io(XYM_USDTペア)を試す。Gate.ioはブラウザからの
+   直接アクセスをCORSで許可していないことがあるため、失敗した場合は
+   CoinGecko(ブラウザ向けCORS対応済み)にフォールバックする。
 ============================================================ */
 export async function getXymUsdRate() {
   if (usdCache.rate != null && Date.now() - usdCache.ts < CACHE_MS) {
@@ -53,7 +55,19 @@ export async function getXymUsdRate() {
     usdCache = { rate: last, ts: Date.now() };
     return last;
   } catch (e) {
-    console.warn("Gate.io XYM/USDTレート取得失敗:", e);
+    console.warn("Gate.io XYM/USDTレート取得失敗(CORSでブロックされている可能性)。CoinGeckoにフォールバックします:", e);
+  }
+
+  try {
+    const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=symbol&vs_currencies=usd");
+    const json = await res.json();
+    const last = Number(json?.symbol?.usd);
+    if (!Number.isFinite(last) || last <= 0) throw new Error("invalid rate");
+
+    usdCache = { rate: last, ts: Date.now() };
+    return last;
+  } catch (e) {
+    console.warn("CoinGecko XYM/USDレート取得も失敗:", e);
     return usdCache.rate;
   }
 }
