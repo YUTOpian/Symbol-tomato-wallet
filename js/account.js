@@ -5,6 +5,7 @@ import { appState } from "./config.js";
 import { setText, setStatus } from "./ui.js";
 import { formatMosaicAmount } from "./utils.js";
 import { addCallback } from "./ws.js";
+import { getXymJpyRate, getXymUsdRate } from "./priceRates.js";
 
 function toHexMosaicId(id) {
   if (typeof id === "string") {
@@ -14,6 +15,33 @@ function toHexMosaicId(id) {
     .toString(16)
     .toUpperCase()
     .padStart(16, "0");
+}
+
+// 換算表示の非同期更新が古い結果で上書きしないようにするための管理
+let balanceFiatRequestId = 0;
+
+async function updateBalanceFiatDisplay(xymAmount, baseText) {
+  const requestId = ++balanceFiatRequestId;
+
+  const [jpyRate, usdRate] = await Promise.all([getXymJpyRate(), getXymUsdRate()]);
+  if (requestId !== balanceFiatRequestId) return; // その間に新しい残高取得が走っていれば古い結果は捨てる
+
+  const el = document.getElementById("account-balance");
+  if (!el) return;
+
+  const parts = [];
+  if (jpyRate != null) {
+    const jpy = Math.round(xymAmount * jpyRate);
+    parts.push(`${jpy.toLocaleString("ja-JP")}円`);
+  }
+  if (usdRate != null) {
+    const usd = xymAmount * usdRate;
+    parts.push(`${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}ドル`);
+  }
+
+  if (parts.length > 0) {
+    el.textContent = `${baseText} (${parts.join(" / ")})`;
+  }
 }
 
 export async function refreshAccount() {
@@ -271,9 +299,15 @@ export async function refreshAccount() {
     const xymId = appState.networkType === 152 ? "72C0212E67A08BCE" : "6BED913FA20223F8";
     const xym = appState.mosaicInfo[xymId];
 
-    document.getElementById("account-balance").textContent = xym
+    const xymBalanceText = xym
       ? `${formatMosaicAmount(xym.amount, xym.divisibility)} XYM`
       : "0.000 XYM";
+    document.getElementById("account-balance").textContent = xymBalanceText;
+
+    // 円・ドル換算(bitbank / Gate.io)。取得に時間がかかる・失敗することが
+    // あるため、まずXYM残高だけ即表示し、換算額は取れ次第あとから追記する。
+    const xymAmountNumber = xym ? Number(xym.amount) / (10 ** xym.divisibility) : 0;
+    updateBalanceFiatDisplay(xymAmountNumber, xymBalanceText);
 
     // 送金画面で選択中のモザイクがあれば、保有数量の表示もここで同期する
     // (着金などでmosaicInfoが更新された時、選択中の残高表示が古いまま
