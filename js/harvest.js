@@ -21,6 +21,7 @@ import { signPayloadLocally, estimateFeeFromTx } from "./auth.js";
 import { requestTxConfirmation, formatTxDeadline, TxCancelledError } from "./txConfirm.js";
 import { trackOutgoingTransaction } from "./txStatusTracker.js";
 import { addCallback } from "./ws.js";
+import { hexToBytes, formatMosaicAmount } from "./utils.js";
 
 /* ============================================================
    委任先ノード候補の読み込み（NodeWatchから取得しプルダウンに反映）
@@ -664,4 +665,98 @@ export function initLiveHarvestStatusRefresh(address) {
   addCallback(`confirmedAdded/${address}`, () => {
     checkHarvestStatus();
   });
+}
+
+/* ============================================================
+   ハーベスト報酬(自分が実際にハーベストしたブロックと、その報酬)
+   ・ブロック一覧: GET /blocks?signerPublicKey={自分}
+   ・報酬額: 各ブロックの GET /blocks/{height}/statements のレシートのうち
+     Harvest_Fee(type=8515)で自分のアドレス宛のものを合算
+   ※ レシート取得はブロックごとに個別リクエストが必要なため、
+     直近pageSize件のみを対象にする
+============================================================ */
+const HARVEST_FEE_RECEIPT_TYPE = 8515; // Harvest_Fee
+
+function normalizeReceiptAddress(addr) {
+  if (!addr || typeof addr !== "string") return null;
+  if (addr.length === 39) return addr.toUpperCase();
+  if (addr.length === 48 && /^[0-9A-Fa-f]+$/.test(addr) && appState.sdkSymbol) {
+    try {
+      return new appState.sdkSymbol.Address(hexToBytes(addr)).toString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 } = {}) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.textContent = "読み込み中...";
+
+  try {
+    const pubKey = appState.currentPubKey?.toString();
+    if (!pubKey || !appState.NODE) throw new Error("未ログインです");
+
+    const params = new URLSearchParams({
+      signerPublicKey: pubKey,
+      order: "desc",
+      pageSize,
+    });
+    const res = await fetch(`${appState.NODE}/blocks?${params}`);
+    const json = await res.json();
+    const blocks = json.data ?? [];
+
+    if (blocks.length === 0) {
+      el.innerHTML = `<div style="color:#94a3b8;">ハーベストしたブロックはまだありません</div>`;
+      return;
+    }
+
+    const myAddress = appState.currentAddress.toString();
+
+    const rows = await Promise.all(
+      blocks.map(async (item) => {
+        const b = item.block;
+        const height = b.height;
+        let rewardText = "---";
+
+        try {
+          const stRes = await fetch(`${appState.NODE}/blocks/${height}/statements`);
+          const stJson = await stRes.json();
+          const receipts = stJson.statement?.receipts ?? [];
+
+          const totalAtomic = receipts
+            .filter((r) => Number(r.type) === HARVEST_FEE_RECEIPT_TYPE)
+            .filter((r) => normalizeReceiptAddress(r.targetAddress) === myAddress)
+            .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
+
+          rewardText = formatMosaicAmount(totalAtomic, 6) + " XYM";
+        } catch (e) {
+          console.warn("ハーベスト報酬レシート取得失敗:", height, e);
+        }
+
+        const timeMs = b.timestamp && appState.epochAdjustment
+          ? Number(appState.epochAdjustment) * 1000 + Number(b.timestamp)
+          : null;
+
+        return { height, rewardText, timeMs };
+      })
+    );
+
+    el.innerHTML = rows
+      .map(
+        (r) => `
+      <div class="harvest-history-item">
+        <div>高さ: ${r.height}</div>
+        <div>報酬: ${r.rewardText}</div>
+        ${r.timeMs ? `<div>${new Date(r.timeMs).toLocaleString("ja-JP", { hour12: false })}</div>` : ""}
+      </div>
+    `
+      )
+      .join("");
+  } catch (e) {
+    console.error("loadHarvestRewards error:", e);
+    el.textContent = "取得に失敗しました";
+  }
 }

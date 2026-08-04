@@ -8,7 +8,7 @@ import { initWebSocket } from "./ws.js";
 import { selectNode } from "./nodeSelector.js";
 import { showPopup } from "./utils.js";
 import { setStatus } from "./ui.js";
-import { checkHarvestStatus, startHarvest, stopHarvest, loadHarvestNodeCandidates, loadHarvestHistory } from "./harvest.js";
+import { checkHarvestStatus, startHarvest, stopHarvest, loadHarvestNodeCandidates, loadHarvestHistory, loadHarvestRewards } from "./harvest.js";
 import {
   showCurrentNode,
   loadNodeSettingsCandidates,
@@ -2567,25 +2567,6 @@ window.addEventListener("load", async () => {
   // ============================
   // タブ切替
   // ============================
-  const tabToken = document.getElementById("tab-token");
-  const tabActivity = document.getElementById("tab-activity");
-  const tokenContent = document.getElementById("token-content");
-  const activityContent = document.getElementById("activity-content");
-
-  tabToken?.addEventListener("click", () => {
-    tabToken.classList.add("active");
-    tabActivity.classList.remove("active");
-    tokenContent.style.display = "block";
-    activityContent.style.display = "none";
-  });
-
-  tabActivity?.addEventListener("click", () => {
-    tabActivity.classList.add("active");
-    tabToken.classList.remove("active");
-    tokenContent.style.display = "none";
-    activityContent.style.display = "block";
-  });
-
   // 汎用タブ切替(モザイク・ネームスペース・メタデータ画面で使う)
   function setupTabGroup(tabIds, contentIds, onShow = []) {
     tabIds.forEach((tabId, i) => {
@@ -2599,6 +2580,12 @@ window.addEventListener("load", async () => {
       });
     });
   }
+
+  setupTabGroup(
+    ["tab-token", "tab-activity", "tab-harvest-reward"],
+    ["token-content", "activity-content", "harvest-reward-content"],
+    [null, null, () => loadHarvestRewards()]
+  );
 
   setupTabGroup(
     ["mosaic-tab-owned", "mosaic-tab-create", "mosaic-tab-supply"],
@@ -2634,4 +2621,21 @@ window.addEventListener("load", async () => {
     navigator.clipboard.writeText(appState.currentAddress.toString());
     showPopup("アドレスをコピーしました");
   });
+
+  // ============================
+  // 先頭に戻るボタン(下にスクロールすると表示)
+  // ============================
+  const scrollTopBtn = document.getElementById("scroll-to-top-btn");
+  const SCROLL_TOP_SHOW_THRESHOLD = 400;
+
+  function updateScrollTopBtnVisibility() {
+    if (!scrollTopBtn) return;
+    scrollTopBtn.style.display = window.scrollY > SCROLL_TOP_SHOW_THRESHOLD ? "flex" : "none";
+  }
+
+  window.addEventListener("scroll", updateScrollTopBtnVisibility, { passive: true });
+  scrollTopBtn?.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  updateScrollTopBtnVisibility();
 });
