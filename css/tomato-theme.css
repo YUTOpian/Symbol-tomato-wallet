@@ -533,6 +533,37 @@ select:focus {
   border-radius: 6px;
 }
 
+/* ============================================================
+   先頭に戻るボタン(下にスクロールすると右下に表示)
+============================================================ */
+.scroll-to-top-btn {
+  position: fixed;
+  right: 18px;
+  bottom: 22px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--tomato-red), var(--tomato-red-dark));
+  color: #fff;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  z-index: 500;
+  opacity: 0.9;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.scroll-to-top-btn:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, var(--tomato-red-light), var(--tomato-red));
+}
+
 /* ------------------------------------------------------------
    ポップアップ通知もトマト色に
 ------------------------------------------------------------ */
