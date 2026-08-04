@@ -264,6 +264,7 @@
       <div class="wallet-tabs">
         <div id="tab-token" class="wallet-tab active">保有モザイク</div>
         <div id="tab-activity" class="wallet-tab">アクティビティ</div>
+        <div id="tab-harvest-reward" class="wallet-tab">ハーベスト報酬</div>
       </div>
 
       <!-- 保有モザイク -->
@@ -274,6 +275,11 @@
       <!-- アクティビティ -->
       <div id="activity-content" style="display:none;">
         <div id="tx-list">読み込み中...</div>
+      </div>
+
+      <!-- ハーベスト報酬 -->
+      <div id="harvest-reward-content" style="display:none;">
+        <div id="harvest-reward-list">読み込み中...</div>
       </div>
     </div>
   </div>
@@ -1488,6 +1494,8 @@
     <pre id="confirm-tx-code" style="display:none;"><code id="confirm-tx-code-content"></code></pre>
   </div>
 </dialog>
+
+<button id="scroll-to-top-btn" class="scroll-to-top-btn" style="display:none;" aria-label="先頭に戻る">↑</button>
 
 <script type="module" src="js/index.js"></script>
 
