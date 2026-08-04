@@ -6,6 +6,7 @@ import { appState, NetworkType } from "./config.js";
 import { selectNode } from "./nodeSelector.js";
 import { initSdk } from "./sdk.js";
 import { refreshAccount, initLiveBalanceRefresh } from "./account.js";
+import { initLiveHarvestStatusRefresh } from "./harvest.js";
 import { loadRecentTx, initLiveTx } from "./transactions.js";
 import { initWebSocket, closeWebSocket } from "./ws.js";
 import { setText } from "./ui.js";
@@ -261,6 +262,7 @@ export async function switchToAccount(id) {
   initWebSocket(address);
   initLiveTx(address);
   initLiveBalanceRefresh(address);
+  initLiveHarvestStatusRefresh(address);
 
   await persistAccounts();
 }
@@ -317,6 +319,7 @@ export async function switchNetwork(networkType) {
   initWebSocket(address2);
   initLiveTx(address2);
   initLiveBalanceRefresh(address2);
+  initLiveHarvestStatusRefresh(address2);
 
   await persistAccounts();
 }

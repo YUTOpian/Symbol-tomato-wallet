@@ -8,6 +8,7 @@ import { selectNode } from "./nodeSelector.js";
 import { initSdk } from "./sdk.js";
 import { setStatus, setText } from "./ui.js";
 import { refreshAccount, initLiveBalanceRefresh } from "./account.js";
+import { initLiveHarvestStatusRefresh } from "./harvest.js";
 import { loadRecentTx, initLiveTx } from "./transactions.js";
 import { initWebSocket } from "./ws.js";
 import { getSSSStatusHtml } from "./utils.js";
@@ -107,6 +108,7 @@ async function internalConnect(isAuto) {
     initWebSocket(currentAddress);
     initLiveTx(currentAddress);
     initLiveBalanceRefresh(currentAddress);
+    initLiveHarvestStatusRefresh(currentAddress);
   } catch(e) {
     console.error("internalConnect error:", e);
   } finally {

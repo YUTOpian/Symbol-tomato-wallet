@@ -10,6 +10,7 @@ import {
 import { setStatus, setText } from "./ui.js";
 import { initSdk } from "./sdk.js";
 import { refreshAccount, initLiveBalanceRefresh } from "./account.js";
+import { initLiveHarvestStatusRefresh } from "./harvest.js";
 import { loadRecentTx, initLiveTx } from "./transactions.js";
 import { initWebSocket, closeWebSocket } from "./ws.js";
 import { renderNodeInfoHtml } from "./utils.js";
@@ -116,6 +117,7 @@ export async function applyNodeChange() {
       initWebSocket(address);
       initLiveTx(address);
       initLiveBalanceRefresh(address);
+      initLiveHarvestStatusRefresh(address);
     }
 
     const infoEl = document.getElementById("node-info");

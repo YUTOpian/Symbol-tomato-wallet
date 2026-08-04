@@ -20,6 +20,7 @@ import { setStatus } from "./ui.js";
 import { signPayloadLocally, estimateFeeFromTx } from "./auth.js";
 import { requestTxConfirmation, formatTxDeadline, TxCancelledError } from "./txConfirm.js";
 import { trackOutgoingTransaction } from "./txStatusTracker.js";
+import { addCallback } from "./ws.js";
 
 /* ============================================================
    委任先ノード候補の読み込み（NodeWatchから取得しプルダウンに反映）
@@ -644,4 +645,23 @@ export async function stopHarvest() {
     setLine("❌ 解除失敗: " + e.message);
     alert("解除失敗: " + e.message);
   }
+}
+
+/*
+  自分宛の確定トランザクションを検知するたびに、ハーベスト状態バッジを
+  再取得して反映する。開始/停止ボタンを押した直後だけでなく、
+  鍵リンクや委任リクエストが実際にブロックに取り込まれたタイミングで
+  自動的に最新状態に切り替わるようにするため。
+  ノード切替・アカウント切替のたびに呼ばれても二重登録しないよう、
+  アドレスごとに一度だけ登録する。
+*/
+const liveHarvestStatusRegisteredAddresses = new Set();
+
+export function initLiveHarvestStatusRefresh(address) {
+  if (!address || liveHarvestStatusRegisteredAddresses.has(address)) return;
+  liveHarvestStatusRegisteredAddresses.add(address);
+
+  addCallback(`confirmedAdded/${address}`, () => {
+    checkHarvestStatus();
+  });
 }
