@@ -10,7 +10,7 @@
 const CACHE_MS = 60 * 1000; // 60秒キャッシュ
 
 let jpyCache = { rate: null, ts: 0 };
-let usdCache = { rate: null, ts: 0 };
+let usdCache = { rate: null, ts: 0, source: null };
 
 /* ============================================================
    XYM/JPY (bitbank)
@@ -40,10 +40,11 @@ export async function getXymJpyRate() {
    まずGate.io(XYM_USDTペア)を試す。Gate.ioはブラウザからの
    直接アクセスをCORSで許可していないことがあるため、失敗した場合は
    CoinGecko(ブラウザ向けCORS対応済み)にフォールバックする。
+   戻り値: { rate: number|null, source: "Gate.io" | "CoinGecko" | null }
 ============================================================ */
 export async function getXymUsdRate() {
   if (usdCache.rate != null && Date.now() - usdCache.ts < CACHE_MS) {
-    return usdCache.rate;
+    return { rate: usdCache.rate, source: usdCache.source };
   }
 
   try {
@@ -52,8 +53,8 @@ export async function getXymUsdRate() {
     const last = Number(json?.[0]?.last);
     if (!Number.isFinite(last) || last <= 0) throw new Error("invalid rate");
 
-    usdCache = { rate: last, ts: Date.now() };
-    return last;
+    usdCache = { rate: last, ts: Date.now(), source: "Gate.io" };
+    return { rate: last, source: "Gate.io" };
   } catch (e) {
     console.warn("Gate.io XYM/USDTレート取得失敗(CORSでブロックされている可能性)。CoinGeckoにフォールバックします:", e);
   }
@@ -64,10 +65,10 @@ export async function getXymUsdRate() {
     const last = Number(json?.symbol?.usd);
     if (!Number.isFinite(last) || last <= 0) throw new Error("invalid rate");
 
-    usdCache = { rate: last, ts: Date.now() };
-    return last;
+    usdCache = { rate: last, ts: Date.now(), source: "CoinGecko" };
+    return { rate: last, source: "CoinGecko" };
   } catch (e) {
     console.warn("CoinGecko XYM/USDレート取得も失敗:", e);
-    return usdCache.rate;
+    return { rate: usdCache.rate, source: usdCache.source };
   }
 }

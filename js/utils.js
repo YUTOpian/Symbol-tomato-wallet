@@ -100,6 +100,7 @@ export function hexToUint8Array(hex) {
 // ============================================================
 
 import { appState } from "./config.js";
+import { getXymJpyRate, getXymUsdRate } from "./priceRates.js";
 
 export function isSSSConnected() {
   return !!(window.SSS && window.SSS.activePublicKey);
@@ -120,13 +121,49 @@ export function getSSSStatusHtml() {
 // SSS連携状態は表示しない
 // ============================================================
 
+const NODE_INFO_PRICE_ELEMENT_ID = "node-info-price";
+
 export function renderNodeInfoHtml({ isTestnet, nodeOrigin, note = "" }) {
-  return (
+  const html = (
     `<div style="font-size: 20px; font-weight: bold; color: #8ab4f8;">` +
     `${isTestnet ? "🟡 Testnet" : "🟢 Mainnet"}` +
     `</div>` +
     `使用ノード：<b>${nodeOrigin}</b><br>` +
     (note ? `${note}<br>` : "") +
-    (appState.authMode === "local" ? "" : getSSSStatusHtml())
+    (appState.authMode === "local" ? "" : getSSSStatusHtml()) +
+    `<div id="${NODE_INFO_PRICE_ELEMENT_ID}" style="font-size:13px;margin-top:4px;color:#cbd5e1;">価格取得中...</div>`
   );
+
+  updateNodeInfoPriceDisplay();
+
+  return html;
+}
+
+/* ============================================================
+   #node-info-price に、現在のXYM単価(円・ドル)をあとから差し込む
+   (bitbank / Gate.io は取得に時間がかかる・失敗することがあるため、
+   node-infoの表示自体は先に済ませ、価格だけ非同期で更新する)
+============================================================ */
+async function updateNodeInfoPriceDisplay() {
+  const [jpyRate, usdResult] = await Promise.all([getXymJpyRate(), getXymUsdRate()]);
+
+  const el = document.getElementById(NODE_INFO_PRICE_ELEMENT_ID);
+  if (!el) return; // 別画面に移動済みなどで要素が無ければ何もしない
+
+  const lines = [];
+
+  if (jpyRate != null) {
+    const jpyText = jpyRate.toLocaleString("ja-JP", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+    lines.push(
+      `${jpyText}円 / XYM (` +
+      `<a href="https://app.bitbank.cc/trade/xym_jpy" target="_blank" rel="noopener" style="color:#93c5fd;">bitbank</a>)`
+    );
+  }
+
+  if (usdResult.rate != null) {
+    const usdText = usdResult.rate.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+    lines.push(`${usdText}ドル / XYM (${usdResult.source})`);
+  }
+
+  el.innerHTML = lines.length > 0 ? lines.join("<br>") : "価格の取得に失敗しました";
 }

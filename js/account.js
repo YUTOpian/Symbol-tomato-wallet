@@ -23,12 +23,13 @@ let balanceFiatRequestId = 0;
 async function updateBalanceFiatDisplay(xymAmount, baseText) {
   const requestId = ++balanceFiatRequestId;
 
-  const [jpyRate, usdRate] = await Promise.all([getXymJpyRate(), getXymUsdRate()]);
+  const [jpyRate, usdResult] = await Promise.all([getXymJpyRate(), getXymUsdRate()]);
   if (requestId !== balanceFiatRequestId) return; // その間に新しい残高取得が走っていれば古い結果は捨てる
 
   const el = document.getElementById("account-balance");
   if (!el) return;
 
+  const usdRate = usdResult.rate;
   const parts = [];
   if (jpyRate != null) {
     const jpy = Math.round(xymAmount * jpyRate);
