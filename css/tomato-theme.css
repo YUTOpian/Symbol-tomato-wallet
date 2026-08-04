@@ -512,7 +512,7 @@ select:focus {
 
 .receive-qr-column {
   flex: 1;
-  min-width: 140px;
+  min-width: 110px;
   text-align: center;
   background: #1c110d;
   border: 1px solid var(--tomato-card-border);
