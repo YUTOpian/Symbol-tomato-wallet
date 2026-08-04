@@ -720,7 +720,7 @@ window.addEventListener("load", async () => {
   // ============================
   // ハーベスト画面
   // ============================
-  document.getElementById("harvest-btn")?.addEventListener("click", async () => {
+  document.getElementById("menu-harvest")?.addEventListener("click", async () => {
     showPage(harvestPage);
     const address = appState.currentAddress.toString();
     document.getElementById("harvest-address").textContent = address;
@@ -2541,7 +2541,7 @@ window.addEventListener("load", async () => {
     showPage(cameFromMosaicList ? accountPage : sendPage);
   });
   document.getElementById("back-account-receive")?.addEventListener("click", () => showPage(accountPage));
-  document.getElementById("back-account-harvest")?.addEventListener("click", () => showPage(accountPage));
+  document.getElementById("back-account-harvest")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-account-settings")?.addEventListener("click", () => showPage(accountPage));
   document.getElementById("back-settings-node")?.addEventListener("click", () => showPage(settingsPage));
   document.getElementById("back-settings-fee")?.addEventListener("click", () => showPage(settingsPage));
