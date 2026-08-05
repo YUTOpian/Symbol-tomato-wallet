@@ -534,6 +534,52 @@ select:focus {
 }
 
 /* ============================================================
+   データ画面: ラベル/値の行
+============================================================ */
+.data-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--tomato-card-border);
+  font-size: 13.5px;
+}
+
+.data-row-block {
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--tomato-card-border);
+  font-size: 13.5px;
+}
+.data-row-block .data-value {
+  margin-top: 6px;
+}
+
+.data-label {
+  color: var(--tomato-text-muted);
+  flex-shrink: 0;
+}
+
+.data-value {
+  color: var(--tomato-cream);
+  font-weight: bold;
+  text-align: right;
+  word-break: break-all;
+}
+
+.data-namespace-chip {
+  display: inline-block;
+  background: rgba(224, 67, 43, 0.15);
+  border: 1px solid var(--tomato-red);
+  color: var(--tomato-red-light);
+  border-radius: 6px;
+  padding: 3px 8px;
+  margin: 2px 4px 2px 0;
+  font-size: 12.5px;
+  font-weight: normal;
+}
+
+/* ============================================================
    ホーム画面のアドレス行: コピーボタンをアドレスのすぐ横に置く
    (元のCSSは .address-text に flex:1 が付いており、ボタンが
    右端まで離れてしまうため、この行だけ上書きする)
