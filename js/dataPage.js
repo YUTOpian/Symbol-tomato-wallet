@@ -78,7 +78,7 @@ async function loadChainSection() {
     try {
       const blockRes = await fetch(new URL(`/blocks/${height}`, appState.NODE));
       const blockJson = await blockRes.json();
-      const totalTx = blockJson.block?.totalTransactionsCount;
+      const totalTx = blockJson.meta?.totalTransactionsCount ?? blockJson.block?.totalTransactionsCount;
       setText("data-chain-total-tx", totalTx != null ? Number(totalTx).toLocaleString("ja-JP") : "---");
     } catch (e) {
       console.warn("合計トランザクション数取得失敗:", e);
