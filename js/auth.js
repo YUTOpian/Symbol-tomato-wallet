@@ -832,6 +832,7 @@ function resetSessionState() {
 
   appState.authMode = null;
   appState.isReadOnly = false;
+  appState.readOnlyFromLogin = false;
   appState.currentPubKey = null;
   appState.currentAddress = null;
   appState.localPrivateKeyHex = null;

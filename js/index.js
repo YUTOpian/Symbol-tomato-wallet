@@ -466,12 +466,23 @@ window.addEventListener("load", async () => {
   // ============================
   // アドレス照会(閲覧専用・秘密鍵不要・パスワード不要)
   // ============================
+  let addressLookupOrigin = "welcome"; // "welcome" | "login" - 戻る先とSettings表示の出し分けに使う
+
   document.getElementById("welcome-address-lookup-btn")?.addEventListener("click", () => {
+    addressLookupOrigin = "welcome";
     setStatus("address-lookup-status", "", "default");
     showPage(addressLookupPage);
   });
 
-  document.getElementById("back-welcome-address-lookup")?.addEventListener("click", () => showPage(welcomePage));
+  document.getElementById("unlock-address-lookup-btn")?.addEventListener("click", () => {
+    addressLookupOrigin = "login";
+    setStatus("address-lookup-status", "", "default");
+    showPage(addressLookupPage);
+  });
+
+  document.getElementById("back-welcome-address-lookup")?.addEventListener("click", () => {
+    showPage(addressLookupOrigin === "login" ? unlockPage : welcomePage);
+  });
 
   document.getElementById("address-lookup-submit-btn")?.addEventListener("click", async () => {
     const addressInput = document.getElementById("address-lookup-input").value.trim();
@@ -484,6 +495,7 @@ window.addEventListener("load", async () => {
     setStatus("address-lookup-status", "照会中...");
     try {
       await loginAsReadOnly(addressInput);
+      appState.readOnlyFromLogin = addressLookupOrigin === "login";
       document.getElementById("address-lookup-input").value = "";
       setStatus("address-lookup-status", "", "default");
       goHome();
@@ -2205,16 +2217,24 @@ window.addEventListener("load", async () => {
     if (feeItem) feeItem.style.display = isReadOnly ? "none" : "";
 
     const lockBtn = document.getElementById("lock-session-btn");
+    const networkSwitchItem = document.getElementById("menu-network-switch");
+
     if (isReadOnly) {
-      // 読み取り専用セッションでアカウントを何も作成していない(=戻る先の
-      // ログインセッションが存在しない)場合は「ログイン画面に戻る」を隠す
-      if (lockBtn) lockBtn.style.display = appState.accounts.length > 0 ? "" : "none";
+      if (appState.readOnlyFromLogin) {
+        // ログイン画面から入った場合: 戻る先の暗号化保存アカウントが実在するはず。
+        // ネットワーク切替は対象アドレスと食い違ってしまうため出さない。
+        if (lockBtn) lockBtn.style.display = getVaultMode() === "encrypted" ? "" : "none";
+        if (networkSwitchItem) networkSwitchItem.style.display = "none";
+      } else {
+        // ようこそ画面から入った場合: 何もアカウントを作成していなければ
+        // 「ログイン画面に戻る」の戻り先がないため隠す。
+        if (lockBtn) lockBtn.style.display = appState.accounts.length > 0 ? "" : "none";
+        if (networkSwitchItem) networkSwitchItem.style.display = "";
+      }
     } else {
       if (lockBtn) lockBtn.style.display = getVaultMode() === "encrypted" ? "" : "none";
+      if (networkSwitchItem) networkSwitchItem.style.display = isSss ? "none" : "";
     }
-
-    const networkSwitchItem = document.getElementById("menu-network-switch");
-    if (networkSwitchItem) networkSwitchItem.style.display = isSss ? "none" : "";
 
     // SSS Extension由来のアカウントは、そもそも秘密鍵・ニーモニックを
     // このアプリが一切扱わない(扱えない)ため、バックアップ機能自体を

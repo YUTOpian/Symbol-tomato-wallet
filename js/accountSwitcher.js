@@ -18,6 +18,8 @@ function sourceLabel(source) {
 export function updateSwitcherVisibility() {
   const btn = document.getElementById("account-switch-btn");
   if (!btn) return;
+  // 読み取り専用(アドレス照会)モードはappState.accountsに何も追加しないため
+  // 自然に条件を満たさないが、念のため明示的にも除外しておく
   const show = appState.accounts.length > 0 && appState.authMode !== "sss" && !appState.isReadOnly;
   btn.style.display = show ? "inline-flex" : "none";
 }
