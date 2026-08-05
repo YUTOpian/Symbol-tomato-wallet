@@ -21,6 +21,7 @@ import {
   connectWithSSS,
   loginWithMnemonic,
   loginWithPrivateKey,
+  loginAsReadOnly,
   getVaultMode,
   restorePlainVault,
   unlockVault,
@@ -112,6 +113,7 @@ window.addEventListener("load", async () => {
   // ページ取得
   // ============================
   const welcomePage = document.getElementById("welcome-page");
+  const addressLookupPage = document.getElementById("address-lookup-page");
   const createNewPage = document.getElementById("create-new-page");
   const mnemonicImportPage = document.getElementById("mnemonic-import-page");
   const privatekeyImportPage = document.getElementById("privatekey-import-page");
@@ -155,8 +157,16 @@ window.addEventListener("load", async () => {
     page.classList.add("active");
   }
 
+  function updateReadOnlyUiVisibility() {
+    const sendBtn = document.getElementById("send-btn");
+    const advancedBtn = document.getElementById("advanced-btn");
+    if (sendBtn) sendBtn.style.display = appState.isReadOnly ? "none" : "";
+    if (advancedBtn) advancedBtn.style.display = appState.isReadOnly ? "none" : "";
+  }
+
   function goHome() {
     updateSwitcherVisibility();
+    updateReadOnlyUiVisibility();
     showPage(accountPage);
   }
 
@@ -454,6 +464,36 @@ window.addEventListener("load", async () => {
   });
 
   // ============================
+  // アドレス照会(閲覧専用・秘密鍵不要・パスワード不要)
+  // ============================
+  document.getElementById("welcome-address-lookup-btn")?.addEventListener("click", () => {
+    setStatus("address-lookup-status", "", "default");
+    showPage(addressLookupPage);
+  });
+
+  document.getElementById("back-welcome-address-lookup")?.addEventListener("click", () => showPage(welcomePage));
+
+  document.getElementById("address-lookup-submit-btn")?.addEventListener("click", async () => {
+    const addressInput = document.getElementById("address-lookup-input").value.trim();
+
+    if (!addressInput) {
+      setStatus("address-lookup-status", "アドレスを入力してください。", "error");
+      return;
+    }
+
+    setStatus("address-lookup-status", "照会中...");
+    try {
+      await loginAsReadOnly(addressInput);
+      document.getElementById("address-lookup-input").value = "";
+      setStatus("address-lookup-status", "", "default");
+      goHome();
+    } catch (e) {
+      console.error("loginAsReadOnly error:", e);
+      setStatus("address-lookup-status", e.message || "照会に失敗しました。", "error");
+    }
+  });
+
+  // ============================
   // パスワード設定(任意)
   // この時点でアカウントは既にappState.accountsに追加済みなので、
   // saveVaultはパスワードだけ受け取って現在のアカウント一覧を暗号化保存する
@@ -567,6 +607,7 @@ window.addEventListener("load", async () => {
   document.getElementById("mosaic-list")?.addEventListener("click", e => {
     const item = e.target.closest(".mosaic-item");
     if (!item) return;
+    if (appState.isReadOnly) return; // 読み取り専用モードでは送金画面へは行かせない
 
     // 選択情報(selected-mosaic-id / name / balance)は
     // account.js 側の item.onclick で既にセット済み
@@ -2152,22 +2193,34 @@ window.addEventListener("load", async () => {
   // ============================
   document.getElementById("settings-btn")?.addEventListener("click", () => {
     const isSss = appState.authMode === "sss";
+    const isReadOnly = appState.isReadOnly;
+
     const mnemonicAddItem = document.getElementById("menu-add-mnemonic");
     const privatekeyAddItem = document.getElementById("menu-add-privatekey");
-    if (mnemonicAddItem) mnemonicAddItem.style.display = isSss ? "none" : "";
-    if (privatekeyAddItem) privatekeyAddItem.style.display = isSss ? "none" : "";
+    if (mnemonicAddItem) mnemonicAddItem.style.display = (isSss || isReadOnly) ? "none" : "";
+    if (privatekeyAddItem) privatekeyAddItem.style.display = (isSss || isReadOnly) ? "none" : "";
+
+    // 読み取り専用モード: 送金手数料の設定は署名を伴う操作がないため不要
+    const feeItem = document.getElementById("menu-fee-settings");
+    if (feeItem) feeItem.style.display = isReadOnly ? "none" : "";
 
     const lockBtn = document.getElementById("lock-session-btn");
-    if (lockBtn) lockBtn.style.display = getVaultMode() === "encrypted" ? "" : "none";
+    if (isReadOnly) {
+      // 読み取り専用セッションでアカウントを何も作成していない(=戻る先の
+      // ログインセッションが存在しない)場合は「ログイン画面に戻る」を隠す
+      if (lockBtn) lockBtn.style.display = appState.accounts.length > 0 ? "" : "none";
+    } else {
+      if (lockBtn) lockBtn.style.display = getVaultMode() === "encrypted" ? "" : "none";
+    }
 
     const networkSwitchItem = document.getElementById("menu-network-switch");
     if (networkSwitchItem) networkSwitchItem.style.display = isSss ? "none" : "";
 
     // SSS Extension由来のアカウントは、そもそも秘密鍵・ニーモニックを
     // このアプリが一切扱わない(扱えない)ため、バックアップ機能自体を
-    // メニューから隠す
+    // メニューから隠す。読み取り専用モードも秘密鍵を持たないため同様。
     const backupItem = document.getElementById("menu-backup");
-    if (backupItem) backupItem.style.display = isSss ? "none" : "";
+    if (backupItem) backupItem.style.display = (isSss || isReadOnly) ? "none" : "";
 
     showPage(settingsPage);
   });
@@ -2223,7 +2276,10 @@ window.addEventListener("load", async () => {
   document.getElementById("apply-fee-btn")?.addEventListener("click", applyFeeSettings);
 
   document.getElementById("logout-btn")?.addEventListener("click", () => {
-    if (!confirm("ログアウトします。次回は再度ニーモニックの入力（またはSSS Extension接続）が必要になります。よろしいですか？")) return;
+    const confirmMsg = appState.isReadOnly
+      ? "アドレスの照会を終了し、ようこそ画面に戻ります。よろしいですか？"
+      : "ログアウトします。次回は再度ニーモニックの入力（またはSSS Extension接続）が必要になります。よろしいですか？";
+    if (!confirm(confirmMsg)) return;
     logout();
     showPage(welcomePage);
   });

@@ -404,6 +404,61 @@ export async function loginWithPrivateKey(privateKeyHex, networkType, label) {
 }
 
 /* ============================================================
+   読み取り専用ログイン(XEMBookのように、秘密鍵を一切扱わず
+   指定したSymbolアドレスのデータだけを閲覧するモード)
+   ・秘密鍵/公開鍵は一切保持しない(currentPubKey = null)
+   ・appState.accountsには追加しない(保存・パスワード保護の対象外)
+   ・ネットワークはアドレスの先頭文字(N=Mainnet / T=Testnet)から判定する
+============================================================ */
+export async function loginAsReadOnly(addressInput) {
+  const address = (addressInput || "").trim().toUpperCase().replace(/[\s-]/g, "");
+
+  if (address.length !== 39) {
+    throw new Error("アドレスの形式が正しくありません（39文字）");
+  }
+
+  let networkType;
+  if (address[0] === "N") {
+    networkType = NetworkType.MAINNET;
+  } else if (address[0] === "T") {
+    networkType = NetworkType.TESTNET;
+  } else {
+    throw new Error("Mainnet(N)またはTestnet(T)で始まるアドレスのみ対応しています");
+  }
+
+  closeWebSocket();
+
+  appState.networkType = networkType;
+  const isTestnet = networkType === NetworkType.TESTNET;
+  appState.NODE = await selectNode(isTestnet);
+  await initSdk();
+
+  // チェックサム検証を兼ねて生成する(不正なアドレスならここで例外になる)
+  const addressObj = new appState.sdkSymbol.Address(address);
+
+  appState.authMode = "readonly";
+  appState.isReadOnly = true;
+  appState.currentPubKey = null;
+  appState.localPrivateKeyHex = null;
+  appState.localKeyPair = null;
+  appState.currentAddress = addressObj;
+  appState.activeAccountId = null;
+
+  setText("network-label", isTestnet ? "Testnet" : "Mainnet");
+  const addressEl = document.getElementById("account-address");
+  if (addressEl) addressEl.textContent = addressObj.toString();
+
+  await refreshAccount();
+  await loadRecentTx();
+
+  const addressStr = addressObj.toString();
+  initWebSocket(addressStr);
+  initLiveTx(addressStr);
+  initLiveBalanceRefresh(addressStr);
+  initLiveHarvestStatusRefresh(addressStr);
+}
+
+/* ============================================================
    アカウント追加（ログイン済みの状態で使う。SSS利用中でも呼べる）
 ============================================================ */
 function isDuplicatePrivateKey(privateKeyHex) {
@@ -776,6 +831,7 @@ function resetSessionState() {
   currentMnemonicPhrase = null;
 
   appState.authMode = null;
+  appState.isReadOnly = false;
   appState.currentPubKey = null;
   appState.currentAddress = null;
   appState.localPrivateKeyHex = null;

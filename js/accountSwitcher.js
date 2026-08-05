@@ -18,7 +18,7 @@ function sourceLabel(source) {
 export function updateSwitcherVisibility() {
   const btn = document.getElementById("account-switch-btn");
   if (!btn) return;
-  const show = appState.accounts.length > 0 && appState.authMode !== "sss";
+  const show = appState.accounts.length > 0 && appState.authMode !== "sss" && !appState.isReadOnly;
   btn.style.display = show ? "inline-flex" : "none";
 }
 
