@@ -49,9 +49,36 @@
       <hr>
 
       <p style="font-size:13px;color:#94a3b8;">
+        秘密鍵を入力せず、Symbolアドレスを指定して残高・アクティビティなどを閲覧だけしたい場合はこちら（ログイン不要・送金不可）。
+      </p>
+      <button id="welcome-address-lookup-btn" class="button-primary">🔍 アドレスを照会する（閲覧のみ）</button>
+
+      <hr>
+
+      <p style="font-size:13px;color:#94a3b8;">
         オフラインで署名済みのトランザクションファイルをお持ちの場合は、こちらから読み込んでブロードキャストできます（ログイン不要）。
       </p>
       <button id="welcome-offline-broadcast-btn" class="button-primary">📥 オフライン署名データを読み込む</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       アドレス照会(閲覧専用・秘密鍵不要)
+  ============================================================ -->
+  <div id="address-lookup-page" class="page">
+    <div class="card">
+      <h2>アドレスを照会</h2>
+      <button id="back-welcome-address-lookup" class="button-primary">← 戻る</button>
+
+      <p style="font-size:13px;color:#94a3b8;">
+        Symbolアドレスを入力すると、そのアドレスの残高やアクティビティなどを閲覧できます。
+        秘密鍵は一切扱わないため、送金など署名を伴う操作はできません。
+      </p>
+
+      <input id="address-lookup-input" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX">
+
+      <button id="address-lookup-submit-btn" class="button-primary">照会する</button>
+      <div id="address-lookup-status"></div>
     </div>
   </div>
 
