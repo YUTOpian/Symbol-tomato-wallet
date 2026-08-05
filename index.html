@@ -289,6 +289,7 @@
       <div class="wallet-actions">
         <button id="receive-btn" class="button-primary">受け取り</button>
         <button id="send-btn" class="button-primary">送金</button>
+        <button id="data-btn" class="button-primary">📊 データ</button>
         <button id="advanced-btn" class="button-primary">高度機能</button>
       </div>
 
@@ -702,6 +703,50 @@
 
       <button id="add-privatekey-submit" class="button-primary">追加する</button>
       <div id="add-privatekey-status"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       データ(アカウント詳細 / Symbolネットワーク統計)
+  ============================================================ -->
+  <div id="data-page" class="page">
+    <div class="card">
+      <h2>データ</h2>
+      <button id="back-account-data" class="button-primary">← 戻る</button>
+
+      <h3>アカウントに関して</h3>
+      <div class="data-row"><span class="data-label">接続ネットワーク</span><span id="data-account-network" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">アカウントの接続先ノード</span><span id="data-account-node" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">重要度</span><span id="data-account-importance" class="data-value">---</span></div>
+      <div class="data-row-block">
+        <span class="data-label">保有ルートネームスペース</span>
+        <div id="data-account-namespaces" class="data-value">読み込み中...</div>
+      </div>
+
+      <hr>
+
+      <h3>Symbolについて</h3>
+      <div class="data-row"><span class="data-label">最新ブロック高</span><span id="data-chain-height" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">ファイナライズ済み高</span><span id="data-chain-finalized-height" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">合計トランザクション数</span><span id="data-chain-total-tx" class="data-value">---</span></div>
+
+      <h4>手数料相場</h4>
+      <div class="data-row"><span class="data-label">送金（中央値）</span><span id="data-fee-transfer-median" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">ネームスペース（年）</span><span id="data-fee-namespace-year" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">子ネームスペースレンタル手数料</span><span id="data-fee-sub-namespace" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">モザイクレンタル手数料</span><span id="data-fee-mosaic-rental" class="data-value">---</span></div>
+
+      <h4>ノード情報</h4>
+      <div class="data-row"><span class="data-label">合計</span><span id="data-nodes-total" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">Peerノード数</span><span id="data-nodes-peer" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">Apiノード数</span><span id="data-nodes-api" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">Peer Apiノード数</span><span id="data-nodes-peer-api" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">Votingノード数</span><span id="data-nodes-voting" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">Peer Votingノード数</span><span id="data-nodes-peer-voting" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">Api Votingノード数</span><span id="data-nodes-api-voting" class="data-value">---</span></div>
+      <div class="data-row"><span class="data-label">Peer Api Votingノード数</span><span id="data-nodes-peer-api-voting" class="data-value">---</span></div>
+
+      <div id="data-page-status"></div>
     </div>
   </div>
 
