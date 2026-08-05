@@ -73,22 +73,10 @@ async function loadChainSection() {
 
     setText("data-chain-height", Number(height).toLocaleString("ja-JP"));
     setText("data-chain-finalized-height", finalizedHeight != null ? Number(finalizedHeight).toLocaleString("ja-JP") : "---");
-
-    // 最新ブロックのtotalTransactionsCount(累計トランザクション数)
-    try {
-      const blockRes = await fetch(new URL(`/blocks/${height}`, appState.NODE));
-      const blockJson = await blockRes.json();
-      const totalTx = blockJson.meta?.totalTransactionsCount ?? blockJson.block?.totalTransactionsCount;
-      setText("data-chain-total-tx", totalTx != null ? Number(totalTx).toLocaleString("ja-JP") : "---");
-    } catch (e) {
-      console.warn("合計トランザクション数取得失敗:", e);
-      setText("data-chain-total-tx", "取得失敗");
-    }
   } catch (e) {
     console.warn("チェーン情報取得失敗:", e);
     setText("data-chain-height", "取得失敗");
     setText("data-chain-finalized-height", "取得失敗");
-    setText("data-chain-total-tx", "取得失敗");
   }
 }
 
