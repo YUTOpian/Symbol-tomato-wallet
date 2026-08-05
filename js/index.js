@@ -86,6 +86,7 @@ import {
 import { parseCsv, sendMultiTransfer } from "./multisend.js";
 import { checkMultisendRows } from "./multisendRecipientCheck.js";
 import { trackOutgoingTransaction } from "./txStatusTracker.js";
+import { loadDataPage } from "./dataPage.js";
 import { computeFileHash, createApostille, searchApostilleTransactions } from "./apostille.js";
 import {
   loadAccountRestrictions,
@@ -135,6 +136,7 @@ window.addEventListener("load", async () => {
   const addAccountMnemonicPage = document.getElementById("add-account-mnemonic-page");
   const addAccountPrivatekeyPage = document.getElementById("add-account-privatekey-page");
   const advancedPage = document.getElementById("advanced-page");
+  const dataPage = document.getElementById("data-page");
   const namespacePage = document.getElementById("namespace-page");
   const mosaicPage = document.getElementById("mosaic-page");
   const metadataPage = document.getElementById("metadata-page");
@@ -795,6 +797,16 @@ window.addEventListener("load", async () => {
   document.getElementById("advanced-btn")?.addEventListener("click", () => {
     showPage(advancedPage);
   });
+
+  // ============================
+  // データ(アカウント詳細 / Symbolネットワーク統計)
+  // ============================
+  document.getElementById("data-btn")?.addEventListener("click", () => {
+    showPage(dataPage);
+    loadDataPage();
+  });
+
+  document.getElementById("back-account-data")?.addEventListener("click", () => showPage(accountPage));
 
   document.getElementById("menu-namespace")?.addEventListener("click", async () => {
     showPage(namespacePage);

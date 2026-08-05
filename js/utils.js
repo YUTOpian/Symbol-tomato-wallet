@@ -128,7 +128,6 @@ export function renderNodeInfoHtml({ isTestnet, nodeOrigin, note = "" }) {
     `<div style="font-size: 20px; font-weight: bold; color: #8ab4f8;">` +
     `${isTestnet ? "🟡 Testnet" : "🟢 Mainnet"}` +
     `</div>` +
-    `使用ノード：<b>${nodeOrigin}</b><br>` +
     (note ? `${note}<br>` : "") +
     (appState.authMode === "local" ? "" : getSSSStatusHtml()) +
     `<div id="${NODE_INFO_PRICE_ELEMENT_ID}" style="font-size:13px;margin-top:4px;color:#cbd5e1;">価格取得中...</div>`
