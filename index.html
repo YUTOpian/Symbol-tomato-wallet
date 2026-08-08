@@ -715,39 +715,65 @@
       <button id="back-account-data" class="button-primary">← 戻る</button>
 
       <h3>アカウントに関して</h3>
-      <div class="data-row"><span class="data-label">接続ネットワーク</span><span id="data-account-network" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">アカウントの接続先ノード</span><span id="data-account-node" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">重要度</span><span id="data-account-importance" class="data-value">---</span></div>
-      <div class="data-row-block">
-        <span class="data-label">保有ルートネームスペース</span>
-        <div id="data-account-namespaces" class="data-value">読み込み中...</div>
+      <div class="data-card-grid">
+        <div class="data-card">
+          <div id="data-account-network" class="data-card-value">---</div>
+          <div class="data-card-label">接続ネットワーク</div>
+        </div>
+        <div class="data-card">
+          <div id="data-account-importance" class="data-card-value">---</div>
+          <div class="data-card-label">重要度</div>
+        </div>
+        <div class="data-card data-card-wide">
+          <div class="data-card-title">アカウントの接続先ノード</div>
+          <div id="data-account-node" class="data-card-mono">---</div>
+        </div>
+        <div class="data-card data-card-wide">
+          <div class="data-card-title">保有ルートネームスペース</div>
+          <div id="data-account-namespaces" class="data-card-chips">読み込み中...</div>
+        </div>
       </div>
 
-      <hr>
-
       <h3>Symbolについて</h3>
-      <div class="data-row"><span class="data-label">最新ブロック高</span><span id="data-chain-height" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">ファイナライズ済み高</span><span id="data-chain-finalized-height" class="data-value">---</span></div>
+      <div class="data-card-grid">
+        <div class="data-card">
+          <div id="data-chain-height" class="data-card-value">---</div>
+          <div class="data-card-label">最新ブロック高</div>
+        </div>
+        <div class="data-card">
+          <div id="data-chain-finalized-height" class="data-card-value">---</div>
+          <div class="data-card-label">ファイナライズ済み高</div>
+        </div>
 
-      <h4>手数料相場</h4>
-      <div class="data-row"><span class="data-label">送金（中央値）</span><span id="data-fee-transfer-median" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">ネームスペース（年）</span><span id="data-fee-namespace-year" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">子ネームスペースレンタル手数料</span><span id="data-fee-sub-namespace" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">モザイクレンタル手数料</span><span id="data-fee-mosaic-rental" class="data-value">---</span></div>
+        <div class="data-card data-card-wide">
+          <div class="data-card-title">手数料相場</div>
+          <div class="data-card-rows">
+            <div class="data-card-row"><span>送金（中央値）</span><span id="data-fee-transfer-median">---</span></div>
+            <div class="data-card-row"><span>ネームスペース（年）</span><span id="data-fee-namespace-year">---</span></div>
+            <div class="data-card-row"><span>子ネームスペースレンタル手数料</span><span id="data-fee-sub-namespace">---</span></div>
+            <div class="data-card-row"><span>モザイクレンタル手数料</span><span id="data-fee-mosaic-rental">---</span></div>
+          </div>
+        </div>
 
-      <h4>ノード情報</h4>
-      <div class="data-row"><span class="data-label">合計</span><span id="data-nodes-total" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">Peerノード数</span><span id="data-nodes-peer" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">Apiノード数</span><span id="data-nodes-api" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">Peer Apiノード数</span><span id="data-nodes-peer-api" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">Votingノード数</span><span id="data-nodes-voting" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">Peer Votingノード数</span><span id="data-nodes-peer-voting" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">Api Votingノード数</span><span id="data-nodes-api-voting" class="data-value">---</span></div>
-      <div class="data-row"><span class="data-label">Peer Api Votingノード数</span><span id="data-nodes-peer-api-voting" class="data-value">---</span></div>
+        <div class="data-card data-card-wide">
+          <div class="data-card-title">ノード情報</div>
+          <div class="data-card-rows">
+            <div class="data-card-row"><span>合計</span><span id="data-nodes-total">---</span></div>
+            <div class="data-card-row"><span>Peerノード数</span><span id="data-nodes-peer">---</span></div>
+            <div class="data-card-row"><span>Apiノード数</span><span id="data-nodes-api">---</span></div>
+            <div class="data-card-row"><span>Peer Apiノード数</span><span id="data-nodes-peer-api">---</span></div>
+            <div class="data-card-row"><span>Votingノード数</span><span id="data-nodes-voting">---</span></div>
+            <div class="data-card-row"><span>Peer Votingノード数</span><span id="data-nodes-peer-voting">---</span></div>
+            <div class="data-card-row"><span>Api Votingノード数</span><span id="data-nodes-api-voting">---</span></div>
+            <div class="data-card-row"><span>Peer Api Votingノード数</span><span id="data-nodes-peer-api-voting">---</span></div>
+          </div>
+        </div>
+      </div>
 
       <div id="data-page-status"></div>
     </div>
   </div>
+
 
   <!-- ============================================================
        高度機能メニュー
@@ -1575,7 +1601,37 @@
 
 <button id="scroll-to-top-btn" class="scroll-to-top-btn" style="display:none;" aria-label="先頭に戻る">↑</button>
 
-<script type="module" src="js/index.js"></script>
+<script>window.W = {};</script>
+<script src="js/config.js"></script>
+<script src="js/priceRates.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/ws.js"></script>
+<script src="js/account.js"></script>
+<script src="js/accountSwitcher.js"></script>
+<script src="js/nodeSelector.js"></script>
+<script src="js/sdk.js"></script>
+<script src="js/transactions.js"></script>
+<script src="js/txConfirm.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/apostille.js"></script>
+<script src="js/rentalFees.js"></script>
+<script src="js/namespace.js"></script>
+<script src="js/dataPage.js"></script>
+<script src="js/txStatusTracker.js"></script>
+<script src="js/harvest.js"></script>
+<script src="js/metadata.js"></script>
+<script src="js/mosaic.js"></script>
+<script src="js/multisend.js"></script>
+<script src="js/multisendRecipientCheck.js"></script>
+<script src="js/multisig.js"></script>
+<script src="js/offline.js"></script>
+<script src="js/recipientInfo.js"></script>
+<script src="js/restriction.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/sss.js"></script>
+<script src="js/transfer.js"></script>
+<script src="js/index.js"></script>
 
 </body>
 </html>
