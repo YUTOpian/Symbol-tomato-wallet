@@ -23,6 +23,11 @@
 
 const {appState, NetworkType} = W.config;
 const {addCallback} = W.ws;
+const {playSoundOnce} = W.utils;
+
+// 送信時: ding.ogg / ブロックに取り込まれた(確定)時: ding2.ogg
+const SOUND_SENT = "sounds/ding.ogg";
+const SOUND_CONFIRMED = "sounds/ding2.ogg";
 
 const POLL_INTERVAL_MS = 4000;
 const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15分でポーリングは打ち切り(明示的に諦める)
@@ -218,6 +223,10 @@ function beginTracking({ hash, containerId, startedAt }) {
 
   const update = (state, detail) => {
     upsertRecord(containerId, hash, { state, detail });
+    // ブロックに取り込まれた(確定)タイミングでのみ通知音を鳴らす
+    if (state === "confirmed") {
+      playSoundOnce(SOUND_CONFIRMED);
+    }
   };
 
   // ---- WebSocket経由(即時反映) ----
@@ -230,6 +239,7 @@ function beginTracking({ hash, containerId, startedAt }) {
       }
     });
     addCallback(`confirmedAdded/${myAddress}`, (payload) => {
+      if (resolved) return;
       if (payload?.data?.meta?.hash === hash) {
         resolved = true;
         update("confirmed");
@@ -314,6 +324,9 @@ function trackOutgoingTransaction(opts) {
     label,
     state: "announced",
   });
+
+  // ノードへの送信(アナウンス)が完了したタイミングで通知音を鳴らす
+  playSoundOnce(SOUND_SENT);
 
   beginTracking({ hash, containerId, startedAt: record.startedAt });
 }
