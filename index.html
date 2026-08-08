@@ -563,7 +563,6 @@
 
       <p style="font-size:13px;color:#94a3b8;">
         ネットワークの直近の手数料状況をもとにした目安です。タップすると下の入力欄に反映されます。
-        実際に使われる値は下の「feeMultiplier」欄の数値です。
       </p>
 
       <div id="fee-options">
@@ -583,8 +582,8 @@
 
       <hr>
 
-      <p><b>feeMultiplier（実際に送金時に使う値）：</b></p>
-      <input id="fee-custom-input" class="input-box" type="number" min="0" placeholder="例: 100">
+      <p><b>送金手数料（XYM）：</b></p>
+      <input id="fee-custom-input" class="input-box" type="number" min="0" step="0.000001" placeholder="例: 0.0000176">
 
       <button id="apply-fee-btn" class="button-primary">この設定を保存する</button>
       <div id="fee-settings-status"></div>
