@@ -534,37 +534,82 @@ select:focus {
 }
 
 /* ============================================================
-   データ画面: ラベル/値の行
+   データ画面: 角丸カードのグリッド表示
 ============================================================ */
-.data-row {
+.data-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin: 12px 0 20px;
+}
+
+.data-card {
+  background: #0b0707;
+  border: 1.5px solid #4a3560;
+  border-radius: 16px;
+  padding: 18px 16px;
+}
+
+.data-card-wide {
+  grid-column: 1 / -1;
+}
+
+.data-card-value {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--tomato-cream);
+  word-break: break-all;
+  line-height: 1.2;
+}
+
+.data-card-label {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--tomato-text-muted);
+}
+
+.data-card-title {
+  font-size: 13px;
+  color: var(--tomato-text-muted);
+  margin-bottom: 10px;
+}
+
+.data-card-mono {
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--tomato-red-light);
+  word-break: break-all;
+}
+
+.data-card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.data-card-row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
   gap: 10px;
-  padding: 6px 0;
-  border-bottom: 1px dashed var(--tomato-card-border);
+  padding: 7px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
   font-size: 13.5px;
 }
-
-.data-row-block {
-  padding: 8px 0;
-  border-bottom: 1px dashed var(--tomato-card-border);
-  font-size: 13.5px;
+.data-card-row:last-child {
+  border-bottom: none;
 }
-.data-row-block .data-value {
-  margin-top: 6px;
-}
-
-.data-label {
+.data-card-row span:first-child {
   color: var(--tomato-text-muted);
-  flex-shrink: 0;
 }
-
-.data-value {
-  color: var(--tomato-cream);
+.data-card-row span:last-child {
+  color: var(--tomato-red-light);
   font-weight: bold;
   text-align: right;
   word-break: break-all;
+}
+
+.data-card-chips {
+  font-size: 13px;
 }
 
 .data-namespace-chip {
@@ -577,6 +622,15 @@ select:focus {
   margin: 2px 4px 2px 0;
   font-size: 12.5px;
   font-weight: normal;
+}
+
+@media (max-width: 480px) {
+  .data-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .data-card-value {
+    font-size: 22px;
+  }
 }
 
 /* ============================================================
