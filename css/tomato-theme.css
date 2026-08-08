@@ -563,7 +563,7 @@ select:focus {
 }
 
 .data-card-label {
-  margin-top: 8px;
+  margin-bottom: 8px;
   font-size: 13px;
   color: var(--tomato-text-muted);
 }
@@ -581,30 +581,35 @@ select:focus {
   word-break: break-all;
 }
 
-.data-card-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+/* ============================================================
+   データ画面: 項目の下に数字を表示するミニカードのグリッド
+   (手数料相場・ノード情報など、項目数が多いブロックで使用)
+============================================================ */
+.data-card-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
 }
 
-.data-card-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 0;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
-  font-size: 13.5px;
+.data-card-mini {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
 }
-.data-card-row:last-child {
-  border-bottom: none;
-}
-.data-card-row span:first-child {
+
+.data-card-mini-label {
+  font-size: 12px;
   color: var(--tomato-text-muted);
+  margin-bottom: 6px;
+  word-break: break-all;
 }
-.data-card-row span:last-child {
+
+.data-card-mini-value {
+  font-size: 16px;
+  font-weight: 800;
   color: var(--tomato-red-light);
-  font-weight: bold;
-  text-align: right;
   word-break: break-all;
 }
 
@@ -630,6 +635,9 @@ select:focus {
   }
   .data-card-value {
     font-size: 22px;
+  }
+  .data-card-mini-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
 
