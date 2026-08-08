@@ -1745,47 +1745,89 @@ window.addEventListener("load", async () => {
 
     const nodeInput = document.getElementById("offline-broadcast-node");
 
+    let json;
     try {
       const text = await file.text();
-      const json = JSON.parse(text);
-      offlineBroadcastJson = validateOfflineTxJson(json);
-
-      document.getElementById("offline-broadcast-network").textContent = json.network ?? "---";
-      document.getElementById("offline-broadcast-type").textContent = json.transactionType ?? "---";
-      document.getElementById("offline-broadcast-hash").textContent = json.hash ?? "---";
-      document.getElementById("offline-broadcast-signer").textContent = json.signerPublicKey ?? "---";
-      document.getElementById("offline-broadcast-preview").style.display = "block";
-      setStatus("offline-broadcast-status", "ノードを自動選択中...", "default");
-
-      const isTestnet = json.network === "TEST_NET";
-      const submitBtn = document.getElementById("offline-broadcast-submit");
-      if (submitBtn) submitBtn.disabled = false;
-
-      try {
-        nodeInput.value = await selectNode(isTestnet);
-        setStatus("offline-broadcast-status", "既に送信済みでないか確認中...", "default");
-
-        const existingStatus = await checkAlreadyBroadcastStatus(json.hash, nodeInput.value);
-        if (existingStatus === "confirmed" || existingStatus === "unconfirmed") {
-          alert("署名済みです。このトランザクションは既にブロックチェーンへ送信・承認済みのため読み込めません。");
-          setStatus(
-            "offline-broadcast-status",
-            `❌ 既に送信済みです（状態: ${existingStatus}）。二重送信になるためブロードキャストできません。`,
-            "error"
-          );
-          if (submitBtn) submitBtn.disabled = true;
-        } else {
-          setStatus("offline-broadcast-status", "ノードを自動選択しました。必要であれば変更できます。", "success");
-        }
-      } catch (nodeErr) {
-        console.warn("ノード自動選択に失敗しました。手動で入力してください。", nodeErr);
-        setStatus("offline-broadcast-status", "ノードの自動選択に失敗しました。手動で入力してください。", "error");
-      }
+      json = validateOfflineTxJson(JSON.parse(text));
+      offlineBroadcastJson = json;
     } catch (err) {
       console.error("offline broadcast file parse error:", err);
       offlineBroadcastJson = null;
       document.getElementById("offline-broadcast-preview").style.display = "none";
       setStatus("offline-broadcast-status", err.message || "ファイルの読み込みに失敗しました。", "error");
+      return;
+    }
+
+    document.getElementById("offline-broadcast-network").textContent = json.network ?? "---";
+    document.getElementById("offline-broadcast-type").textContent = json.typeLabel ?? "---";
+    document.getElementById("offline-broadcast-hash").textContent = json.hash ?? "---";
+    document.getElementById("offline-broadcast-signer").textContent = json.signerPublicKey ?? "---";
+    document.getElementById("offline-broadcast-preview").style.display = "block";
+    setStatus("offline-broadcast-status", "ノードを自動選択中...", "default");
+
+    const isTestnet = json.network === "TEST_NET";
+    const submitBtn = document.getElementById("offline-broadcast-submit");
+    if (submitBtn) submitBtn.disabled = false;
+
+    let nodeUrl;
+    try {
+      nodeUrl = await selectNode(isTestnet);
+      nodeInput.value = nodeUrl;
+      setStatus("offline-broadcast-status", "既に送信済みでないか確認中...", "default");
+
+      const existingStatus = await checkAlreadyBroadcastStatus(json.hash, nodeUrl);
+      if (existingStatus === "confirmed" || existingStatus === "unconfirmed") {
+        alert("署名済みです。このトランザクションは既にブロックチェーンへ送信・承認済みのため読み込めません。");
+        setStatus(
+          "offline-broadcast-status",
+          `❌ 既に送信済みです（状態: ${existingStatus}）。二重送信になるためブロードキャストできません。`,
+          "error"
+        );
+        if (submitBtn) submitBtn.disabled = true;
+        return;
+      }
+    } catch (nodeErr) {
+      // ノードが自動選択できない場合は、この画面のまま手動入力→手動送信フローに留まる
+      console.warn("ノード自動選択に失敗しました。手動で入力してください。", nodeErr);
+      setStatus("offline-broadcast-status", "ノードの自動選択に失敗しました。手動で入力してください。", "error");
+      return;
+    }
+
+    // ------------------------------------------------------------
+    // ログイン中の「オフライン署名データを読み込む」と同様に、
+    // 種類(kind)に応じた適切な画面へ遷移し、共通の確認ダイアログを
+    // 経てアナウンスする(対応する画面が無い場合のみ、この汎用画面で
+    // 手動ブロードキャストするフローに留まる)
+    // ------------------------------------------------------------
+    const targetPageId = getPageIdForKind(json.kind);
+    const targetPage = targetPageId ? document.getElementById(targetPageId) : null;
+
+    if (!targetPage) {
+      setStatus("offline-broadcast-status", "ノードを自動選択しました。必要であれば変更できます。", "success");
+      return;
+    }
+
+    appState.NODE = nodeUrl;
+    showPage(targetPage);
+
+    try {
+      const hash = await announceOfflineTx(json);
+      showPopup("✅ ノードへ送信しました");
+      trackOutgoingTransaction({
+        hash,
+        label: `${json.typeLabel || "オフライントランザクション"}の追跡`,
+        recipient: json.recipient,
+      });
+      offlineBroadcastJson = null;
+    } catch (err) {
+      if (err?.cancelled) {
+        showPage(offlineBroadcastPage);
+        setStatus("offline-broadcast-status", "キャンセルしました。", "default");
+        return;
+      }
+      console.error("announceOfflineTx error:", err);
+      showPage(offlineBroadcastPage);
+      setStatus("offline-broadcast-status", err.message || "アナウンスに失敗しました。", "error");
     }
   });
 
