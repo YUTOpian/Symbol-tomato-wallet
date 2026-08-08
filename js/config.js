@@ -4,23 +4,23 @@
 // ============================================================
 // NodeWatch エンドポイント
 // ============================================================
-export const MAINNET_NODEWATCH_URL =
+const MAINNET_NODEWATCH_URL =
   "https://nodewatch.symbol.tools/api/symbol/nodes/peer?only_ssl=true&limit=10&order=random";
 
-export const TESTNET_NODEWATCH_URL =
+const TESTNET_NODEWATCH_URL =
   "https://nodewatch.symbol.tools/testnet/api/symbol/nodes/peer?only_ssl=true&limit=10&order=random";
 
 // ============================================================
 // NodeWatch停止時 fallback ノード
 // ============================================================
-export const MAINNET_FALLBACK_NODES = [
+const MAINNET_FALLBACK_NODES = [
   "https://sym-main-01.opening-line.jp:3001",
   "https://sym-main-02.opening-line.jp:3001",
   "https://sym-main-03.opening-line.jp:3001",
   "https://symbol-mikun.net:3001",
 ];
 
-export const TESTNET_FALLBACK_NODES = [
+const TESTNET_FALLBACK_NODES = [
   "https://401-sai-dual.symboltest.net:3001",
   "https://201-sai-dual.symboltest.net:3001",
   "https://2.dusanjp.com:3001",
@@ -36,7 +36,7 @@ export const TESTNET_FALLBACK_NODES = [
 // ============================================================
 // XYM Mosaic ID
 // ============================================================
-export const XYM_MOSAIC_ID = {
+const XYM_MOSAIC_ID = {
   MAINNET: "6BED913FA20223F8",
   TESTNET: "72C0212E67A08BCE",
 };
@@ -45,7 +45,7 @@ export const XYM_MOSAIC_ID = {
 // Network Type
 // Symbol SDK v3でもREST APIでは104 / 152 の識別値を利用するため保持
 // ============================================================
-export const NetworkType = {
+const NetworkType = {
   MAINNET: 104,
   TESTNET: 152,
 };
@@ -54,7 +54,7 @@ export const NetworkType = {
 // Application State
 // quick_learning_symbol_v3 の表現に合わせる
 // ============================================================
-export const appState = {
+const appState = {
   // 現在利用中Node
   NODE: null,
 
@@ -149,8 +149,19 @@ export const appState = {
 // ============================================================
 // 現在NetworkのXYM Mosaic ID取得
 // ============================================================
-export function getXymMosaicIdHex() {
+function getXymMosaicIdHex() {
   return appState.networkType === NetworkType.TESTNET
     ? XYM_MOSAIC_ID.TESTNET
     : XYM_MOSAIC_ID.MAINNET;
 }
+
+window.W.config = {
+  MAINNET_NODEWATCH_URL,
+  TESTNET_NODEWATCH_URL,
+  MAINNET_FALLBACK_NODES,
+  TESTNET_FALLBACK_NODES,
+  XYM_MOSAIC_ID,
+  NetworkType,
+  appState,
+  getXymMosaicIdHex
+};

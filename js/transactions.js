@@ -1,8 +1,8 @@
 // transactions.js
 
-import { appState, NetworkType, getXymMosaicIdHex } from "./config.js";
-import { addCallback, getBlockTimestamp } from "./ws.js";
-import { hexToBytes } from "./utils.js";
+const {appState, NetworkType, getXymMosaicIdHex} = W.config;
+const {addCallback, getBlockTimestamp} = W.ws;
+const {hexToBytes} = W.utils;
 
 const txMap = {};
 
@@ -187,7 +187,7 @@ function getExplorerUrl(hash) {
 /* ============================================================
    Txカード
 ============================================================ */
-export function createTxCard(txInfo) {
+function createTxCard(txInfo) {
   const { hash, msg, state, timestamp, mosaics, direction, sender, recipient } = txInfo;
   const explorer = getExplorerUrl(hash);
   const isSend = direction === "send";
@@ -232,7 +232,7 @@ function appendTx(txInfo) {
 /* ============================================================
    直近10件取得 (Symbol v3 REST API)
 ============================================================ */
-export async function loadRecentTx(elId = "tx-list") {
+async function loadRecentTx(elId = "tx-list") {
   const el = document.getElementById(elId);
   if (!el) return;
   el.textContent = "読み込み中…";
@@ -282,7 +282,7 @@ export async function loadRecentTx(elId = "tx-list") {
 /* ============================================================
    WebSocket Live Tx
 ============================================================ */
-export function initLiveTx(address) {
+function initLiveTx(address) {
   /* 未承認 */
   addCallback(`unconfirmedAdded/${address}`, async payload => {
     const tx = payload.data;
@@ -331,3 +331,9 @@ export function initLiveTx(address) {
     appendTx(txInfo);
   });
 }
+
+window.W.transactions = {
+  createTxCard,
+  loadRecentTx,
+  initLiveTx
+};

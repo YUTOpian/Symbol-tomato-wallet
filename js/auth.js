@@ -2,15 +2,14 @@
 // 認証方式の管理: SSS Extension接続 / ニーモニックインポート・秘密鍵インポート(ローカル署名)
 // マルチアカウント対応。パスワードを設定した場合のみ、暗号化してlocalStorageに保存する
 
-import { appState, NetworkType } from "./config.js";
-import { selectNode } from "./nodeSelector.js";
-import { initSdk } from "./sdk.js";
-import { refreshAccount, initLiveBalanceRefresh } from "./account.js";
-import { initLiveHarvestStatusRefresh } from "./harvest.js";
-import { loadRecentTx, initLiveTx } from "./transactions.js";
-import { initWebSocket, closeWebSocket } from "./ws.js";
-import { setText } from "./ui.js";
-import { requestTxConfirmation, formatTxDeadline, TxCancelledError } from "./txConfirm.js";
+const {appState, NetworkType} = W.config;
+const {selectNode} = W.nodeSelector;
+const {initSdk} = W.sdk;
+const {refreshAccount, initLiveBalanceRefresh} = W.account;
+const {loadRecentTx, initLiveTx} = W.transactions;
+const {initWebSocket, closeWebSocket} = W.ws;
+const {setText} = W.ui;
+const {requestTxConfirmation, formatTxDeadline, TxCancelledError} = W.txConfirm;
 
 const VAULT_KEY = "walletVault";
 
@@ -18,14 +17,14 @@ const VAULT_KEY = "walletVault";
 // これがあれば「アカウント追加」時に毎回ニーモニックを打ち直さずに済む
 let currentMnemonicPhrase = null;
 
-export function hasCurrentMnemonic() {
+function hasCurrentMnemonic() {
   return !!currentMnemonicPhrase;
 }
 
 /* ============================================================
    新規ニーモニック生成(24語, Symbol公式ウォレットと同じ強度)
 ============================================================ */
-export async function generateNewMnemonic() {
+async function generateNewMnemonic() {
   const [bip39, wordlistModule] = await Promise.all([
     import("https://esm.sh/@scure/bip39@2.2.0"),
     import("https://esm.sh/@scure/bip39@2.2.0/wordlists/english"),
@@ -41,7 +40,7 @@ export async function generateNewMnemonic() {
    導出パスはSymbol公式ウォレットと同じ m/44'/4343'/{account}'/0'/0'
    ({account}を変えることで同じニーモニックから複数アカウントを導出できる)
 ============================================================ */
-export async function deriveFromMnemonic(mnemonicPhrase, accountIndex = 0) {
+async function deriveFromMnemonic(mnemonicPhrase, accountIndex = 0) {
   const [bip39, wordlistModule, hdkeyModule] = await Promise.all([
     import("https://esm.sh/@scure/bip39@2.2.0"),
     import("https://esm.sh/@scure/bip39@2.2.0/wordlists/english"),
@@ -96,7 +95,7 @@ export async function deriveFromMnemonic(mnemonicPhrase, accountIndex = 0) {
 // バックアップ機能を使うには、なりすまし防止のためパスワード確認を
 // 必須にする。パスワード未設定(平文保存のまま)の場合は、先に
 // 「設定」からパスワードを設定してもらう。
-export function canUseBackupFeature() {
+function canUseBackupFeature() {
   return getVaultMode() === "encrypted";
 }
 
@@ -105,7 +104,7 @@ export function canUseBackupFeature() {
   一致するか検証する。unlockVault() と異なり、アカウントの復元や
   ログイン状態の変更は一切行わない「確認専用」の関数。
 */
-export async function verifyVaultPassword(password) {
+async function verifyVaultPassword(password) {
   const raw = localStorage.getItem(VAULT_KEY);
   if (!raw) {
     throw new Error("保存されたアカウントがありません。");
@@ -137,7 +136,7 @@ export async function verifyVaultPassword(password) {
   秘密鍵の取得。SSS Extension由来のアカウントは秘密鍵をこのアプリが
   一切扱わない設計のため、対象外。
 */
-export function getPrivateKeyForAccount(account) {
+function getPrivateKeyForAccount(account) {
   if (!account || account.source === "sss") {
     throw new Error("SSS Extension由来のアカウントは、このアプリから秘密鍵を取得できません。");
   }
@@ -156,7 +155,7 @@ export function getPrivateKeyForAccount(account) {
        もの(currentMnemonicPhrase)だけが対象。再導出して一致を検証する
   いずれも満たさない場合は、理由を含むエラーを投げる。
 */
-export async function getVerifiedMnemonicForAccount(account) {
+async function getVerifiedMnemonicForAccount(account) {
   if (!account || account.source !== "mnemonic") {
     throw new Error("このアカウントはニーモニック由来ではないため、ニーモニックは存在しません(秘密鍵のみインポートされたアカウントです)。");
   }
@@ -202,14 +201,14 @@ function upsertAccount(entry) {
   }
 }
 
-export function getAccounts() {
+function getAccounts() {
   return appState.accounts;
 }
 
 /* ============================================================
    アカウント切替（SSS / ニーモニック由来 / 秘密鍵由来 共通）
 ============================================================ */
-export async function switchToAccount(id) {
+async function switchToAccount(id) {
   const acc = appState.accounts.find((a) => a.id === id);
   if (!acc) {
     throw new Error("アカウントが見つかりません");
@@ -262,7 +261,7 @@ export async function switchToAccount(id) {
   initWebSocket(address);
   initLiveTx(address);
   initLiveBalanceRefresh(address);
-  initLiveHarvestStatusRefresh(address);
+  W.harvest.initLiveHarvestStatusRefresh(address);
 
   await persistAccounts();
 }
@@ -274,7 +273,7 @@ export async function switchToAccount(id) {
    のアカウントのみ対応。同じ秘密鍵でも、ネットワークが変わると
    アドレスの見え方(先頭の"N"/"T"等)が変わる。
 ============================================================ */
-export async function switchNetwork(networkType) {
+async function switchNetwork(networkType) {
   if (appState.authMode === "sss") {
     throw new Error("SSS Extension接続アカウントではネットワークを切り替えられません");
   }
@@ -319,7 +318,7 @@ export async function switchNetwork(networkType) {
   initWebSocket(address2);
   initLiveTx(address2);
   initLiveBalanceRefresh(address2);
-  initLiveHarvestStatusRefresh(address2);
+  W.harvest.initLiveHarvestStatusRefresh(address2);
 
   await persistAccounts();
 }
@@ -327,7 +326,7 @@ export async function switchNetwork(networkType) {
 /* ============================================================
    SSS Extension 接続
 ============================================================ */
-export async function connectWithSSS() {
+async function connectWithSSS() {
   if (!window.SSS || !window.SSS.activePublicKey) {
     throw new Error("SSS Extension とリンクしてください");
   }
@@ -359,7 +358,7 @@ export async function connectWithSSS() {
              は一切保存せず、今のセッション中のみメモリに残る
              (currentMnemonicPhrase)。ページ再読み込み後は復元できない。
 */
-export async function loginWithMnemonic(mnemonicPhrase, networkType, accountIndex = 0, exportable = false) {
+async function loginWithMnemonic(mnemonicPhrase, networkType, accountIndex = 0, exportable = false) {
   const privateKeyHex = await deriveFromMnemonic(mnemonicPhrase, accountIndex);
   currentMnemonicPhrase = mnemonicPhrase;
 
@@ -383,7 +382,7 @@ export async function loginWithMnemonic(mnemonicPhrase, networkType, accountInde
    秘密鍵ログイン(初回ログイン用。ニーモニックを経由せず、
    64桁の秘密鍵を直接インポートしてログインする)
 ============================================================ */
-export async function loginWithPrivateKey(privateKeyHex, networkType, label) {
+async function loginWithPrivateKey(privateKeyHex, networkType, label) {
   const normalized = privateKeyHex.trim().toUpperCase().replace(/^0X/, "");
   if (!/^[0-9A-F]{64}$/.test(normalized)) {
     throw new Error("秘密鍵の形式が正しくありません（64桁の16進数を入力してください）");
@@ -410,7 +409,7 @@ export async function loginWithPrivateKey(privateKeyHex, networkType, label) {
    ・appState.accountsには追加しない(保存・パスワード保護の対象外)
    ・ネットワークはアドレスの先頭文字(N=Mainnet / T=Testnet)から判定する
 ============================================================ */
-export async function loginAsReadOnly(addressInput) {
+async function loginAsReadOnly(addressInput) {
   const address = (addressInput || "").trim().toUpperCase().replace(/[\s-]/g, "");
 
   if (address.length !== 39) {
@@ -455,7 +454,7 @@ export async function loginAsReadOnly(addressInput) {
   initWebSocket(addressStr);
   initLiveTx(addressStr);
   initLiveBalanceRefresh(addressStr);
-  initLiveHarvestStatusRefresh(addressStr);
+  W.harvest.initLiveHarvestStatusRefresh(addressStr);
 }
 
 /* ============================================================
@@ -467,7 +466,7 @@ function isDuplicatePrivateKey(privateKeyHex) {
   );
 }
 
-export async function addAccountFromMnemonic(mnemonicPhrase, accountIndex, label) {
+async function addAccountFromMnemonic(mnemonicPhrase, accountIndex, label) {
   const privateKeyHex = await deriveFromMnemonic(mnemonicPhrase, accountIndex);
 
   if (isDuplicatePrivateKey(privateKeyHex)) {
@@ -494,7 +493,7 @@ export async function addAccountFromMnemonic(mnemonicPhrase, accountIndex, label
    ニーモニックログイン中、既にメモリにあるニーモニックを使って
    次のアカウントをワンクリックで追加する（再入力不要）
 ============================================================ */
-export async function addNextAccountFromCurrentMnemonic(label) {
+async function addNextAccountFromCurrentMnemonic(label) {
   if (!currentMnemonicPhrase) {
     throw new Error("ニーモニックがメモリ上にありません（ログインし直すか、秘密鍵で追加してください）");
   }
@@ -507,7 +506,7 @@ export async function addNextAccountFromCurrentMnemonic(label) {
   return await addAccountFromMnemonic(currentMnemonicPhrase, nextIndex, label);
 }
 
-export async function addAccountFromPrivateKey(privateKeyHex, label) {
+async function addAccountFromPrivateKey(privateKeyHex, label) {
   const normalized = privateKeyHex.trim().toUpperCase().replace(/^0X/, "");
   if (!/^[0-9A-F]{64}$/.test(normalized)) {
     throw new Error("秘密鍵の形式が正しくありません（64桁の16進数を入力してください）");
@@ -534,7 +533,7 @@ export async function addAccountFromPrivateKey(privateKeyHex, label) {
    アカウントの表示/非表示
    非表示は削除ではなく一覧から隠すだけ(秘密鍵は保持されたまま)
 ============================================================ */
-export async function setAccountHidden(id, hidden) {
+async function setAccountHidden(id, hidden) {
   const acc = appState.accounts.find((a) => a.id === id);
   if (!acc) return;
   acc.hidden = hidden;
@@ -588,7 +587,7 @@ let sessionKey = null;
     "encrypted" … パスワード設定済み。localStorageに暗号化保存。
                    ブラウザを閉じても残り、次回はパスワード入力が必要
 */
-export function getVaultMode() {
+function getVaultMode() {
   const encRaw = localStorage.getItem(VAULT_KEY);
   if (encRaw) {
     try {
@@ -604,11 +603,11 @@ export function getVaultMode() {
   return "none";
 }
 
-export function hasVault() {
+function hasVault() {
   return getVaultMode() !== "none";
 }
 
-export function clearVault() {
+function clearVault() {
   localStorage.removeItem(VAULT_KEY);
   sessionStorage.removeItem(VAULT_KEY);
   sessionSalt = null;
@@ -676,7 +675,7 @@ function restoreAccountsPayload(payload) {
   パスワード未設定(平文・sessionStorage)のボールトを、確認なしでそのまま復元する。
   ページ読み込み時、getVaultMode() === "plain" のときに呼ぶ。
 */
-export async function restorePlainVault() {
+async function restorePlainVault() {
   const raw = sessionStorage.getItem(VAULT_KEY);
   if (!raw) throw new Error("保存されたアカウントがありません");
 
@@ -685,7 +684,7 @@ export async function restorePlainVault() {
   await switchToAccount(targetId);
 }
 
-export async function saveVault(password) {
+async function saveVault(password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await deriveKeyFromPassword(password, salt);
   sessionSalt = salt;
@@ -693,7 +692,7 @@ export async function saveVault(password) {
   await persistAccounts();
 }
 
-export async function unlockVault(password) {
+async function unlockVault(password) {
   const raw = localStorage.getItem(VAULT_KEY);
   if (!raw) {
     throw new Error("保存されたアカウントがありません");
@@ -723,13 +722,13 @@ export async function unlockVault(password) {
 /* ============================================================
    ローカル署名 (ニーモニック/秘密鍵ログイン時、SSS Extensionを使わない署名)
 ============================================================ */
-export function signPayloadLocally(tx) {
+function signPayloadLocally(tx) {
   const signature = appState.facade.signTransaction(appState.localKeyPair, tx);
   // attachSignatureはアナウンス用のJSON文字列(payload)をそのまま返す
   return appState.facade.transactionFactory.static.attachSignature(tx, signature);
 }
 
-export function encryptMessageLocally(recipientPubKeyHex, plainText) {
+function encryptMessageLocally(recipientPubKeyHex, plainText) {
   const encoder = new appState.sdkSymbol.MessageEncoder(appState.localKeyPair);
   const recipientPub = new appState.sdkCore.PublicKey(recipientPubKeyHex);
   return encoder.encode(recipientPub, new TextEncoder().encode(plainText));
@@ -745,7 +744,7 @@ export function encryptMessageLocally(recipientPubKeyHex, plainText) {
    署名のみ行い、アナウンスはしない(マルチシグのアグリゲートボンデッド等、
    ハッシュロックを挟む多段階フローで使う)
 ============================================================ */
-export async function signTxOnly(tx) {
+async function signTxOnly(tx) {
   let jsonPayload;
   let signedBytes;
 
@@ -777,7 +776,7 @@ export async function signTxOnly(tx) {
 /* ============================================================
    未署名のTxオブジェクトから推定手数料(XYM)を計算する共通ヘルパー
 ============================================================ */
-export function estimateFeeFromTx(tx) {
+function estimateFeeFromTx(tx) {
   const feeMicroXym = tx.size * (appState.feeMultiplier ?? 100);
   return (feeMicroXym / 1_000_000).toLocaleString("ja-JP", { maximumFractionDigits: 6 });
 }
@@ -789,7 +788,7 @@ export function estimateFeeFromTx(tx) {
    ユーザーがキャンセルした場合は TxCancelledError を投げる。
    (confirmInfo を渡さない呼び出しは従来通り確認なしで実行される)
 ============================================================ */
-export async function signAndAnnounceTx(tx, confirmInfo) {
+async function signAndAnnounceTx(tx, confirmInfo) {
   if (confirmInfo) {
     const confirmed = await requestTxConfirmation({
       typeLabel: confirmInfo.typeLabel,
@@ -850,7 +849,7 @@ function resetSessionState() {
    次回は自動ログインできず、必ずSSS接続かニーモニック/秘密鍵の
    再入力が必要になる
 ============================================================ */
-export function logout() {
+function logout() {
   clearVault();
   resetSessionState();
 }
@@ -862,7 +861,7 @@ export function logout() {
    新規作成 / ニーモニックインポートでログインした場合(authMode==="local")
    のみ使う想定。
 ============================================================ */
-export function lockSession() {
+function lockSession() {
   sessionSalt = null;
   sessionKey = null;
   resetSessionState();
@@ -874,7 +873,7 @@ export function lockSession() {
    ※ SSS Extensionにはハッシュへの署名を依頼する公開APIが無いため、
      現状はローカル署名(ニーモニック/秘密鍵ログイン)のみ対応。
 ============================================================ */
-export function cosignTransactionHash(transactionHashHex) {
+function cosignTransactionHash(transactionHashHex) {
   if (appState.authMode !== "local") {
     throw new Error("SSS Extensionでは連署に対応していません（ニーモニック/秘密鍵ログインでご利用ください）");
   }
@@ -889,3 +888,38 @@ export function cosignTransactionHash(transactionHashHex) {
     version: "0",
   };
 }
+
+window.W.auth = {
+  hasCurrentMnemonic,
+  generateNewMnemonic,
+  deriveFromMnemonic,
+  canUseBackupFeature,
+  verifyVaultPassword,
+  getPrivateKeyForAccount,
+  getVerifiedMnemonicForAccount,
+  getAccounts,
+  switchToAccount,
+  switchNetwork,
+  connectWithSSS,
+  loginWithMnemonic,
+  loginWithPrivateKey,
+  loginAsReadOnly,
+  addAccountFromMnemonic,
+  addNextAccountFromCurrentMnemonic,
+  addAccountFromPrivateKey,
+  setAccountHidden,
+  getVaultMode,
+  hasVault,
+  clearVault,
+  restorePlainVault,
+  saveVault,
+  unlockVault,
+  signPayloadLocally,
+  encryptMessageLocally,
+  signTxOnly,
+  estimateFeeFromTx,
+  signAndAnnounceTx,
+  logout,
+  lockSession,
+  cosignTransactionHash
+};

@@ -1,6 +1,6 @@
 // ws.js
-import { appState } from "./config.js";
-import { playSoundOnce } from "./utils.js";
+const {appState} = W.config;
+const {playSoundOnce} = W.utils;
 
 let ws = null;
 let uid = "";
@@ -10,7 +10,7 @@ let soundHooksRegistered = false; // ← 音のcallbackを二重登録しない�
 /* ============================================================
    WebSocket 開始
 ============================================================ */
-export function initWebSocket(address) {
+function initWebSocket(address) {
   const wsUrl = appState.NODE.replace("http", "ws") + "/ws";
 
   ws = new WebSocket(wsUrl);
@@ -59,7 +59,7 @@ export function initWebSocket(address) {
 /* ============================================================
    WebSocket 切断（ノード切替時などに使用）
 ============================================================ */
-export function closeWebSocket() {
+function closeWebSocket() {
   if (ws) {
     ws.onclose = null; // 自動再接続を無効化してから閉じる
     ws.close();
@@ -70,7 +70,7 @@ export function closeWebSocket() {
 /* ============================================================
    subscribe
 ============================================================ */
-export function subscribe(topic) {
+function subscribe(topic) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ uid, subscribe: topic }));
 }
@@ -78,7 +78,7 @@ export function subscribe(topic) {
 /* ============================================================
    callback 登録
 ============================================================ */
-export function addCallback(topic, cb) {
+function addCallback(topic, cb) {
   if (!callbacks[topic]) callbacks[topic] = [];
   callbacks[topic].push(cb);
 }
@@ -86,7 +86,7 @@ export function addCallback(topic, cb) {
 /* ============================================================
    block height → timestamp
 ============================================================ */
-export async function getBlockTimestamp(height) {
+async function getBlockTimestamp(height) {
   try {
     const url = `${appState.NODE}/blocks/${height}`;
     const json = await fetch(url).then(r => r.json());
@@ -114,3 +114,11 @@ function registerSoundCallbacks(address) {
 
   soundHooksRegistered = true;
 }
+
+window.W.ws = {
+  initWebSocket,
+  closeWebSocket,
+  subscribe,
+  addCallback,
+  getBlockTimestamp
+};

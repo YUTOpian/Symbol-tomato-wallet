@@ -16,7 +16,7 @@ let usdCache = { rate: null, ts: 0, source: null };
    XYM/JPY (bitbank)
    https://public.bitbank.cc/xym_jpy/ticker
 ============================================================ */
-export async function getXymJpyRate() {
+async function getXymJpyRate() {
   if (jpyCache.rate != null && Date.now() - jpyCache.ts < CACHE_MS) {
     return jpyCache.rate;
   }
@@ -42,7 +42,7 @@ export async function getXymJpyRate() {
    CoinGecko(ブラウザ向けCORS対応済み)にフォールバックする。
    戻り値: { rate: number|null, source: "Gate.io" | "CoinGecko" | null }
 ============================================================ */
-export async function getXymUsdRate() {
+async function getXymUsdRate() {
   if (usdCache.rate != null && Date.now() - usdCache.ts < CACHE_MS) {
     return { rate: usdCache.rate, source: usdCache.source };
   }
@@ -72,3 +72,8 @@ export async function getXymUsdRate() {
     return { rate: usdCache.rate, source: usdCache.source };
   }
 }
+
+window.W.priceRates = {
+  getXymJpyRate,
+  getXymUsdRate
+};

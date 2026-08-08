@@ -1,19 +1,17 @@
 // nodeSelector.js
 // NodeWatch を使って優良ノードを 1 つ選ぶ
 
-import {
-    MAINNET_NODEWATCH_URL,
+const {MAINNET_NODEWATCH_URL,
     TESTNET_NODEWATCH_URL,
     MAINNET_FALLBACK_NODES,
-    TESTNET_FALLBACK_NODES,
-} from "./config.js";
-import { renderNodeInfoHtml } from "./utils.js";
+    TESTNET_FALLBACK_NODES,} = W.config;
+const {renderNodeInfoHtml} = W.utils;
 
 function pickRandom(list) {
     return list[Math.floor(Math.random() * list.length)];
 }
 
-export async function selectNode(isTestnet) {
+async function selectNode(isTestnet) {
     const infoEl = document.getElementById("node-info");
 
     const NODEWATCH_URL = isTestnet
@@ -62,3 +60,7 @@ export async function selectNode(isTestnet) {
         return fallback;
     }
 }
+
+window.W.nodeSelector = {
+  selectNode
+};

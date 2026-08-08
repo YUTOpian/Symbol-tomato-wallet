@@ -11,15 +11,15 @@
 //   ファイル選択 → ファイルハッシュ生成 → 証明情報生成
 //   → (任意)メタデータ作成 → Aggregate Tx生成 → 署名 → アナウンス
 
-import { appState } from "./config.js";
-import { signAndAnnounceTx } from "./auth.js";
+const {appState} = W.config;
+const {signAndAnnounceTx} = W.auth;
 
 const CERT_PREFIX = "APOSTILLE1:"; // メッセージ先頭に付けて識別する
 
 /* ============================================================
    ファイルのSHA-256ハッシュを計算
 ============================================================ */
-export async function computeFileHash(file) {
+async function computeFileHash(file) {
   const buffer = await file.arrayBuffer();
   const digest = await crypto.subtle.digest("SHA-256", buffer);
   return Array.from(new Uint8Array(digest))
@@ -33,7 +33,7 @@ export async function computeFileHash(file) {
    ownerAddress: 所有者(承認者)割り当て。空なら自分自身
    metadataKey / metadataValue: 任意。指定時はAccountMetadataも付与
 ============================================================ */
-export async function createApostille({ file, fileHashHex, ownerAddress, metadataKey, metadataValue }) {
+async function createApostille({ file, fileHashHex, ownerAddress, metadataKey, metadataValue }) {
   const { descriptors } = appState.sdkSymbol;
 
   const cert = {
@@ -126,7 +126,7 @@ function tryParseCert(messageHex) {
    すべて検索する(直近のトランザクションのみが対象。REST APIは
    メッセージ内容での全文検索を提供していないため)
 ============================================================ */
-export async function searchApostilleTransactions(fileHashHex, targetAddress, { pageSize = 100 } = {}) {
+async function searchApostilleTransactions(fileHashHex, targetAddress, { pageSize = 100 } = {}) {
   const address = targetAddress || appState.currentAddress.toString();
   const params = new URLSearchParams({
     address,
@@ -191,3 +191,9 @@ export async function searchApostilleTransactions(fileHashHex, targetAddress, { 
 
   return matches;
 }
+
+window.W.apostille = {
+  computeFileHash,
+  createApostille,
+  searchApostilleTransactions
+};

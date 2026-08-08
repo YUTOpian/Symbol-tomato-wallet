@@ -1,11 +1,11 @@
 // account.js
 // Account情報取得・Mosaic残高取得
 
-import { appState } from "./config.js";
-import { setText, setStatus } from "./ui.js";
-import { formatMosaicAmount } from "./utils.js";
-import { addCallback } from "./ws.js";
-import { getXymJpyRate, getXymUsdRate } from "./priceRates.js";
+const {appState} = W.config;
+const {setText, setStatus} = W.ui;
+const {formatMosaicAmount} = W.utils;
+const {addCallback} = W.ws;
+const {getXymJpyRate, getXymUsdRate} = W.priceRates;
 
 function toHexMosaicId(id) {
   if (typeof id === "string") {
@@ -45,7 +45,7 @@ async function updateBalanceFiatDisplay(xymAmount, baseText) {
   }
 }
 
-export async function refreshAccount() {
+async function refreshAccount() {
   if (!appState.NODE || !appState.currentAddress) {
     return;
   }
@@ -337,7 +337,7 @@ export async function refreshAccount() {
 */
 const liveBalanceRegisteredAddresses = new Set();
 
-export function initLiveBalanceRefresh(address) {
+function initLiveBalanceRefresh(address) {
   if (!address || liveBalanceRegisteredAddresses.has(address)) return;
   liveBalanceRegisteredAddresses.add(address);
 
@@ -350,7 +350,7 @@ export function initLiveBalanceRefresh(address) {
   受信者Account PublicKey取得
   quick_learning_symbol_v3: accountInfo.publicKey
 */
-export async function getRecipientPublicKey(address) {
+async function getRecipientPublicKey(address) {
   const accountInfo = await fetch(
     new URL("/accounts/" + address.toString(), appState.NODE),
     {
@@ -371,3 +371,9 @@ export async function getRecipientPublicKey(address) {
 
   return publicKey;
 }
+
+window.W.account = {
+  refreshAccount,
+  initLiveBalanceRefresh,
+  getRecipientPublicKey
+};

@@ -4,11 +4,10 @@
 //
 // 参考: https://docs.symboltest.net/ja/textbook/namespaces/
 
-import { appState } from "./config.js";
-import { signAndAnnounceTx, estimateFeeFromTx } from "./auth.js";
-import { estimateRootNamespaceRentalFee, estimateSubNamespaceRentalFee } from "./rentalFees.js";
+const {appState} = W.config;
+const {signAndAnnounceTx, estimateFeeFromTx} = W.auth;
+const {estimateRootNamespaceRentalFee, estimateSubNamespaceRentalFee} = W.rentalFees;
 
-export { estimateRootNamespaceRentalFee, estimateSubNamespaceRentalFee };
 
 /* ============================================================
    このネームスペース自身のID(16進)を depth に応じて正しく取り出す
@@ -42,7 +41,7 @@ function formatRemaining(endHeight, currentHeight) {
   return `（あと${days}日）`;
 }
 
-export async function loadOwnedNamespaces() {
+async function loadOwnedNamespaces() {
   const el = document.getElementById("namespace-list");
   if (!el) return;
 
@@ -103,7 +102,7 @@ export async function loadOwnedNamespaces() {
    サブネームスペース登録時の親選択、リンク対象選択などで使う。
    depth(1 or 2)も一緒に返す(depth=3は親にできないため)。
 ============================================================ */
-export async function fetchOwnedNamespaceOptions() {
+async function fetchOwnedNamespaceOptions() {
   const address = appState.currentAddress.toString();
   const params = new URLSearchParams({ ownerAddress: address, pageSize: 100 });
   const res = await fetch(`${appState.NODE}/namespaces?${params}`);
@@ -135,7 +134,7 @@ export async function fetchOwnedNamespaceOptions() {
    サブネームスペース登録時の親選択プルダウン
    (深さ3は親にできないため depth<3 のみ候補にする)
 ============================================================ */
-export async function populateParentNamespaceSelect() {
+async function populateParentNamespaceSelect() {
   const select = document.getElementById("sub-namespace-parent-select");
   if (!select) return;
 
@@ -194,11 +193,11 @@ function buildRootNamespaceTx(name, durationBlocks) {
   );
 }
 
-export function estimateRootNamespaceFee(name, durationBlocks) {
+function estimateRootNamespaceFee(name, durationBlocks) {
   return estimateFeeFromTx(buildRootNamespaceTx(name, durationBlocks));
 }
 
-export async function registerRootNamespace(name, durationBlocks) {
+async function registerRootNamespace(name, durationBlocks) {
   const tx = buildRootNamespaceTx(name, durationBlocks);
   let rentalFeeXym = "---";
   try {
@@ -244,11 +243,11 @@ function buildSubNamespaceTx(parentIdHex, subName) {
   );
 }
 
-export function estimateSubNamespaceFee(parentIdHex, subName) {
+function estimateSubNamespaceFee(parentIdHex, subName) {
   return estimateFeeFromTx(buildSubNamespaceTx(parentIdHex, subName));
 }
 
-export async function registerSubNamespace(parentIdHex, subName) {
+async function registerSubNamespace(parentIdHex, subName) {
   const tx = buildSubNamespaceTx(parentIdHex, subName);
   let rentalFeeXym = "---";
   try {
@@ -290,11 +289,11 @@ function buildAddressAliasTx(namespaceIdHex, targetAddress, action) {
   );
 }
 
-export function estimateAddressAliasFee(namespaceIdHex, targetAddress, action) {
+function estimateAddressAliasFee(namespaceIdHex, targetAddress, action) {
   return estimateFeeFromTx(buildAddressAliasTx(namespaceIdHex, targetAddress, action));
 }
 
-export async function setAddressAlias(namespaceIdHex, targetAddress, action) {
+async function setAddressAlias(namespaceIdHex, targetAddress, action) {
   const tx = buildAddressAliasTx(namespaceIdHex, targetAddress, action);
   return await signAndAnnounceTx(tx, {
     typeLabel: action === "unlink" ? "アドレスエイリアス解除" : "アドレスエイリアス設定",
@@ -302,3 +301,17 @@ export async function setAddressAlias(namespaceIdHex, targetAddress, action) {
     details: [{ label: "ネームスペースID", value: namespaceIdHex.toUpperCase() }],
   });
 }
+
+window.W.namespace = {
+  estimateRootNamespaceRentalFee,
+  estimateSubNamespaceRentalFee,
+  loadOwnedNamespaces,
+  fetchOwnedNamespaceOptions,
+  populateParentNamespaceSelect,
+  estimateRootNamespaceFee,
+  registerRootNamespace,
+  estimateSubNamespaceFee,
+  registerSubNamespace,
+  estimateAddressAliasFee,
+  setAddressAlias
+};

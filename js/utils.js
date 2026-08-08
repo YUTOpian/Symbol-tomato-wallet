@@ -1,5 +1,5 @@
 //utils.js
-export function hexToBytes(hex) {
+function hexToBytes(hex) {
   const bytes = [];
   for (let c = 0; c < hex.length; c += 2)
     bytes.push(parseInt(hex.substr(c, 2), 16));
@@ -9,7 +9,7 @@ export function hexToBytes(hex) {
 
 // ★ 2秒で自動消えるポップアップ表示
 
-export function showPopup(message, isError = false) {
+function showPopup(message, isError = false) {
   let popup = document.getElementById("copy-popup");
 
   if (!popup) {
@@ -48,7 +48,7 @@ export function showPopup(message, isError = false) {
 
 let soundQueue = Promise.resolve();
 
-export function playSoundOnce(file) {
+function playSoundOnce(file) {
   soundQueue = soundQueue
     .then(() => {
       return new Promise((resolve) => {
@@ -67,7 +67,7 @@ export function playSoundOnce(file) {
 // モザイク数量表示フォーマット
 // ============================================================
 
-export function formatMosaicAmount(amount, divisibility = 0) {
+function formatMosaicAmount(amount, divisibility = 0) {
 
   const value =
     Number(amount) /
@@ -83,7 +83,7 @@ export function formatMosaicAmount(amount, divisibility = 0) {
 
 }
 
-export function hexToUint8Array(hex) {
+function hexToUint8Array(hex) {
   const bytes = [];
 
   for(let i = 0; i < hex.length; i += 2){
@@ -99,14 +99,14 @@ export function hexToUint8Array(hex) {
 // SSS Extension 連携状態
 // ============================================================
 
-import { appState } from "./config.js";
-import { getXymJpyRate, getXymUsdRate } from "./priceRates.js";
+const {appState} = W.config;
+const {getXymJpyRate, getXymUsdRate} = W.priceRates;
 
-export function isSSSConnected() {
+function isSSSConnected() {
   return !!(window.SSS && window.SSS.activePublicKey);
 }
 
-export function getSSSStatusHtml() {
+function getSSSStatusHtml() {
   return isSSSConnected()
     ? `<span style="color:#4ade80;">🟢 SSS Extensionと連携中</span>`
     : `<span style="color:#f87171;">🔴 SSS Extensionと未連携</span>`;
@@ -123,7 +123,7 @@ export function getSSSStatusHtml() {
 
 const NODE_INFO_PRICE_ELEMENT_ID = "node-info-price";
 
-export function renderNodeInfoHtml({ isTestnet, nodeOrigin, note = "" }) {
+function renderNodeInfoHtml({ isTestnet, nodeOrigin, note = "" }) {
   const html = (
     `<div style="font-size: 20px; font-weight: bold; color: #8ab4f8;">` +
     `${isTestnet ? "🟡 Testnet" : "🟢 Mainnet"}` +
@@ -166,3 +166,14 @@ async function updateNodeInfoPriceDisplay() {
 
   el.innerHTML = lines.length > 0 ? lines.join("<br>") : "価格の取得に失敗しました";
 }
+
+window.W.utils = {
+  hexToBytes,
+  showPopup,
+  playSoundOnce,
+  formatMosaicAmount,
+  hexToUint8Array,
+  isSSSConnected,
+  getSSSStatusHtml,
+  renderNodeInfoHtml
+};

@@ -10,7 +10,7 @@
 //   effectiveMosaicRentalFee                : モザイク作成の定額手数料
 // いずれも絶対量(atomic unit, XYMの場合は10^-6単位)で返ってくる。
 
-import { appState } from "./config.js";
+const {appState} = W.config;
 
 let cached = null;
 let cachedNodeUrl = null;
@@ -41,7 +41,7 @@ function toXymString(atomicAmount) {
    ルートネームスペース登録・更新(延長)の推定レンタル手数料
    (1ブロックあたりの単価 × 有効期間)
 ============================================================ */
-export async function estimateRootNamespaceRentalFee(durationBlocks) {
+async function estimateRootNamespaceRentalFee(durationBlocks) {
   const { rootNamespacePerBlock } = await fetchRentalFeeMultipliers();
   const blocks = Number.isFinite(durationBlocks) ? Math.max(0, Math.floor(durationBlocks)) : 0;
   return toXymString(rootNamespacePerBlock * BigInt(blocks));
@@ -50,7 +50,7 @@ export async function estimateRootNamespaceRentalFee(durationBlocks) {
 /* ============================================================
    サブ(子)ネームスペース登録の推定レンタル手数料(定額)
 ============================================================ */
-export async function estimateSubNamespaceRentalFee() {
+async function estimateSubNamespaceRentalFee() {
   const { childNamespace } = await fetchRentalFeeMultipliers();
   return toXymString(childNamespace);
 }
@@ -58,7 +58,13 @@ export async function estimateSubNamespaceRentalFee() {
 /* ============================================================
    モザイク作成の推定レンタル手数料(定額)
 ============================================================ */
-export async function estimateMosaicRentalFee() {
+async function estimateMosaicRentalFee() {
   const { mosaic } = await fetchRentalFeeMultipliers();
   return toXymString(mosaic);
 }
+
+window.W.rentalFees = {
+  estimateRootNamespaceRentalFee,
+  estimateSubNamespaceRentalFee,
+  estimateMosaicRentalFee
+};

@@ -1,7 +1,7 @@
 // accountSwitcher.js
 // アカウント切替・非表示リストの描画
 
-import { appState } from "./config.js";
+const {appState} = W.config;
 
 function shortAddr(addr) {
   if (!addr) return "---";
@@ -15,7 +15,7 @@ function sourceLabel(source) {
   return source;
 }
 
-export function updateSwitcherVisibility() {
+function updateSwitcherVisibility() {
   const btn = document.getElementById("account-switch-btn");
   if (!btn) return;
   // 読み取り専用(アドレス照会)モードはappState.accountsに何も追加しないため
@@ -27,7 +27,7 @@ export function updateSwitcherVisibility() {
 /* ============================================================
    アカウント切替画面の一覧(非表示のものは出さない)
 ============================================================ */
-export function renderAccountSwitcherList() {
+function renderAccountSwitcherList() {
   const el = document.getElementById("account-switcher-list");
   if (!el) return;
 
@@ -56,7 +56,7 @@ export function renderAccountSwitcherList() {
 /* ============================================================
    非表示アカウント一覧(再表示ボタン付き)
 ============================================================ */
-export function renderHiddenAccountList() {
+function renderHiddenAccountList() {
   const el = document.getElementById("hidden-account-list");
   if (!el) return;
 
@@ -85,10 +85,17 @@ export function renderHiddenAccountList() {
 /* ============================================================
    ニーモニックで追加する際の、未使用アカウントインデックス候補
 ============================================================ */
-export function nextMnemonicAccountIndex() {
+function nextMnemonicAccountIndex() {
   const used = appState.accounts
     .filter((a) => a.source === "mnemonic")
     .map((a) => a.accountIndex ?? 0);
   if (used.length === 0) return 0;
   return Math.max(...used) + 1;
 }
+
+window.W.accountSwitcher = {
+  updateSwitcherVisibility,
+  renderAccountSwitcherList,
+  renderHiddenAccountList,
+  nextMnemonicAccountIndex
+};

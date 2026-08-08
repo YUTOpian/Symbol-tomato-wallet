@@ -1,14 +1,14 @@
 // sdk.js
 // Symbol SDK v3 の読み込みと Facade 初期化
 
-import { appState } from "./config.js";
+const {appState} = W.config;
 
 const SDK_VERSION = "3.3.0";
 
 /**
  * SDK 初期化
  */
-export async function initSdk() {
+async function initSdk() {
 
   if (!appState.NODE) {
     throw new Error("NODE が未設定です");
@@ -48,7 +48,15 @@ export async function initSdk() {
 /**
  * 外部アクセス用
  */
-export const facade = () => appState.facade;
-export const sdkCore = () => appState.sdkCore;
-export const sdkSymbol = () => appState.sdkSymbol;
-export const scopedMetadataKey = () => appState.scopedMetadataKey;
+const facade = () => appState.facade;
+const sdkCore = () => appState.sdkCore;
+const sdkSymbol = () => appState.sdkSymbol;
+const scopedMetadataKey = () => appState.scopedMetadataKey;
+
+window.W.sdk = {
+  initSdk,
+  facade,
+  sdkCore,
+  sdkSymbol,
+  scopedMetadataKey
+};

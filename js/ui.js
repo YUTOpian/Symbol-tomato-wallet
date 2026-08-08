@@ -4,7 +4,7 @@
 /**
  * テキストを書き換える
  */
-export function setText(id, text) {
+function setText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
 }
@@ -13,7 +13,7 @@ export function setText(id, text) {
  * ステータス表示を更新する
  * color: default / success / error
  */
-export function setStatus(id, text, type = "default") {
+function setStatus(id, text, type = "default") {
   const el = document.getElementById(id);
   if (!el) return;
 
@@ -26,3 +26,8 @@ export function setStatus(id, text, type = "default") {
       ? "#ef4444"   // 赤
       : "#e5e7eb";  // 通常
 }
+
+window.W.ui = {
+  setText,
+  setStatus
+};

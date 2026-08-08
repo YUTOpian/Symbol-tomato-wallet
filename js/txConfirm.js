@@ -3,13 +3,13 @@
 // send/transfer, namespace登録, mosaic作成, multisig提案, metadata登録, restriction設定,
 // apostille作成 など、ノードへアナウンスするすべての機能から共通で使う。
 
-import { appState } from "./config.js";
+const {appState} = W.config;
 
 /* ============================================================
    ユーザーがキャンセルしたことを示す専用エラー
    呼び出し側は e.cancelled で判定できる
 ============================================================ */
-export class TxCancelledError extends Error {
+class TxCancelledError extends Error {
   constructor(message = "ユーザーがキャンセルしました") {
     super(message);
     this.name = "TxCancelledError";
@@ -20,7 +20,7 @@ export class TxCancelledError extends Error {
 /* ============================================================
    tx.deadline (Symbol Timestampオブジェクト) を人間が読める日時に変換
 ============================================================ */
-export function formatTxDeadline(tx) {
+function formatTxDeadline(tx) {
   try {
     const raw = tx?.deadline?.value ?? tx?.deadline;
     if (raw == null || !appState.epochAdjustment) return "---";
@@ -42,7 +42,7 @@ export function formatTxDeadline(tx) {
      deadlineText: 有効期限の表示テキスト(任意)
      details     : [{ label, value }] 追加の確認項目(ネームスペース名・モザイクIDなど)
 ============================================================ */
-export function requestTxConfirmation(info) {
+function requestTxConfirmation(info) {
   const { typeLabel, sender, recipient, fee, deadlineText, details = [] } = info;
 
   return new Promise((resolve) => {
@@ -123,3 +123,9 @@ export function requestTxConfirmation(info) {
     dialog.showModal();
   });
 }
+
+window.W.txConfirm = {
+  TxCancelledError,
+  formatTxDeadline,
+  requestTxConfirmation
+};
