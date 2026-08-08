@@ -80,8 +80,10 @@ async function proposeBondedAggregate(embeddedTransactions, cosignerCount, confi
 
   // マルチシグの提案内容そのものの確認(実際の担保としてハッシュロックで10XYMが
   // 一時的にロックされることも合わせて表示する)
+  // ※ この後ハッシュロックの承認待ち(オンライン必須)が続く多段階フローのため、
+  //   オフライントランザクションとしての書き出しには対応しない
   if (confirmInfo) {
-    const confirmed = await requestTxConfirmation({
+    const result = await requestTxConfirmation({
       typeLabel: confirmInfo.typeLabel,
       sender: confirmInfo.sender,
       recipient: confirmInfo.recipient,
@@ -92,8 +94,9 @@ async function proposeBondedAggregate(embeddedTransactions, cosignerCount, confi
         { label: "必要な追加連署者数", value: cosignerCount },
         { label: "担保(ハッシュロック)", value: "10 XYM（承認完了、または期限切れで返却されます）" },
       ],
+      hideOfflineButton: true,
     });
-    if (!confirmed) {
+    if (result !== "confirm") {
       throw new TxCancelledError();
     }
   }
@@ -408,14 +411,17 @@ async function loadPendingPartialTransactions(elId = "multisig-pending-list", ex
 async function cosignPending(transactionHashHex, nodeUrlOverride = null) {
   const nodeUrl = nodeUrlOverride || appState.NODE;
 
-  const confirmed = await requestTxConfirmation({
+  // 連署はハッシュへの署名のみ(送金等のような単体トランザクションの
+  // 書き出しではないため)、オフライントランザクションには対応しない
+  const confirmResult = await requestTxConfirmation({
     typeLabel: "マルチシグ連署(承認)",
     details: [
       { label: "対象トランザクションHash", value: transactionHashHex },
       ...(nodeUrlOverride ? [{ label: "アナウンス先ノード", value: nodeUrl }] : []),
     ],
+    hideOfflineButton: true,
   });
-  if (!confirmed) {
+  if (confirmResult !== "confirm") {
     throw new TxCancelledError();
   }
 

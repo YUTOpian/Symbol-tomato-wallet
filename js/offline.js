@@ -15,11 +15,65 @@ const {appState, NetworkType} = W.config;
 const {signTxOnly} = W.auth;
 
 const OFFLINE_TX_TYPE = "KASANE_OFFLINE_TX";
-const OFFLINE_TX_VERSION = 1;
+const OFFLINE_TX_VERSION = 2;
+
+// オフライン署名データの kind → 読み込み後に遷移する画面IDのマッピング
+// (auth.js の signAndAnnounceTx がオフライン書き出し時に confirmInfo.kind を
+//  そのままこのJSONに詰める。ここに無い/未知の kind は汎用アナウンス画面を使う)
+const KIND_TO_PAGE_ID = {
+  transfer: "transfer-page",
+  multisend: "multisend-list-page",
+  harvest: "harvest-page",
+  namespace: "namespace-page",
+  metadata: "metadata-page",
+  mosaic: "mosaic-page",
+  apostille: "apostille-page",
+  "restriction-account": "restriction-account-page",
+  "restriction-mosaicdef": "restriction-mosaicdef-page",
+};
+
+function getPageIdForKind(kind) {
+  return KIND_TO_PAGE_ID[kind] ?? null;
+}
+
+/* ============================================================
+   汎用: 任意のトランザクションをその場で署名しオフラインデータ化する
+   (アナウンスはしない)。送金以外(ネームスペース・ハーベスト・
+   メタデータ・モザイクなど)の全機能から共通で使う。
+
+   kind       : KIND_TO_PAGE_ID のキー。読み込み時にどの画面へ
+                遷移するかを決めるための種別タグ
+   confirmInfo: 確認ダイアログに渡したものと同じ形 { typeLabel, recipient, details }
+                読み込み時に同じ内容を再表示するためにそのまま保存する
+============================================================ */
+async function signTxOffline(tx, { kind, confirmInfo } = {}) {
+  const { jsonPayload, signedBytes } = await signTxOnly(tx);
+  const payloadHex = JSON.parse(jsonPayload).payload;
+
+  const signedTx = appState.facade.transactionFactory.static.deserialize(signedBytes);
+  const hash = appState.facade.hashTransaction(signedTx).toString();
+
+  return {
+    type: OFFLINE_TX_TYPE,
+    version: OFFLINE_TX_VERSION,
+    chain: "Symbol",
+    network: appState.networkType === NetworkType.TESTNET ? "TEST_NET" : "MAIN_NET",
+    kind: kind ?? "other",
+    typeLabel: confirmInfo?.typeLabel ?? "オフライントランザクション",
+    recipient: confirmInfo?.recipient ?? null,
+    details: confirmInfo?.details ?? [],
+    payload: payloadHex,
+    signature: signedTx.signature.toString(),
+    signerPublicKey: signedTx.signerPublicKey.toString(),
+    hash,
+  };
+}
 
 /* ============================================================
    送金トランザクションを作成し、その場で署名する(アナウンスはしない)
    ログイン中のアカウント(SSS/ローカルどちらでも可)で署名される。
+   ※「高度機能 > オフライントランザクション」の手動作成画面専用。
+     通常の送金画面から書き出す場合は signTxOffline() を使う。
 ============================================================ */
 async function composeAndSignOfflineTransfer({ recipientAddress, mosaicIdHex, amount, message }) {
   const { descriptors, models } = appState.sdkSymbol;
@@ -51,23 +105,17 @@ async function composeAndSignOfflineTransfer({ recipientAddress, mosaicIdHex, am
     60 * 60
   );
 
-  const { jsonPayload, signedBytes } = await signTxOnly(tx);
-  const payloadHex = JSON.parse(jsonPayload).payload;
-
-  const signedTx = appState.facade.transactionFactory.static.deserialize(signedBytes);
-  const hash = appState.facade.hashTransaction(signedTx).toString();
-
-  return {
-    type: OFFLINE_TX_TYPE,
-    version: OFFLINE_TX_VERSION,
-    chain: "Symbol",
-    network: appState.networkType === NetworkType.TESTNET ? "TEST_NET" : "MAIN_NET",
-    transactionType: "TRANSFER",
-    payload: payloadHex,
-    signature: signedTx.signature.toString(),
-    signerPublicKey: signedTx.signerPublicKey.toString(),
-    hash,
-  };
+  return await signTxOffline(tx, {
+    kind: "transfer",
+    confirmInfo: {
+      typeLabel: "送金",
+      recipient: recipientAddress,
+      details: [
+        { label: "モザイクID", value: mosaicIdHex.toUpperCase() },
+        { label: "数量", value: amount },
+      ],
+    },
+  });
 }
 
 /* ============================================================
@@ -139,6 +187,8 @@ async function broadcastOfflineTx(json, nodeUrl) {
 window.W.offline = {
   OFFLINE_TX_TYPE,
   OFFLINE_TX_VERSION,
+  getPageIdForKind,
+  signTxOffline,
   composeAndSignOfflineTransfer,
   downloadOfflineTxJson,
   validateOfflineTxJson,

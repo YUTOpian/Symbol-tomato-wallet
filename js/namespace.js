@@ -208,6 +208,7 @@ async function registerRootNamespace(name, durationBlocks) {
 
   return await signAndAnnounceTx(tx, {
     typeLabel: "ネームスペース登録(ルート)",
+    kind: "namespace",
     details: [
       { label: "ネームスペース名", value: name },
       { label: "登録期間", value: `${durationBlocks} ブロック` },
@@ -258,6 +259,7 @@ async function registerSubNamespace(parentIdHex, subName) {
 
   return await signAndAnnounceTx(tx, {
     typeLabel: "ネームスペース登録(サブ)",
+    kind: "namespace",
     details: [
       { label: "親ネームスペースID", value: parentIdHex.toUpperCase() },
       { label: "サブネームスペース名", value: subName },
@@ -297,6 +299,7 @@ async function setAddressAlias(namespaceIdHex, targetAddress, action) {
   const tx = buildAddressAliasTx(namespaceIdHex, targetAddress, action);
   return await signAndAnnounceTx(tx, {
     typeLabel: action === "unlink" ? "アドレスエイリアス解除" : "アドレスエイリアス設定",
+    kind: "namespace",
     recipient: targetAddress,
     details: [{ label: "ネームスペースID", value: namespaceIdHex.toUpperCase() }],
   });

@@ -150,6 +150,7 @@ async function sendTx() {
   const confirmInfo = {
     typeLabel: "送金",
     recipient: recipientRaw,
+    kind: "transfer",
     details: [
       { label: "モザイク", value: `${mosaicName} (${selectedMosaicId})` },
       { label: "数量", value: amountStr },
@@ -172,6 +173,10 @@ async function sendTx() {
   } catch (e) {
     if (e?.cancelled) {
       setStatus("tx-status", "送金をキャンセルしました。");
+      return;
+    }
+    if (e?.offlineExported) {
+      setStatus("tx-status", "📥 オフライントランザクションとしてダウンロードしました。ノードへはまだ送信されていません。", "success");
       return;
     }
     console.error("transfer error:", e);

@@ -104,6 +104,7 @@ async function setAddressRestriction({ block, outgoing, additions, deletions }) 
 
   return await submitRestriction(descriptor, {
     typeLabel: "アカウント制限(アドレス)",
+    kind: "restriction-account",
     details: [
       { label: "モード", value: block ? "ブロックリスト" : "許可リスト" },
       { label: "方向", value: outgoing ? "送信(自分発)" : "受信(自分宛)" },
@@ -130,6 +131,7 @@ async function setMosaicRestriction({ block, outgoing, additions, deletions }) {
 
   return await submitRestriction(descriptor, {
     typeLabel: "アカウント制限(モザイク)",
+    kind: "restriction-account",
     details: [
       { label: "モード", value: block ? "ブロックリスト" : "許可リスト" },
       { label: "方向", value: outgoing ? "送信(自分発)" : "受信(自分宛)" },
@@ -156,6 +158,7 @@ async function setOperationRestriction({ block, outgoing, additions, deletions }
 
   return await submitRestriction(descriptor, {
     typeLabel: "アカウント制限(操作)",
+    kind: "restriction-account",
     details: [
       { label: "モード", value: block ? "ブロックリスト" : "許可リスト" },
       { label: "方向", value: outgoing ? "送信(自分発)" : "受信(自分宛)" },
@@ -229,6 +232,7 @@ async function setMosaicGlobalRestriction({
 
   return await submitRestriction(descriptor, {
     typeLabel: "モザイクグローバル制限",
+    kind: "restriction-mosaicdef",
     details: [
       { label: "モザイクID", value: mosaicIdHex.trim().toUpperCase() },
       { label: "参照モザイクID", value: referenceMosaicIdHex ? referenceMosaicIdHex.trim().toUpperCase() : "(なし)" },
@@ -265,6 +269,7 @@ async function setMosaicAddressRestriction({
 
   return await submitRestriction(descriptor, {
     typeLabel: "モザイクアドレス制限",
+    kind: "restriction-mosaicdef",
     recipient: targetAddress,
     details: [
       { label: "モザイクID", value: mosaicIdHex.trim().toUpperCase() },

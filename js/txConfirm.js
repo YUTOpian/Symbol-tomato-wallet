@@ -2,6 +2,14 @@
 // トランザクションをアナウンス(ブロードキャスト)する前に、内容を確認するための共通ダイアログ。
 // send/transfer, namespace登録, mosaic作成, multisig提案, metadata登録, restriction設定,
 // apostille作成 など、ノードへアナウンスするすべての機能から共通で使う。
+//
+// ダイアログには「確認してブロードキャスト」「オフライントランザクション」「キャンセル」の
+// 3つの選択肢があり、requestTxConfirmation() は以下のいずれかの文字列で解決する:
+//   "confirm" : そのままオンラインで署名・アナウンスする
+//   "offline" : この場では署名のみ行い、JSONファイルとして書き出す(アナウンスはしない)
+//   "cancel"  : 何もしない
+// オフラインで書き出したJSONを読み込んでアナウンスする場面では、二重にオフライン化
+// できても意味がないため、hideOfflineButton: true を渡してボタン自体を消す。
 
 const {appState} = W.config;
 
@@ -14,6 +22,18 @@ class TxCancelledError extends Error {
     super(message);
     this.name = "TxCancelledError";
     this.cancelled = true;
+  }
+}
+
+/* ============================================================
+   「オフライントランザクションとして書き出した」ことを示す専用エラー
+   (アナウンスはまだ行われていない)。呼び出し側は e.offlineExported で判定できる
+============================================================ */
+class TxOfflineExportedError extends Error {
+  constructor(message = "オフライントランザクションとしてJSONファイルを書き出しました。ノードへはまだ送信されていません。") {
+    super(message);
+    this.name = "TxOfflineExportedError";
+    this.offlineExported = true;
   }
 }
 
@@ -32,23 +52,25 @@ function formatTxDeadline(tx) {
 }
 
 /* ============================================================
-   確認ダイアログを表示し、「確認」/「キャンセル」の結果をPromise<boolean>で返す
+   確認ダイアログを表示し、結果を Promise<"confirm"|"offline"|"cancel"> で返す
 
    info:
-     typeLabel   : トランザクション種別ラベル(必須。例:"送金","ネームスペース登録")
-     sender      : 送信元(省略時は appState.currentAddress)
-     recipient   : 送信先(任意。指定が無ければ行ごと非表示)
-     fee         : 手数料(XYM、文字列。任意)
-     deadlineText: 有効期限の表示テキスト(任意)
-     details     : [{ label, value }] 追加の確認項目(ネームスペース名・モザイクIDなど)
+     typeLabel        : トランザクション種別ラベル(必須。例:"送金","ネームスペース登録")
+     sender           : 送信元(省略時は appState.currentAddress)
+     recipient        : 送信先(任意。指定が無ければ行ごと非表示)
+     fee              : 手数料(XYM、文字列。任意)
+     deadlineText     : 有効期限の表示テキスト(任意)
+     details          : [{ label, value }] 追加の確認項目(ネームスペース名・モザイクIDなど)
+     hideOfflineButton: true にすると「オフライントランザクション」ボタンを表示しない
+                        (既にオフライン署名済みのデータをアナウンスするだけの場面で使う)
 ============================================================ */
 function requestTxConfirmation(info) {
-  const { typeLabel, sender, recipient, fee, deadlineText, details = [] } = info;
+  const { typeLabel, sender, recipient, fee, deadlineText, details = [], hideOfflineButton = false } = info;
 
   return new Promise((resolve) => {
     const dialog = document.getElementById("tx-confirm-dialog");
 
-    // ダイアログ要素が無い場合は window.confirm にフォールバック
+    // ダイアログ要素が無い場合は window.confirm にフォールバック(オフライン選択は非対応)
     if (!dialog || typeof dialog.showModal !== "function") {
       const lines = [
         `種別: ${typeLabel ?? "---"}`,
@@ -58,7 +80,7 @@ function requestTxConfirmation(info) {
         deadlineText ? `期限: ${deadlineText}` : null,
         ...details.map((d) => `${d.label}: ${d.value}`),
       ].filter(Boolean);
-      resolve(window.confirm(lines.join("\n")));
+      resolve(window.confirm(lines.join("\n")) ? "confirm" : "cancel");
       return;
     }
 
@@ -99,24 +121,32 @@ function requestTxConfirmation(info) {
       .join("");
 
     const okBtn = document.getElementById("confirm-tx-ok-btn");
+    const offlineBtn = document.getElementById("confirm-tx-offline-btn");
     const cancelBtn = document.getElementById("confirm-tx-cancel-btn");
+
+    if (offlineBtn) {
+      offlineBtn.style.display = hideOfflineButton ? "none" : "";
+    }
 
     const cleanup = (result) => {
       okBtn.removeEventListener("click", onOk);
+      offlineBtn?.removeEventListener("click", onOffline);
       cancelBtn.removeEventListener("click", onCancel);
       dialog.removeEventListener("cancel", onDialogCancel);
       if (dialog.open) dialog.close();
       resolve(result);
     };
 
-    const onOk = () => cleanup(true);
-    const onCancel = () => cleanup(false);
+    const onOk = () => cleanup("confirm");
+    const onOffline = () => cleanup("offline");
+    const onCancel = () => cleanup("cancel");
     const onDialogCancel = (e) => {
       e.preventDefault();
-      cleanup(false);
+      cleanup("cancel");
     };
 
     okBtn.addEventListener("click", onOk);
+    offlineBtn?.addEventListener("click", onOffline);
     cancelBtn.addEventListener("click", onCancel);
     dialog.addEventListener("cancel", onDialogCancel);
 
@@ -126,6 +156,7 @@ function requestTxConfirmation(info) {
 
 window.W.txConfirm = {
   TxCancelledError,
+  TxOfflineExportedError,
   formatTxDeadline,
   requestTxConfirmation
 };
