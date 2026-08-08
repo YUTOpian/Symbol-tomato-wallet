@@ -91,6 +91,7 @@ async function createApostille({ file, fileHashHex, ownerAddress, metadataKey, m
 
   return await signAndAnnounceTx(tx, {
     typeLabel: "アポスティーユ証明(ファイル公証)",
+    kind: "apostille",
     recipient: recipientAddress.toString(),
     details: [
       { label: "ファイル名", value: cert.fileName || "(なし)" },

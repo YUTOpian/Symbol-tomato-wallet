@@ -37,7 +37,8 @@ const {connectWithSSS,
   canUseBackupFeature,
   verifyVaultPassword,
   getPrivateKeyForAccount,
-  getVerifiedMnemonicForAccount,} = W.auth;
+  getVerifiedMnemonicForAccount,
+  announceOfflineTx,} = W.auth;
 const {updateSwitcherVisibility,
   renderAccountSwitcherList,
   renderHiddenAccountList,
@@ -87,7 +88,8 @@ const {composeAndSignOfflineTransfer,
   downloadOfflineTxJson,
   validateOfflineTxJson,
   broadcastOfflineTx,
-  checkAlreadyBroadcastStatus,} = W.offline;
+  checkAlreadyBroadcastStatus,
+  getPageIdForKind,} = W.offline;
 
 let QRCode, QRCodeGenerator, firstValueFrom;
 
@@ -894,6 +896,10 @@ window.addEventListener("load", async () => {
       });
       await loadOwnMetadataList();
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("metadata-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("setMetadata error:", e);
       setStatus("metadata-status", e.message || "登録・更新に失敗しました。", "error");
     }
@@ -1169,6 +1175,10 @@ window.addEventListener("load", async () => {
         containerId: "multisend-tracking",
       });
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("multisend-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("sendMultiTransfer error:", e);
       setStatus("multisend-status", e.message || "送信に失敗しました。", "error");
     }
@@ -1260,6 +1270,10 @@ window.addEventListener("load", async () => {
         containerId: "apostille-tracking",
       });
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("apostille-create-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("createApostille error:", e);
       setStatus("apostille-create-status", e.message || "作成に失敗しました。", "error");
     }
@@ -1463,6 +1477,10 @@ window.addEventListener("load", async () => {
       });
       setStatus("mglobal-status", `✅ 設定しました。Hash: ${hash}`, "success");
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("mglobal-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("setMosaicGlobalRestriction error:", e);
       setStatus("mglobal-status", e.message || "設定に失敗しました。", "error");
     }
@@ -1492,6 +1510,10 @@ window.addEventListener("load", async () => {
       });
       setStatus("maddress-status", `✅ 設定しました。Hash: ${hash}`, "success");
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("maddress-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("setMosaicAddressRestriction error:", e);
       setStatus("maddress-status", e.message || "設定に失敗しました。", "error");
     }
@@ -1516,6 +1538,10 @@ window.addEventListener("load", async () => {
       document.getElementById("restriction-address-remove").value = "";
       await loadAccountRestrictions("restriction-current-address", "address");
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("restriction-address-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("setAddressRestriction error:", e);
       setStatus("restriction-address-status", e.message || "設定に失敗しました。", "error");
     }
@@ -1540,6 +1566,10 @@ window.addEventListener("load", async () => {
       document.getElementById("restriction-mosaic-remove").value = "";
       await loadAccountRestrictions("restriction-current-mosaic", "mosaic");
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("restriction-mosaic-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("setMosaicRestriction error:", e);
       setStatus("restriction-mosaic-status", e.message || "設定に失敗しました。", "error");
     }
@@ -1561,6 +1591,10 @@ window.addEventListener("load", async () => {
       setStatus("restriction-operation-status", `✅ 設定しました。Hash: ${hash}`, "success");
       await loadAccountRestrictions("restriction-current-operation", "operation");
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("restriction-operation-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("setOperationRestriction error:", e);
       setStatus("restriction-operation-status", e.message || "設定に失敗しました。", "error");
     }
@@ -1619,6 +1653,71 @@ window.addEventListener("load", async () => {
   document.getElementById("offline-tx-download-btn")?.addEventListener("click", () => {
     if (!offlineTxGenerated) return;
     downloadOfflineTxJson(offlineTxGenerated, `offline-tx-${offlineTxGenerated.hash.slice(0, 8)}.json`);
+  });
+
+  // ============================
+  // オフライン署名データの読み込み(送金/ハーベスト/ネームスペースなど、
+  // 各機能の確認画面から「オフライントランザクション」を選んで書き出した
+  // JSONを読み込み、種類に応じて適切な画面へ遷移してからアナウンスする)
+  // ============================
+  document.getElementById("menu-offline-import")?.addEventListener("click", () => {
+    document.getElementById("offline-import-file").click();
+  });
+
+  document.getElementById("offline-import-file")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 同じファイルを連続で選び直しても change が発火するようにする
+    if (!file) return;
+
+    let json;
+    try {
+      const text = await file.text();
+      json = validateOfflineTxJson(JSON.parse(text));
+    } catch (err) {
+      console.error("offline import parse error:", err);
+      alert(err.message || "ファイルの読み込みに失敗しました。");
+      return;
+    }
+
+    // 二重ブロードキャスト防止の事前確認(接続中ノードがある場合のみ)
+    if (appState.NODE) {
+      try {
+        const existingStatus = await checkAlreadyBroadcastStatus(json.hash, appState.NODE);
+        if (existingStatus === "confirmed" || existingStatus === "unconfirmed") {
+          alert(`このトランザクションは既にブロックチェーンへ送信・承認済みです（状態: ${existingStatus}）。`);
+          return;
+        }
+      } catch (err) {
+        console.warn("事前確認に失敗しました。続行します。", err);
+      }
+    }
+
+    // トランザクションの種類に応じて適切な画面へ遷移する
+    // (対応する画面が無い/未ログインの場合は汎用アナウンス画面にフォールバック)
+    const targetPageId = appState.currentAddress ? getPageIdForKind(json.kind) : null;
+    const targetPage = targetPageId ? document.getElementById(targetPageId) : null;
+
+    if (targetPage) {
+      showPage(targetPage);
+    } else {
+      openOfflineBroadcastPage();
+      return;
+    }
+
+    // いつもの確認画面(オフラインボタンは表示しない)を出し、確認後にアナウンスする
+    try {
+      const hash = await announceOfflineTx(json);
+      showPopup("✅ ノードへ送信しました");
+      trackOutgoingTransaction({
+        hash,
+        label: `${json.typeLabel || "オフライントランザクション"}の追跡`,
+        recipient: json.recipient,
+      });
+    } catch (err) {
+      if (err?.cancelled) return;
+      console.error("announceOfflineTx error:", err);
+      alert(err.message || "アナウンスに失敗しました。");
+    }
   });
 
   // ============================
@@ -1798,6 +1897,10 @@ window.addEventListener("load", async () => {
       await loadOwnedNamespaces();
       await populateParentNamespaceSelect();
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("root-namespace-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("registerRootNamespace error:", e);
       setStatus("root-namespace-status", e.message || "登録に失敗しました。", "error");
     }
@@ -1860,6 +1963,10 @@ window.addEventListener("load", async () => {
       await loadOwnedNamespaces();
       await populateParentNamespaceSelect();
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("sub-namespace-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("registerSubNamespace error:", e);
       setStatus("sub-namespace-status", e.message || "登録に失敗しました。", "error");
     }
@@ -1929,6 +2036,10 @@ window.addEventListener("load", async () => {
       setStatus("ns-link-mosaic-status", `✅ 完了しました。Hash: ${hash}`, "success");
       await loadOwnedNamespaces();
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("ns-link-mosaic-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("setMosaicAlias error:", e);
       setStatus("ns-link-mosaic-status", e.message || "処理に失敗しました。", "error");
     }
@@ -1971,6 +2082,10 @@ window.addEventListener("load", async () => {
       setStatus("ns-link-address-status", `✅ 完了しました。Hash: ${hash}`, "success");
       await loadOwnedNamespaces();
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("ns-link-address-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("setAddressAlias error:", e);
       setStatus("ns-link-address-status", e.message || "処理に失敗しました。", "error");
     }
@@ -1997,6 +2112,12 @@ window.addEventListener("load", async () => {
         alert("✅ リンクリクエストを送信しました。");
         await loadOwnedMosaicsWithAlias();
       } catch (e) {
+        if (e?.offlineExported) {
+          alert("📥 " + e.message);
+          linkBtn.disabled = false;
+          linkBtn.textContent = "リンクする";
+          return;
+        }
         console.error("setMosaicAlias error:", e);
         alert(e.message || "リンクに失敗しました。");
         linkBtn.disabled = false;
@@ -2016,6 +2137,12 @@ window.addEventListener("load", async () => {
         alert("✅ リンク解除リクエストを送信しました。");
         await loadOwnedMosaicsWithAlias();
       } catch (e) {
+        if (e?.offlineExported) {
+          alert("📥 " + e.message);
+          unlinkBtn.disabled = false;
+          unlinkBtn.textContent = "リンク解除";
+          return;
+        }
         console.error("setMosaicAlias(unlink) error:", e);
         alert(e.message || "リンク解除に失敗しました。");
         unlinkBtn.disabled = false;
@@ -2102,6 +2229,10 @@ window.addEventListener("load", async () => {
       });
       await loadOwnedMosaicsWithAlias();
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("mosaic-create-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("createMosaic error:", e);
       setStatus("mosaic-create-status", e.message || "作成に失敗しました。", "error");
     }
@@ -2195,6 +2326,10 @@ window.addEventListener("load", async () => {
       });
       setStatus("mosaic-supply-status", `✅ 供給量変更リクエストを送信しました。Hash: ${hash}`, "success");
     } catch (e) {
+      if (e?.offlineExported) {
+        setStatus("mosaic-supply-status", "📥 " + e.message, "success");
+        return;
+      }
       console.error("changeMosaicSupply error:", e);
       setStatus("mosaic-supply-status", e.message || "保存に失敗しました。", "error");
     }

@@ -17,7 +17,7 @@
 
 const {appState, MAINNET_NODEWATCH_URL, TESTNET_NODEWATCH_URL, NetworkType} = W.config;
 const {setStatus} = W.ui;
-const {requestTxConfirmation, formatTxDeadline, TxCancelledError} = W.txConfirm;
+// (requestTxConfirmation はここでは直接使わない。署名・アナウンスはauth.jsのsignAndAnnounceTxに委譲している)
 const {trackOutgoingTransaction} = W.txStatusTracker;
 const {addCallback} = W.ws;
 const {hexToBytes, formatMosaicAmount} = W.utils;
@@ -200,69 +200,12 @@ async function waitConfirmed(hash, { timeoutMs = 60000, intervalMs = 3000 } = {}
 
 /* ============================================================
    署名 → アナウンス（共通処理）
-   SSS Extension / ニーモニックログイン(ローカル署名)の両方に対応
+   SSS Extension / ニーモニックログイン(ローカル署名)の両方に対応。
+   実体は auth.js の signAndAnnounceTx に委譲する(オフライントランザクション
+   としての書き出しにもこれで対応できる)。
 ============================================================ */
 async function signAndAnnounce(tx, confirmInfo) {
-  if (confirmInfo) {
-    const confirmed = await requestTxConfirmation({
-      typeLabel: confirmInfo.typeLabel,
-      sender: confirmInfo.sender,
-      recipient: confirmInfo.recipient,
-      fee: W.auth.estimateFeeFromTx(tx),
-      deadlineText: formatTxDeadline(tx),
-      details: confirmInfo.details,
-    });
-    if (!confirmed) {
-      throw new TxCancelledError();
-    }
-  }
-
-  let announceBody;
-  let signedBytes;
-
-  if (appState.authMode === "local") {
-    /*
-      ローカル署名(ニーモニックログイン時)
-      signPayloadLocallyはアナウンス用のJSON文字列をそのまま返す
-    */
-    announceBody = W.auth.signPayloadLocally(tx);
-    const parsed = JSON.parse(announceBody);
-    signedBytes = appState.sdkCore.utils.hexToUint8(parsed.payload);
-  } else {
-    /*
-      SSS署名
-    */
-    const payload = appState.sdkCore.utils.uint8ToHex(tx.serialize());
-
-    window.SSS.setTransactionByPayload(payload);
-    const signed = await window.SSS.requestSign();
-
-    if (!signed?.payload) {
-      throw new Error("SSS署名に失敗しました");
-    }
-
-    announceBody = JSON.stringify({ payload: signed.payload });
-    signedBytes = appState.sdkCore.utils.hexToUint8(signed.payload);
-  }
-
-  const res = await fetch(new URL("/transactions", appState.NODE), {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: announceBody,
-  });
-
-  const result = await res.json();
-  console.log("announce result:", result);
-
-  if (!res.ok) {
-    throw new Error(result.message ?? "アナウンス失敗");
-  }
-
-  // ★ハッシュは「署名済み」のペイロードから計算し直す
-  //   （署名前のtxオブジェクトのままだと署名欄が空でハッシュが一致しない）
-  const signedTx = appState.facade.transactionFactory.static.deserialize(signedBytes);
-  const hash = appState.facade.hashTransaction(signedTx).toString();
-  return hash;
+  return await W.auth.signAndAnnounceTx(tx, confirmInfo);
 }
 
 /* ============================================================
@@ -309,6 +252,7 @@ async function announceKeyLinks(remoteKeyPair, vrfKeyPair, nodePublicKey, harves
 
   return await signAndAnnounce(aggregateTx, {
     typeLabel: "委任ハーベスティング設定(鍵リンク)",
+    kind: "harvest",
     details: [
       { label: "委任先ノード", value: harvestNodeUrl },
       { label: "リモート公開鍵", value: remoteKeyPair.publicKey.toString() },
@@ -380,6 +324,7 @@ async function announcePersistentDelegationRequest(remoteKeyPair, vrfKeyPair, no
 
   return await signAndAnnounce(transferTx, {
     typeLabel: "委任ハーベスティング設定(委任リクエスト送信)",
+    kind: "harvest",
     recipient: nodeAddress.toString(),
     details: [{ label: "内容", value: "リモート鍵・VRF鍵を暗号化してノード宛に送信します" }],
   });
@@ -519,6 +464,16 @@ async function startHarvest() {
       setLine("キャンセルしました");
       return;
     }
+    if (e?.offlineExported) {
+      setLine("📥 " + e.message);
+      alert(
+        "オフライントランザクションとして書き出しました。\n" +
+        "① 鍵リンクトランザクションはまだノードへ送信されていません。\n" +
+        "後で「高度機能 > オフライン署名データを読み込む」からアップロードしてアナウンスしたのち、" +
+        "改めてこの画面から委任リクエスト送信(④)を行ってください。"
+      );
+      return;
+    }
     console.error("startHarvest error:", e);
     setLine("❌ ハーベスト設定失敗: " + e.message);
     alert("ハーベスト設定失敗: " + e.message);
@@ -621,6 +576,7 @@ async function stopHarvest() {
     );
     const hash = await signAndAnnounce(aggregateTx, {
       typeLabel: "委任ハーベスティング解除",
+      kind: "harvest",
       details: [{ label: "解除対象", value: summary || "(なし)" }],
     });
     setLine("解除トランザクションを送信しました。承認を待っています...");
@@ -639,6 +595,10 @@ async function stopHarvest() {
   } catch (e) {
     if (e?.cancelled) {
       setLine("キャンセルしました");
+      return;
+    }
+    if (e?.offlineExported) {
+      setLine("📥 " + e.message);
       return;
     }
     console.error("stopHarvest error:", e);

@@ -183,6 +183,7 @@ async function setMosaicAlias(mosaicIdHex, namespaceIdHex, action = "link") {
   const tx = buildMosaicAliasTx(mosaicIdHex, namespaceIdHex, action);
   return await signAndAnnounceTx(tx, {
     typeLabel: action === "unlink" ? "モザイクエイリアス解除" : "モザイクエイリアス設定",
+    kind: "mosaic",
     details: [
       { label: "モザイクID", value: mosaicIdHex.toUpperCase() },
       { label: "ネームスペースID", value: namespaceIdHex.toUpperCase() },
@@ -337,6 +338,7 @@ async function createMosaic(options) {
 
   return await signAndAnnounceTx(tx, {
     typeLabel: "モザイク作成",
+    kind: "mosaic",
     details: [
       { label: "可分性", value: divisibility },
       { label: "初期供給量", value: initialSupply || 0 },
@@ -375,6 +377,7 @@ async function changeMosaicSupply({ mosaicIdHex, direction, amount, divisibility
 
   return await signAndAnnounceTx(tx, {
     typeLabel: "モザイク供給量変更",
+    kind: "mosaic",
     details: [
       { label: "モザイクID", value: mosaicIdHex.toUpperCase() },
       { label: "増減", value: direction === "decrease" ? "減少" : "増加" },

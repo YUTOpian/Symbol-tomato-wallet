@@ -9,7 +9,7 @@ const {refreshAccount, initLiveBalanceRefresh} = W.account;
 const {loadRecentTx, initLiveTx} = W.transactions;
 const {initWebSocket, closeWebSocket} = W.ws;
 const {setText} = W.ui;
-const {requestTxConfirmation, formatTxDeadline, TxCancelledError} = W.txConfirm;
+const {requestTxConfirmation, formatTxDeadline, TxCancelledError, TxOfflineExportedError} = W.txConfirm;
 
 const VAULT_KEY = "walletVault";
 
@@ -784,22 +784,39 @@ function estimateFeeFromTx(tx) {
 /* ============================================================
    confirmInfo が渡された場合、署名の前に確認ダイアログを表示する。
    confirmInfo:
-     { typeLabel, sender?, recipient?, details? }
-   ユーザーがキャンセルした場合は TxCancelledError を投げる。
+     { typeLabel, sender?, recipient?, details?, kind?, hideOfflineButton? }
+       kind: オフライントランザクションとして書き出す際の種別タグ
+             (offline.js の KIND_TO_PAGE_ID に対応。読み込み後にどの画面へ
+             戻すかを決めるために使う。省略時は "other")
+   ユーザーがキャンセルした場合は TxCancelledError を、
+   「オフライントランザクション」を選んだ場合は TxOfflineExportedError を投げる
+   (どちらの場合もノードへのアナウンスは行われない)。
    (confirmInfo を渡さない呼び出しは従来通り確認なしで実行される)
 ============================================================ */
 async function signAndAnnounceTx(tx, confirmInfo) {
   if (confirmInfo) {
-    const confirmed = await requestTxConfirmation({
+    const result = await requestTxConfirmation({
       typeLabel: confirmInfo.typeLabel,
       sender: confirmInfo.sender ?? appState.currentAddress?.toString(),
       recipient: confirmInfo.recipient,
       fee: estimateFeeFromTx(tx),
       deadlineText: formatTxDeadline(tx),
       details: confirmInfo.details,
+      hideOfflineButton: confirmInfo.hideOfflineButton,
     });
-    if (!confirmed) {
+
+    if (result === "cancel") {
       throw new TxCancelledError();
+    }
+
+    if (result === "offline") {
+      const offlineJson = await W.offline.signTxOffline(tx, {
+        kind: confirmInfo.kind,
+        confirmInfo,
+      });
+      const filenamePart = (confirmInfo.kind ?? "tx").replace(/[^a-zA-Z0-9-]/g, "");
+      W.offline.downloadOfflineTxJson(offlineJson, `offline-${filenamePart}-${offlineJson.hash.slice(0, 8)}.json`);
+      throw new TxOfflineExportedError();
     }
   }
 
@@ -820,6 +837,28 @@ async function signAndAnnounceTx(tx, confirmInfo) {
 
   const signedTx = appState.facade.transactionFactory.static.deserialize(signedBytes);
   return appState.facade.hashTransaction(signedTx).toString();
+}
+
+/* ============================================================
+   既にオフラインで署名済みのトランザクション(JSON)を確認画面に表示し、
+   確認後にそのままアナウンス(ブロードキャスト)する。
+   秘密鍵は一切扱わない(署名は完了済みのため)。
+   オフラインボタンは意味を持たないため常に非表示にする。
+============================================================ */
+async function announceOfflineTx(offlineJson) {
+  const result = await requestTxConfirmation({
+    typeLabel: offlineJson.typeLabel ?? "オフライントランザクション",
+    recipient: offlineJson.recipient,
+    details: offlineJson.details ?? [],
+    hideOfflineButton: true,
+  });
+
+  if (result !== "confirm") {
+    throw new TxCancelledError();
+  }
+
+  await W.offline.broadcastOfflineTx(offlineJson, appState.NODE);
+  return offlineJson.hash;
 }
 
 /* ============================================================
@@ -919,6 +958,7 @@ window.W.auth = {
   signTxOnly,
   estimateFeeFromTx,
   signAndAnnounceTx,
+  announceOfflineTx,
   logout,
   lockSession,
   cosignTransactionHash

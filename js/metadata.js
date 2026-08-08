@@ -115,6 +115,7 @@ async function setMetadata(targetType, targetIdHex, keyString, valueString) {
 
   return await signAndAnnounceTx(tx, {
     typeLabel: typeLabelMap[targetType] ?? "メタデータ登録",
+    kind: "metadata",
     details: [
       ...(targetIdHex ? [{ label: "対象ID", value: targetIdHex.toUpperCase() }] : []),
       { label: "キー", value: keyString },

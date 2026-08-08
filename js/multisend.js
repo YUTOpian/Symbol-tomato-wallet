@@ -212,6 +212,7 @@ async function sendMultiTransfer(rows) {
 
   return await signAndAnnounceTx(tx, {
     typeLabel: "複数送金",
+    kind: "multisend",
     details: [{ label: "送金先件数", value: `${rows.length} 件` }, ...rowDetails],
   });
 }
