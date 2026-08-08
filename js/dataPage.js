@@ -1,9 +1,9 @@
 // dataPage.js
 // 「データ」画面: アカウントの詳細情報とSymbolネットワーク統計をまとめて表示する
 
-import { appState, NetworkType } from "./config.js";
-import { estimateRootNamespaceRentalFee, estimateSubNamespaceRentalFee, estimateMosaicRentalFee } from "./rentalFees.js";
-import { fetchOwnedNamespaceOptions } from "./namespace.js";
+const {appState, NetworkType} = W.config;
+const {estimateRootNamespaceRentalFee, estimateSubNamespaceRentalFee, estimateMosaicRentalFee} = W.rentalFees;
+const {fetchOwnedNamespaceOptions} = W.namespace;
 
 // 30秒/ブロックを前提とした1年あたりのブロック数(namespace.jsのBLOCKS_PER_DAYと同じ前提)
 const BLOCKS_PER_YEAR = Math.round((24 * 60 * 60) / 30 * 365);
@@ -27,15 +27,30 @@ async function loadAccountSection() {
     return;
   }
 
-  // 重要度
+  // 重要度(ネットワーク全体のtotalChainImportanceに対する割合を小数で表示)
   try {
     const res = await fetch(new URL("/accounts/" + address, appState.NODE));
     if (res.status === 404) {
-      setText("data-account-importance", "0（未使用アドレス）");
+      setText("data-account-importance", "0.000000（未使用アドレス）");
     } else {
       const json = await res.json();
-      const importance = json.account?.importance ?? "0";
-      setText("data-account-importance", Number(importance).toLocaleString("ja-JP"));
+      const importance = Number(json.account?.importance ?? 0);
+
+      try {
+        const propsRes = await fetch(new URL("/network/properties", appState.NODE));
+        const propsJson = await propsRes.json();
+        const totalChainImportance = Number(propsJson.chain?.totalChainImportance);
+
+        if (Number.isFinite(totalChainImportance) && totalChainImportance > 0) {
+          setText("data-account-importance", (importance / totalChainImportance).toFixed(6));
+        } else {
+          throw new Error("totalChainImportanceが取得できません");
+        }
+      } catch (e2) {
+        console.warn("totalChainImportance取得失敗:", e2);
+        // 割合が計算できない場合は、せめて生の値を表示する
+        setText("data-account-importance", importance.toLocaleString("ja-JP"));
+      }
     }
   } catch (e) {
     console.warn("重要度取得失敗:", e);
@@ -184,7 +199,7 @@ async function loadNodeSection() {
 /* ============================================================
    画面を開いたときにまとめて読み込む
 ============================================================ */
-export async function loadDataPage() {
+async function loadDataPage() {
   const statusEl = document.getElementById("data-page-status");
   if (statusEl) statusEl.textContent = "読み込み中...";
 
@@ -197,3 +212,7 @@ export async function loadDataPage() {
 
   if (statusEl) statusEl.textContent = "";
 }
+
+window.W.dataPage = {
+  loadDataPage
+};
