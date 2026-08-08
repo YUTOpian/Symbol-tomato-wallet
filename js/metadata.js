@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // metadata.js
 // メタデータの登録・更新 (アドレス / ネームスペース / モザイク)
 // 自分自身が対象(target)の場合のみ対応。他人のアカウント宛は
@@ -174,3 +177,5 @@ window.W.metadata = {
   setMetadata,
   loadOwnMetadataList
 };
+
+})();

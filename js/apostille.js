@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // apostille.js
 // アポスティーユ(ファイル公証)機能
 //
@@ -198,3 +201,5 @@ window.W.apostille = {
   createApostille,
   searchApostilleTransactions
 };
+
+})();

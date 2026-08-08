@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // harvest.js
 // 委任ハーベスティング (Delegated Harvesting) フル実装
 //
@@ -729,3 +732,5 @@ window.W.harvest = {
   initLiveHarvestStatusRefresh,
   loadHarvestRewards
 };
+
+})();

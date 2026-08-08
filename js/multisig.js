@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // multisig.js
 // マルチシグ設定 / マルチシグ送金 / マルチシグ署名(連署)
 //
@@ -450,3 +453,5 @@ window.W.multisig = {
   loadPendingPartialTransactions,
   cosignPending
 };
+
+})();

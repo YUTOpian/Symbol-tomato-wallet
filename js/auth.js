@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // auth.js
 // 認証方式の管理: SSS Extension接続 / ニーモニックインポート・秘密鍵インポート(ローカル署名)
 // マルチアカウント対応。パスワードを設定した場合のみ、暗号化してlocalStorageに保存する
@@ -963,3 +966,5 @@ window.W.auth = {
   lockSession,
   cosignTransactionHash
 };
+
+})();

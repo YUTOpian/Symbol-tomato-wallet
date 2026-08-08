@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // config.js
 // Symbol SDK v3 用 設定値とアプリ全体で共有する状態
 
@@ -165,3 +168,5 @@ window.W.config = {
   appState,
   getXymMosaicIdHex
 };
+
+})();

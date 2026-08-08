@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // accountSwitcher.js
 // アカウント切替・非表示リストの描画
 
@@ -99,3 +102,5 @@ window.W.accountSwitcher = {
   renderHiddenAccountList,
   nextMnemonicAccountIndex
 };
+
+})();

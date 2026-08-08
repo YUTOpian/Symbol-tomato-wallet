@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // account.js
 // Account情報取得・Mosaic残高取得
 
@@ -377,3 +380,5 @@ window.W.account = {
   initLiveBalanceRefresh,
   getRecipientPublicKey
 };
+
+})();

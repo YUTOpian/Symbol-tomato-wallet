@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // multisendRecipientCheck.js
 // 複数送信(手動 / CSV)向けの、送信前まとめアドレスチェック。
 //
@@ -135,3 +138,5 @@ async function checkMultisendRows() {
 window.W.multisendRecipientCheck = {
   checkMultisendRows
 };
+
+})();

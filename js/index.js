@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // index.js
 
 const {appState, NetworkType, getXymMosaicIdHex} = W.config;
@@ -2850,3 +2853,5 @@ window.addEventListener("load", async () => {
   });
   updateScrollTopBtnVisibility();
 });
+
+})();

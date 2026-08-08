@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // mosaic.js
 // モザイクの作成・供給量変更・自分が保有するモザイク一覧(ネームスペースとのリンク状況付き)の取得
 
@@ -399,3 +402,5 @@ window.W.mosaic = {
   createMosaic,
   changeMosaicSupply
 };
+
+})();

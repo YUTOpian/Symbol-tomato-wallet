@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // offline.js
 // オフライントランザクション機能
 //
@@ -195,3 +198,5 @@ window.W.offline = {
   checkAlreadyBroadcastStatus,
   broadcastOfflineTx
 };
+
+})();

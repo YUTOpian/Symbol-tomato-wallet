@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // namespace.js
 // ネームスペースの登録(ルート/サブ・最大3階層)、更新(延長)、
 // モザイク/アカウントへのリンク・解除、保有ネームスペース一覧の取得
@@ -318,3 +321,5 @@ window.W.namespace = {
   estimateAddressAliasFee,
   setAddressAlias
 };
+
+})();

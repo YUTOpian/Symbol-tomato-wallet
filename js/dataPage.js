@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // dataPage.js
 // 「データ」画面: アカウントの詳細情報とSymbolネットワーク統計をまとめて表示する
 
@@ -229,3 +232,5 @@ async function loadDataPage() {
 window.W.dataPage = {
   loadDataPage
 };
+
+})();

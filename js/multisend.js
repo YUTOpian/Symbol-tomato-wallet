@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // multisend.js
 // 複数送信: 手動設定 / CSVインポートのどちらも、複数の送金先を
 // 1つの Aggregate Complete Transaction にまとめて送信する
@@ -221,3 +224,5 @@ window.W.multisend = {
   parseCsv,
   sendMultiTransfer
 };
+
+})();

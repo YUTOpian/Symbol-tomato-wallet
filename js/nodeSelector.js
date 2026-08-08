@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // nodeSelector.js
 // NodeWatch を使って優良ノードを 1 つ選ぶ
 
@@ -64,3 +67,5 @@ async function selectNode(isTestnet) {
 window.W.nodeSelector = {
   selectNode
 };
+
+})();
