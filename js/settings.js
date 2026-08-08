@@ -142,16 +142,25 @@ async function applyNodeChange() {
 // メッセージなしの単純なXYM送金トランザクション相当
 const REF_TX_SIZE = 176;
 
-function estimateFeeXym(multiplier) {
-  return ((multiplier * REF_TX_SIZE) / 1_000_000).toLocaleString("ja-JP", {
-    maximumFractionDigits: 6,
-  });
+// 内部的な送金優先度の単位(feeMultiplier)を、画面上はXYM換算額でのみ扱う。
+// 実際に署名するトランザクションに使う手数料は、この目安ではなく
+// トランザクション実サイズ×feeMultiplierで都度正確に計算される(auth.js側)。
+function multiplierToXymValue(multiplier) {
+  return (multiplier * REF_TX_SIZE) / 1_000_000;
+}
+
+function formatXym(value) {
+  return value.toLocaleString("ja-JP", { maximumFractionDigits: 6 });
+}
+
+function xymValueToMultiplier(xymValue) {
+  return Math.round((xymValue * 1_000_000) / REF_TX_SIZE);
 }
 
 function renderFeeOption(elId, multiplier) {
   const el = document.getElementById(elId);
   if (!el) return;
-  el.textContent = `feeMultiplier: ${multiplier} （目安 約${estimateFeeXym(multiplier)} XYM）`;
+  el.textContent = `約 ${formatXym(multiplierToXymValue(multiplier))} XYM`;
   el.closest(".fee-option")?.setAttribute("data-multiplier", String(multiplier));
 }
 
@@ -159,7 +168,7 @@ async function loadFeeSettings() {
   setStatus("fee-settings-status", "手数料情報を取得中...");
 
   const customInput = document.getElementById("fee-custom-input");
-  if (customInput) customInput.value = appState.feeMultiplier ?? 100;
+  if (customInput) customInput.value = formatXym(multiplierToXymValue(appState.feeMultiplier ?? 100));
 
   try {
     const res = await fetch(new URL("/network/fees/transaction", appState.NODE));
@@ -189,19 +198,19 @@ function selectFeeOption(optionEl) {
   optionEl.classList.add("selected");
 
   const customInput = document.getElementById("fee-custom-input");
-  if (customInput) customInput.value = multiplier;
+  if (customInput) customInput.value = formatXym(multiplierToXymValue(Number(multiplier)));
 }
 
 function applyFeeSettings() {
   const raw = document.getElementById("fee-custom-input")?.value;
-  const multiplier = Number(raw);
+  const xymValue = Number(raw);
 
-  if (!Number.isFinite(multiplier) || multiplier < 0) {
+  if (!Number.isFinite(xymValue) || xymValue < 0) {
     setStatus("fee-settings-status", "手数料の値が不正です。", "error");
     return;
   }
 
-  appState.feeMultiplier = Math.floor(multiplier);
+  appState.feeMultiplier = Math.max(0, xymValueToMultiplier(xymValue));
 
   try {
     localStorage.setItem("feeMultiplier", String(appState.feeMultiplier));
@@ -209,7 +218,7 @@ function applyFeeSettings() {
     console.warn("feeMultiplierの保存に失敗しました", e);
   }
 
-  setStatus("fee-settings-status", `✅ 送金手数料をfeeMultiplier: ${appState.feeMultiplier} に設定しました。`, "success");
+  setStatus("fee-settings-status", `✅ 送金手数料を 約${formatXym(multiplierToXymValue(appState.feeMultiplier))} XYM に設定しました。`, "success");
 }
 
 window.W.settings = {
