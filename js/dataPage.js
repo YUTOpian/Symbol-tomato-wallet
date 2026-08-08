@@ -27,11 +27,11 @@ async function loadAccountSection() {
     return;
   }
 
-  // 重要度(ネットワーク全体のtotalChainImportanceに対する割合を小数で表示)
+  // 重要度(ネットワーク全体のtotalChainImportanceに対する割合を、XEMBookと同じ小数表記で表示)
   try {
     const res = await fetch(new URL("/accounts/" + address, appState.NODE));
     if (res.status === 404) {
-      setText("data-account-importance", "0.000000（未使用アドレス）");
+      setText("data-account-importance", "0.0000000000（未使用アドレス）");
     } else {
       const json = await res.json();
       const importance = Number(json.account?.importance ?? 0);
@@ -39,17 +39,20 @@ async function loadAccountSection() {
       try {
         const propsRes = await fetch(new URL("/network/properties", appState.NODE));
         const propsJson = await propsRes.json();
-        const totalChainImportance = Number(propsJson.chain?.totalChainImportance);
+
+        // chainプロパティの数値は "8'999'999'998'000000" のように
+        // アポストロフィ区切りの文字列で返ってくるため、Number()に渡す前に取り除く
+        const totalChainImportanceRaw = String(propsJson.chain?.totalChainImportance ?? "").replace(/'/g, "");
+        const totalChainImportance = Number(totalChainImportanceRaw);
 
         if (Number.isFinite(totalChainImportance) && totalChainImportance > 0) {
-          setText("data-account-importance", (importance / totalChainImportance).toFixed(6));
+          setText("data-account-importance", (importance / totalChainImportance).toFixed(10));
         } else {
           throw new Error("totalChainImportanceが取得できません");
         }
       } catch (e2) {
         console.warn("totalChainImportance取得失敗:", e2);
-        // 割合が計算できない場合は、せめて生の値を表示する
-        setText("data-account-importance", importance.toLocaleString("ja-JP"));
+        setText("data-account-importance", "取得失敗");
       }
     }
   } catch (e) {
