@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // restriction.js
 // 制限機能: アカウント制限(アドレス) / モザイク制限 / トランザクション制限(操作)
 // いずれも「自分自身のアカウント」に対する制限設定。
@@ -290,3 +293,5 @@ window.W.restriction = {
   setMosaicGlobalRestriction,
   setMosaicAddressRestriction
 };
+
+})();

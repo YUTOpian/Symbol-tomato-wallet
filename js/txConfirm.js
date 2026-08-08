@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // txConfirm.js
 // トランザクションをアナウンス(ブロードキャスト)する前に、内容を確認するための共通ダイアログ。
 // send/transfer, namespace登録, mosaic作成, multisig提案, metadata登録, restriction設定,
@@ -160,3 +163,5 @@ window.W.txConfirm = {
   formatTxDeadline,
   requestTxConfirmation
 };
+
+})();

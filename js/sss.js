@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // sss.js
 // SSS Extension との接続
 // Node / SDK 初期化
@@ -150,3 +153,5 @@ window.W.sss = {
   autoConnectSSS,
   signTransaction
 };
+
+})();

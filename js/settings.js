@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // settings.js
 // 設定メニュー: 接続先ノードの変更 / 送金手数料の設定
 
@@ -229,3 +232,5 @@ window.W.settings = {
   selectFeeOption,
   applyFeeSettings
 };
+
+})();

@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // transfer.js
 // Symbol SDK v3
 // モザイク送金トランザクション（SSS署名）
@@ -187,3 +190,5 @@ async function sendTx() {
 window.W.transfer = {
   sendTx
 };
+
+})();

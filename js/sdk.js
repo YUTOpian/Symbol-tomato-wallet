@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // sdk.js
 // Symbol SDK v3 の読み込みと Facade 初期化
 
@@ -60,3 +63,5 @@ window.W.sdk = {
   sdkSymbol,
   scopedMetadataKey
 };
+
+})();

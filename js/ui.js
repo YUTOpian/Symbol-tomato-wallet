@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // ui.js
 // 単純な UI 操作用ユーティリティ
 
@@ -31,3 +34,5 @@ window.W.ui = {
   setText,
   setStatus
 };
+
+})();

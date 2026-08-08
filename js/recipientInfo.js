@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // recipientInfo.js
 // 送金先アドレス入力時に、その場でアドレスの状態を表示する。
 //
@@ -362,3 +365,5 @@ initRecipientInfoWatcher();
 window.W.recipientInfo = {
   initRecipientInfoWatcher
 };
+
+})();

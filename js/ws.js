@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // ws.js
 // Symbol REST Node の WebSocket (/ws) 接続管理
 //
@@ -257,3 +260,5 @@ window.W.ws = {
   addCallback,
   getBlockTimestamp
 };
+
+})();

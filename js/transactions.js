@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // transactions.js
 
 const {appState, NetworkType, getXymMosaicIdHex} = W.config;
@@ -337,3 +340,5 @@ window.W.transactions = {
   loadRecentTx,
   initLiveTx
 };
+
+})();

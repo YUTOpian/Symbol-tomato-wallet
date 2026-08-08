@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 //utils.js
 function hexToBytes(hex) {
   const bytes = [];
@@ -177,3 +180,5 @@ window.W.utils = {
   getSSSStatusHtml,
   renderNodeInfoHtml
 };
+
+})();

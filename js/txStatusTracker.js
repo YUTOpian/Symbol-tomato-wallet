@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // txStatusTracker.js
 // 「送りっぱなし」をやめるための、着金・承認確認トラッカー。
 //
@@ -348,3 +351,5 @@ PERSISTED_CONTAINER_IDS.forEach(resumeFromStorage);
 window.W.txStatusTracker = {
   trackOutgoingTransaction
 };
+
+})();

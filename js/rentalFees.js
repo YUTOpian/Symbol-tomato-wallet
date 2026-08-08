@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // rentalFees.js
 // ネームスペース登録・モザイク作成時にネットワークへ支払う「レンタル手数料」の推定
 // (トランザクション手数料 feeMultiplier×size とは別物。ネームスペース/モザイクの
@@ -68,3 +71,5 @@ window.W.rentalFees = {
   estimateSubNamespaceRentalFee,
   estimateMosaicRentalFee
 };
+
+})();

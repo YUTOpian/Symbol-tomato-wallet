@@ -1,3 +1,6 @@
+(function () {
+"use strict";
+
 // priceRates.js
 // XYMの円換算(bitbank) / ドル換算(Gate.io) レートを取得する。
 //
@@ -77,3 +80,5 @@ window.W.priceRates = {
   getXymJpyRate,
   getXymUsdRate
 };
+
+})();
