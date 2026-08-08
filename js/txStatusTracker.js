@@ -18,8 +18,8 @@
 // 表示・追跡を継続する。それ以外の機能はリロードで消えてよい一時的な
 // 表示として扱う(セッション内のみ)。
 
-import { appState, NetworkType } from "./config.js";
-import { addCallback } from "./ws.js";
+const {appState, NetworkType} = W.config;
+const {addCallback} = W.ws;
 
 const POLL_INTERVAL_MS = 4000;
 const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15分でポーリングは打ち切り(明示的に諦める)
@@ -291,7 +291,7 @@ function beginTracking({ hash, containerId, startedAt }) {
      targetLabel   : recipientの行ラベル(省略時 "宛先")
      mosaicLabel, amountText : 補足の1行(モザイク名・数量など)
 ============================================================ */
-export function trackOutgoingTransaction(opts) {
+function trackOutgoingTransaction(opts) {
   const {
     hash,
     recipient,
@@ -344,3 +344,7 @@ function resumeFromStorage(containerId) {
 }
 
 PERSISTED_CONTAINER_IDS.forEach(resumeFromStorage);
+
+window.W.txStatusTracker = {
+  trackOutgoingTransaction
+};

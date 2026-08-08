@@ -3,13 +3,13 @@
 // いずれも「自分自身のアカウント」に対する制限設定。
 // 自分の署名だけで完結する(他者の同意は不要)。
 
-import { appState } from "./config.js";
-import { signAndAnnounceTx } from "./auth.js";
+const {appState} = W.config;
+const {signAndAnnounceTx} = W.auth;
 
 /* ============================================================
    現在の制限設定を取得(参考表示用)
 ============================================================ */
-export async function loadAccountRestrictions(elId, restrictionType) {
+async function loadAccountRestrictions(elId, restrictionType) {
   const el = document.getElementById(elId);
   if (!el) return;
 
@@ -92,7 +92,7 @@ async function submitRestriction(descriptor, confirmInfo) {
 /* ============================================================
    アカウント制限(アドレス)
 ============================================================ */
-export async function setAddressRestriction({ block, outgoing, additions, deletions }) {
+async function setAddressRestriction({ block, outgoing, additions, deletions }) {
   const { descriptors } = appState.sdkSymbol;
   const flags = buildFlags("address", block, outgoing);
 
@@ -116,7 +116,7 @@ export async function setAddressRestriction({ block, outgoing, additions, deleti
 /* ============================================================
    モザイク制限
 ============================================================ */
-export async function setMosaicRestriction({ block, outgoing, additions, deletions }) {
+async function setMosaicRestriction({ block, outgoing, additions, deletions }) {
   const { descriptors, models } = appState.sdkSymbol;
   const flags = buildFlags("mosaic", block, outgoing);
 
@@ -142,7 +142,7 @@ export async function setMosaicRestriction({ block, outgoing, additions, deletio
 /* ============================================================
    トランザクション制限(操作/operation)
 ============================================================ */
-export async function setOperationRestriction({ block, outgoing, additions, deletions }) {
+async function setOperationRestriction({ block, outgoing, additions, deletions }) {
   const { descriptors, models } = appState.sdkSymbol;
   const flags = buildFlags("operation", block, outgoing);
 
@@ -168,7 +168,7 @@ export async function setOperationRestriction({ block, outgoing, additions, dele
 /* ============================================================
    トランザクション制限で選べる代表的な種類
 ============================================================ */
-export const OPERATION_TYPE_OPTIONS = [
+const OPERATION_TYPE_OPTIONS = [
   { value: "TRANSFER", label: "送金 (Transfer)" },
   { value: "NAMESPACE_REGISTRATION", label: "ネームスペース登録" },
   { value: "MOSAIC_DEFINITION", label: "モザイク定義" },
@@ -186,7 +186,7 @@ export const OPERATION_TYPE_OPTIONS = [
 /* ============================================================
    モザイク制限で選べる比較演算子
 ============================================================ */
-export const MOSAIC_RESTRICTION_TYPE_OPTIONS = [
+const MOSAIC_RESTRICTION_TYPE_OPTIONS = [
   { value: "NONE", label: "NONE（制限なし）" },
   { value: "EQ", label: "EQ（等しい場合に許可）" },
   { value: "NE", label: "NE（等しくない場合に許可）" },
@@ -200,7 +200,7 @@ export const MOSAIC_RESTRICTION_TYPE_OPTIONS = [
    モザイクグローバル制限
    ※ 対象モザイクの作成者(オーナー)のみが設定できる
 ============================================================ */
-export async function setMosaicGlobalRestriction({
+async function setMosaicGlobalRestriction({
   mosaicIdHex,
   referenceMosaicIdHex,
   keyString,
@@ -243,7 +243,7 @@ export async function setMosaicGlobalRestriction({
    モザイクアドレス制限
    ※ 対象モザイクの作成者(オーナー)のみが設定できる
 ============================================================ */
-export async function setMosaicAddressRestriction({
+async function setMosaicAddressRestriction({
   mosaicIdHex,
   keyString,
   previousValue,
@@ -274,3 +274,14 @@ export async function setMosaicAddressRestriction({
     ],
   });
 }
+
+window.W.restriction = {
+  loadAccountRestrictions,
+  setAddressRestriction,
+  setMosaicRestriction,
+  setOperationRestriction,
+  OPERATION_TYPE_OPTIONS,
+  MOSAIC_RESTRICTION_TYPE_OPTIONS,
+  setMosaicGlobalRestriction,
+  setMosaicAddressRestriction
+};

@@ -3,15 +3,15 @@
 // Node / SDK 初期化
 // トランザクション署名処理
 
-import { appState, NetworkType } from "./config.js";
-import { selectNode } from "./nodeSelector.js";
-import { initSdk } from "./sdk.js";
-import { setStatus, setText } from "./ui.js";
-import { refreshAccount, initLiveBalanceRefresh } from "./account.js";
-import { initLiveHarvestStatusRefresh } from "./harvest.js";
-import { loadRecentTx, initLiveTx } from "./transactions.js";
-import { initWebSocket } from "./ws.js";
-import { getSSSStatusHtml } from "./utils.js";
+const {appState, NetworkType} = W.config;
+const {selectNode} = W.nodeSelector;
+const {initSdk} = W.sdk;
+const {setStatus, setText} = W.ui;
+const {refreshAccount, initLiveBalanceRefresh} = W.account;
+const {initLiveHarvestStatusRefresh} = W.harvest;
+const {loadRecentTx, initLiveTx} = W.transactions;
+const {initWebSocket} = W.ws;
+const {getSSSStatusHtml} = W.utils;
 
 /* ------------------------------------------------------
    ネットワーク名表示
@@ -119,7 +119,7 @@ async function internalConnect(isAuto) {
 /* ------------------------------------------------------
    自動接続
 ------------------------------------------------------ */
-export async function autoConnectSSS() {
+async function autoConnectSSS() {
   await internalConnect(true);
 }
 
@@ -130,7 +130,7 @@ export async function autoConnectSSS() {
   作成したTransactionをSSS Extensionで署名する
   harvest.js, transfer.js, metadata.js から利用
 */
-export async function signTransaction(transaction) {
+async function signTransaction(transaction) {
   if (!window.SSS) {
     throw new Error("SSS Extension がありません");
   }
@@ -145,3 +145,8 @@ export async function signTransaction(transaction) {
 
   return signedTransaction;
 }
+
+window.W.sss = {
+  autoConnectSSS,
+  signTransaction
+};

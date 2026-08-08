@@ -15,20 +15,19 @@
 // 参考: https://docs.symbol.dev/concepts/harvesting.html
 //       https://docs.symbol.dev/guides/harvesting/activating-delegated-harvesting-manual.html
 
-import { appState, MAINNET_NODEWATCH_URL, TESTNET_NODEWATCH_URL, NetworkType } from "./config.js";
-import { setStatus } from "./ui.js";
-import { signPayloadLocally, estimateFeeFromTx } from "./auth.js";
-import { requestTxConfirmation, formatTxDeadline, TxCancelledError } from "./txConfirm.js";
-import { trackOutgoingTransaction } from "./txStatusTracker.js";
-import { addCallback } from "./ws.js";
-import { hexToBytes, formatMosaicAmount } from "./utils.js";
+const {appState, MAINNET_NODEWATCH_URL, TESTNET_NODEWATCH_URL, NetworkType} = W.config;
+const {setStatus} = W.ui;
+const {requestTxConfirmation, formatTxDeadline, TxCancelledError} = W.txConfirm;
+const {trackOutgoingTransaction} = W.txStatusTracker;
+const {addCallback} = W.ws;
+const {hexToBytes, formatMosaicAmount} = W.utils;
 
 /* ============================================================
    委任先ノード候補の読み込み（NodeWatchから取得しプルダウンに反映）
    ※ ここで出てくるのは単にオンラインなノード一覧であり、
      「委任ハーベスティングを受け付けている」保証はない。
 ============================================================ */
-export async function loadHarvestNodeCandidates() {
+async function loadHarvestNodeCandidates() {
   const select = document.getElementById("harvest-node-select");
   if (!select) return;
 
@@ -113,7 +112,7 @@ async function fetchNodePublicKey(nodeUrl) {
 /* ============================================================
    ハーベスト状態確認
 ============================================================ */
-export async function checkHarvestStatus() {
+async function checkHarvestStatus() {
   const statusEl = document.getElementById("harvest-status");
   const importanceEl = document.getElementById("harvest-importance");
   const badgeEl = document.getElementById("harvest-badge");
@@ -209,7 +208,7 @@ async function signAndAnnounce(tx, confirmInfo) {
       typeLabel: confirmInfo.typeLabel,
       sender: confirmInfo.sender,
       recipient: confirmInfo.recipient,
-      fee: estimateFeeFromTx(tx),
+      fee: W.auth.estimateFeeFromTx(tx),
       deadlineText: formatTxDeadline(tx),
       details: confirmInfo.details,
     });
@@ -226,7 +225,7 @@ async function signAndAnnounce(tx, confirmInfo) {
       ローカル署名(ニーモニックログイン時)
       signPayloadLocallyはアナウンス用のJSON文字列をそのまま返す
     */
-    announceBody = signPayloadLocally(tx);
+    announceBody = W.auth.signPayloadLocally(tx);
     const parsed = JSON.parse(announceBody);
     signedBytes = appState.sdkCore.utils.hexToUint8(parsed.payload);
   } else {
@@ -391,7 +390,7 @@ async function announcePersistentDelegationRequest(remoteKeyPair, vrfKeyPair, no
    このアカウントが実際にハーベスト(ブロック生成)した履歴を
    /blocks?signerPublicKey= で取得して一覧表示する
 ============================================================ */
-export async function loadHarvestHistory() {
+async function loadHarvestHistory() {
   const el = document.getElementById("harvest-history");
   if (!el) return;
 
@@ -448,7 +447,7 @@ export async function loadHarvestHistory() {
 /* ============================================================
    委任ハーベスティング開始（メインエントリポイント）
 ============================================================ */
-export async function startHarvest() {
+async function startHarvest() {
   const statusEl = document.getElementById("harvest-status");
   const setLine = (text) => {
     if (statusEl) statusEl.textContent = text;
@@ -532,7 +531,7 @@ export async function startHarvest() {
      「現在チェーン上にリンクされている公開鍵」を取得して
      それをUNLINKする。これによりページ再読み込み後でも解除可能。
 ============================================================ */
-export async function stopHarvest() {
+async function stopHarvest() {
   const statusEl = document.getElementById("harvest-status");
   const setLine = (text) => {
     if (statusEl) statusEl.textContent = text;
@@ -658,7 +657,7 @@ export async function stopHarvest() {
 */
 const liveHarvestStatusRegisteredAddresses = new Set();
 
-export function initLiveHarvestStatusRefresh(address) {
+function initLiveHarvestStatusRefresh(address) {
   if (!address || liveHarvestStatusRegisteredAddresses.has(address)) return;
   liveHarvestStatusRegisteredAddresses.add(address);
 
@@ -690,7 +689,7 @@ function normalizeReceiptAddress(addr) {
   return null;
 }
 
-export async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 } = {}) {
+async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 } = {}) {
   const el = document.getElementById(elId);
   if (!el) return;
   el.textContent = "読み込み中...";
@@ -760,3 +759,13 @@ export async function loadHarvestRewards(elId = "harvest-reward-list", { pageSiz
     el.textContent = "取得に失敗しました";
   }
 }
+
+window.W.harvest = {
+  loadHarvestNodeCandidates,
+  checkHarvestStatus,
+  loadHarvestHistory,
+  startHarvest,
+  stopHarvest,
+  initLiveHarvestStatusRefresh,
+  loadHarvestRewards
+};

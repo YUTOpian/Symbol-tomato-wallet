@@ -3,9 +3,9 @@
 // 自分自身が対象(target)の場合のみ対応。他人のアカウント宛は
 // 相手の共同署名が必要になるため、このアプリでは扱わない。
 
-import { appState } from "./config.js";
-import { signAndAnnounceTx } from "./auth.js";
-import { hexToBytes } from "./utils.js";
+const {appState} = W.config;
+const {signAndAnnounceTx} = W.auth;
+const {hexToBytes} = W.utils;
 
 /* ============================================================
    既存メタデータの取得(更新の際のXOR差分計算に使う)
@@ -51,7 +51,7 @@ function buildValueDiff(oldValueHex, newValueBytes) {
    targetType: "address" | "namespace" | "mosaic"
    targetIdHex: namespace/mosaicの場合のみ必要(16進ID)
 ============================================================ */
-export async function setMetadata(targetType, targetIdHex, keyString, valueString) {
+async function setMetadata(targetType, targetIdHex, keyString, valueString) {
   const { descriptors, models } = appState.sdkSymbol;
 
   const scopedMetadataKey = appState.sdkSymbol.metadataGenerateKey(keyString);
@@ -126,7 +126,7 @@ export async function setMetadata(targetType, targetIdHex, keyString, valueStrin
 /* ============================================================
    自分に紐づく既存メタデータ一覧(参考表示用)
 ============================================================ */
-export async function loadOwnMetadataList() {
+async function loadOwnMetadataList() {
   const el = document.getElementById("metadata-list");
   if (!el) return;
 
@@ -168,3 +168,8 @@ export async function loadOwnMetadataList() {
     el.textContent = "取得に失敗しました";
   }
 }
+
+window.W.metadata = {
+  setMetadata,
+  loadOwnMetadataList
+};

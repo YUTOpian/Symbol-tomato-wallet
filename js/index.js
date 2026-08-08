@@ -1,24 +1,20 @@
 // index.js
 
-import { appState, NetworkType, getXymMosaicIdHex } from "./config.js";
-import { sendTx } from "./transfer.js";
-import "./recipientInfo.js";
-import { loadRecentTx, initLiveTx } from "./transactions.js";
-import { initWebSocket } from "./ws.js";
-import { selectNode } from "./nodeSelector.js";
-import { showPopup } from "./utils.js";
-import { setStatus } from "./ui.js";
-import { checkHarvestStatus, startHarvest, stopHarvest, loadHarvestNodeCandidates, loadHarvestHistory, loadHarvestRewards } from "./harvest.js";
-import {
-  showCurrentNode,
+const {appState, NetworkType, getXymMosaicIdHex} = W.config;
+const {sendTx} = W.transfer;
+const {loadRecentTx, initLiveTx} = W.transactions;
+const {initWebSocket} = W.ws;
+const {selectNode} = W.nodeSelector;
+const {showPopup} = W.utils;
+const {setStatus} = W.ui;
+const {checkHarvestStatus, startHarvest, stopHarvest, loadHarvestNodeCandidates, loadHarvestHistory, loadHarvestRewards} = W.harvest;
+const {showCurrentNode,
   loadNodeSettingsCandidates,
   applyNodeChange,
   loadFeeSettings,
   selectFeeOption,
-  applyFeeSettings,
-} from "./settings.js";
-import {
-  connectWithSSS,
+  applyFeeSettings,} = W.settings;
+const {connectWithSSS,
   loginWithMnemonic,
   loginWithPrivateKey,
   loginAsReadOnly,
@@ -41,16 +37,12 @@ import {
   canUseBackupFeature,
   verifyVaultPassword,
   getPrivateKeyForAccount,
-  getVerifiedMnemonicForAccount,
-} from "./auth.js";
-import {
-  updateSwitcherVisibility,
+  getVerifiedMnemonicForAccount,} = W.auth;
+const {updateSwitcherVisibility,
   renderAccountSwitcherList,
   renderHiddenAccountList,
-  nextMnemonicAccountIndex,
-} from "./accountSwitcher.js";
-import {
-  loadOwnedNamespaces,
+  nextMnemonicAccountIndex,} = W.accountSwitcher;
+const {loadOwnedNamespaces,
   populateParentNamespaceSelect,
   registerRootNamespace,
   registerSubNamespace,
@@ -60,10 +52,8 @@ import {
   estimateSubNamespaceFee,
   estimateAddressAliasFee,
   estimateRootNamespaceRentalFee,
-  estimateSubNamespaceRentalFee,
-} from "./namespace.js";
-import {
-  loadOwnedMosaicsWithAlias,
+  estimateSubNamespaceRentalFee,} = W.namespace;
+const {loadOwnedMosaicsWithAlias,
   populateMosaicNamespaceSelect,
   createMosaic,
   setMosaicAlias,
@@ -72,44 +62,42 @@ import {
   estimateMosaicAliasFee,
   changeMosaicSupply,
   fetchMosaicDetail,
-  estimateMosaicRentalFee,
-} from "./mosaic.js";
-import { setMetadata, loadOwnMetadataList } from "./metadata.js";
-import {
-  loadMultisigInfo,
+  estimateMosaicRentalFee,} = W.mosaic;
+const {setMetadata, loadOwnMetadataList} = W.metadata;
+const {loadMultisigInfo,
   fetchCosignatoryOfAddresses,
   updateMultisigSettings,
   sendFromMultisig,
   loadPendingPartialTransactions,
-  cosignPending,
-} from "./multisig.js";
-import { parseCsv, sendMultiTransfer } from "./multisend.js";
-import { checkMultisendRows } from "./multisendRecipientCheck.js";
-import { trackOutgoingTransaction } from "./txStatusTracker.js";
-import { loadDataPage } from "./dataPage.js";
-import { computeFileHash, createApostille, searchApostilleTransactions } from "./apostille.js";
-import {
-  loadAccountRestrictions,
+  cosignPending,} = W.multisig;
+const {parseCsv, sendMultiTransfer} = W.multisend;
+const {checkMultisendRows} = W.multisendRecipientCheck;
+const {trackOutgoingTransaction} = W.txStatusTracker;
+const {loadDataPage} = W.dataPage;
+const {computeFileHash, createApostille, searchApostilleTransactions} = W.apostille;
+const {loadAccountRestrictions,
   setAddressRestriction,
   setMosaicRestriction,
   setOperationRestriction,
   setMosaicGlobalRestriction,
   setMosaicAddressRestriction,
   OPERATION_TYPE_OPTIONS,
-  MOSAIC_RESTRICTION_TYPE_OPTIONS,
-} from "./restriction.js";
-import {
-  composeAndSignOfflineTransfer,
+  MOSAIC_RESTRICTION_TYPE_OPTIONS,} = W.restriction;
+const {composeAndSignOfflineTransfer,
   downloadOfflineTxJson,
   validateOfflineTxJson,
   broadcastOfflineTx,
-  checkAlreadyBroadcastStatus,
-} from "./offline.js";
-import QRCode from "https://esm.sh/qrcode";
-import { QRCodeGenerator } from "https://esm.sh/symbol-qr-library";
-import { firstValueFrom } from "https://esm.sh/rxjs";
+  checkAlreadyBroadcastStatus,} = W.offline;
+
+let QRCode, QRCodeGenerator, firstValueFrom;
 
 window.addEventListener("load", async () => {
+  // 外部CDNライブラリ(ESモジュール)は動的importで読み込む
+  // (このスクリプト自体は通常の<script>なので静的importは使えないため)
+  ({ default: QRCode } = await import("https://esm.sh/qrcode"));
+  ({ QRCodeGenerator } = await import("https://esm.sh/symbol-qr-library"));
+  ({ firstValueFrom } = await import("https://esm.sh/rxjs"));
+
   // ============================
   // ページ取得
   // ============================

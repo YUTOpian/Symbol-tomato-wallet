@@ -1,30 +1,28 @@
 // settings.js
 // 設定メニュー: 接続先ノードの変更 / 送金手数料の設定
 
-import {
-  appState,
+const {appState,
   NetworkType,
   MAINNET_NODEWATCH_URL,
-  TESTNET_NODEWATCH_URL,
-} from "./config.js";
-import { setStatus, setText } from "./ui.js";
-import { initSdk } from "./sdk.js";
-import { refreshAccount, initLiveBalanceRefresh } from "./account.js";
-import { initLiveHarvestStatusRefresh } from "./harvest.js";
-import { loadRecentTx, initLiveTx } from "./transactions.js";
-import { initWebSocket, closeWebSocket } from "./ws.js";
-import { renderNodeInfoHtml } from "./utils.js";
+  TESTNET_NODEWATCH_URL,} = W.config;
+const {setStatus, setText} = W.ui;
+const {initSdk} = W.sdk;
+const {refreshAccount, initLiveBalanceRefresh} = W.account;
+const {initLiveHarvestStatusRefresh} = W.harvest;
+const {loadRecentTx, initLiveTx} = W.transactions;
+const {initWebSocket, closeWebSocket} = W.ws;
+const {renderNodeInfoHtml} = W.utils;
 
 /* ============================================================
    接続先ノードの変更
 ============================================================ */
 
-export function showCurrentNode() {
+function showCurrentNode() {
   const el = document.getElementById("current-node-display");
   if (el) el.textContent = appState.NODE ?? "---";
 }
 
-export async function loadNodeSettingsCandidates() {
+async function loadNodeSettingsCandidates() {
   const select = document.getElementById("node-settings-select");
   if (!select) return;
 
@@ -68,7 +66,7 @@ function getSelectedNodeUrl() {
   return "";
 }
 
-export async function applyNodeChange() {
+async function applyNodeChange() {
   const targetRaw = getSelectedNodeUrl();
 
   if (!targetRaw) {
@@ -157,7 +155,7 @@ function renderFeeOption(elId, multiplier) {
   el.closest(".fee-option")?.setAttribute("data-multiplier", String(multiplier));
 }
 
-export async function loadFeeSettings() {
+async function loadFeeSettings() {
   setStatus("fee-settings-status", "手数料情報を取得中...");
 
   const customInput = document.getElementById("fee-custom-input");
@@ -183,7 +181,7 @@ export async function loadFeeSettings() {
   }
 }
 
-export function selectFeeOption(optionEl) {
+function selectFeeOption(optionEl) {
   const multiplier = optionEl?.getAttribute("data-multiplier");
   if (multiplier == null) return;
 
@@ -194,7 +192,7 @@ export function selectFeeOption(optionEl) {
   if (customInput) customInput.value = multiplier;
 }
 
-export function applyFeeSettings() {
+function applyFeeSettings() {
   const raw = document.getElementById("fee-custom-input")?.value;
   const multiplier = Number(raw);
 
@@ -213,3 +211,12 @@ export function applyFeeSettings() {
 
   setStatus("fee-settings-status", `✅ 送金手数料をfeeMultiplier: ${appState.feeMultiplier} に設定しました。`, "success");
 }
+
+window.W.settings = {
+  showCurrentNode,
+  loadNodeSettingsCandidates,
+  applyNodeChange,
+  loadFeeSettings,
+  selectFeeOption,
+  applyFeeSettings
+};

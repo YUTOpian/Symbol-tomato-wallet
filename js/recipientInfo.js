@@ -16,9 +16,9 @@
 //       - 最終アクティビティ日時
 //       - 直近の送受信履歴(簡易プレビュー)
 
-import { appState } from "./config.js";
-import { formatMosaicAmount, hexToBytes } from "./utils.js";
-import { subscribe, addCallback } from "./ws.js";
+const {appState} = W.config;
+const {formatMosaicAmount, hexToBytes} = W.utils;
+const {subscribe, addCallback} = W.ws;
 
 const DEBOUNCE_MS = 500;
 const XYM_IDS = ["72C0212E67A08BCE", "6BED913FA20223F8"];
@@ -338,7 +338,7 @@ function handleInput(e) {
 /* ============================================================
    初期化: #tx-recipient への入力を監視する
 ============================================================ */
-export function initRecipientInfoWatcher() {
+function initRecipientInfoWatcher() {
   const input = document.getElementById("tx-recipient");
   if (!input) return;
 
@@ -358,3 +358,7 @@ export function initRecipientInfoWatcher() {
 }
 
 initRecipientInfoWatcher();
+
+window.W.recipientInfo = {
+  initRecipientInfoWatcher
+};

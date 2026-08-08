@@ -1,20 +1,19 @@
 // mosaic.js
 // モザイクの作成・供給量変更・自分が保有するモザイク一覧(ネームスペースとのリンク状況付き)の取得
 
-import { appState } from "./config.js";
-import { setStatus } from "./ui.js";
-import { formatMosaicAmount } from "./utils.js";
-import { signAndAnnounceTx, estimateFeeFromTx } from "./auth.js";
-import { fetchOwnedNamespaceOptions } from "./namespace.js";
-import { estimateMosaicRentalFee } from "./rentalFees.js";
+const {appState} = W.config;
+const {setStatus} = W.ui;
+const {formatMosaicAmount} = W.utils;
+const {signAndAnnounceTx, estimateFeeFromTx} = W.auth;
+const {fetchOwnedNamespaceOptions} = W.namespace;
+const {estimateMosaicRentalFee} = W.rentalFees;
 
-export { estimateMosaicRentalFee };
 
 // Symbolのブロック目標間隔(秒)。メインネット/テストネットともに30秒。
 const BLOCK_TARGET_SECONDS = 30;
 const BLOCKS_PER_DAY = (24 * 60 * 60) / BLOCK_TARGET_SECONDS;
 
-export async function fetchOwnedMosaicIds() {
+async function fetchOwnedMosaicIds() {
   const address = appState.currentAddress.toString();
   const params = new URLSearchParams({ ownerAddress: address, pageSize: 100 });
   const res = await fetch(`${appState.NODE}/mosaics?${params}`);
@@ -25,7 +24,7 @@ export async function fetchOwnedMosaicIds() {
 /* ============================================================
    対象モザイクの詳細(供給量・可分性など)を取得
 ============================================================ */
-export async function fetchMosaicDetail(mosaicIdHex) {
+async function fetchMosaicDetail(mosaicIdHex) {
   const res = await fetch(`${appState.NODE}/mosaics/${mosaicIdHex.toUpperCase()}`);
   if (!res.ok) throw new Error("モザイク情報の取得に失敗しました");
   const json = await res.json();
@@ -40,7 +39,7 @@ export async function fetchMosaicDetail(mosaicIdHex) {
    選んでリンクできる操作を表示する。有効期限がある場合は
    残り日数の目安も表示する。
 ============================================================ */
-export async function loadOwnedMosaicsWithAlias() {
+async function loadOwnedMosaicsWithAlias() {
   const el = document.getElementById("owned-mosaic-list");
   if (!el) return;
 
@@ -163,7 +162,7 @@ export async function loadOwnedMosaicsWithAlias() {
 /* ============================================================
    モザイク作成用: 保有ネームスペース候補(リンク先選択)
 ============================================================ */
-export async function populateMosaicNamespaceSelect() {
+async function populateMosaicNamespaceSelect() {
   const select = document.getElementById("mosaic-link-namespace-select");
   if (!select) return;
 
@@ -180,7 +179,7 @@ export async function populateMosaicNamespaceSelect() {
 /* ============================================================
    作成済みモザイクを後からネームスペースにリンク/解除する
 ============================================================ */
-export async function setMosaicAlias(mosaicIdHex, namespaceIdHex, action = "link") {
+async function setMosaicAlias(mosaicIdHex, namespaceIdHex, action = "link") {
   const tx = buildMosaicAliasTx(mosaicIdHex, namespaceIdHex, action);
   return await signAndAnnounceTx(tx, {
     typeLabel: action === "unlink" ? "モザイクエイリアス解除" : "モザイクエイリアス設定",
@@ -208,12 +207,12 @@ function buildMosaicAliasTx(mosaicIdHex, namespaceIdHex, action = "link") {
   );
 }
 
-export function estimateMosaicAliasFee(mosaicIdHex, namespaceIdHex, action = "link") {
+function estimateMosaicAliasFee(mosaicIdHex, namespaceIdHex, action = "link") {
   return estimateFeeFromTx(buildMosaicAliasTx(mosaicIdHex, namespaceIdHex, action));
 }
 
 // 後方互換用エイリアス
-export async function linkNamespaceToMosaic(mosaicIdHex, namespaceIdHex) {
+async function linkNamespaceToMosaic(mosaicIdHex, namespaceIdHex) {
   return await setMosaicAlias(mosaicIdHex, namespaceIdHex, "link");
 }
 
@@ -304,7 +303,7 @@ function buildMosaicCreationTx({
    モザイク作成の推定手数料(XYM)を試算する
    実際に送信はしない。tx.size(byte) × feeMultiplier で計算。
 ============================================================ */
-export function estimateMosaicCreationFee(options) {
+function estimateMosaicCreationFee(options) {
   const tx = buildMosaicCreationTx(options);
   return {
     sizeBytes: tx.size,
@@ -315,7 +314,7 @@ export function estimateMosaicCreationFee(options) {
 /* ============================================================
    モザイク作成
 ============================================================ */
-export async function createMosaic(options) {
+async function createMosaic(options) {
   const tx = buildMosaicCreationTx(options);
   const {
     divisibility,
@@ -358,7 +357,7 @@ export async function createMosaic(options) {
    モザイク供給量変更(既存モザイクの供給量を増減する)
    ※ supplyMutable フラグ付きで作成されたモザイクのみ変更可能
 ============================================================ */
-export async function changeMosaicSupply({ mosaicIdHex, direction, amount, divisibility }) {
+async function changeMosaicSupply({ mosaicIdHex, direction, amount, divisibility }) {
   const { descriptors, models } = appState.sdkSymbol;
 
   const supplyDescriptor = new descriptors.MosaicSupplyChangeTransactionV1Descriptor(
@@ -383,3 +382,17 @@ export async function changeMosaicSupply({ mosaicIdHex, direction, amount, divis
     ],
   });
 }
+
+window.W.mosaic = {
+  estimateMosaicRentalFee,
+  fetchOwnedMosaicIds,
+  fetchMosaicDetail,
+  loadOwnedMosaicsWithAlias,
+  populateMosaicNamespaceSelect,
+  setMosaicAlias,
+  estimateMosaicAliasFee,
+  linkNamespaceToMosaic,
+  estimateMosaicCreationFee,
+  createMosaic,
+  changeMosaicSupply
+};

@@ -2,8 +2,8 @@
 // 複数送信: 手動設定 / CSVインポートのどちらも、複数の送金先を
 // 1つの Aggregate Complete Transaction にまとめて送信する
 
-import { appState, getXymMosaicIdHex } from "./config.js";
-import { signAndAnnounceTx } from "./auth.js";
+const {appState, getXymMosaicIdHex} = W.config;
+const {signAndAnnounceTx} = W.auth;
 
 // mosaic文字列(ネームスペース名 or 16進ID) → divisibility のキャッシュ
 const divisibilityCache = {};
@@ -51,7 +51,7 @@ function parseCsvLine(line) {
      E列: メッセージ(任意)
    最大100件まで。
 ============================================================ */
-export function parseCsv(text) {
+function parseCsv(text) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
 
@@ -137,7 +137,7 @@ async function resolveDivisibility(mosaicField) {
    rows: [{ address, mosaic, amount, message }]
    すべて自分自身が送信者なので、単純な Aggregate Complete で完結する
 ============================================================ */
-export async function sendMultiTransfer(rows) {
+async function sendMultiTransfer(rows) {
   if (rows.length === 0) {
     throw new Error("送金先が1件もありません。");
   }
@@ -215,3 +215,8 @@ export async function sendMultiTransfer(rows) {
     details: [{ label: "送金先件数", value: `${rows.length} 件` }, ...rowDetails],
   });
 }
+
+window.W.multisend = {
+  parseCsv,
+  sendMultiTransfer
+};

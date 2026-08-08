@@ -11,17 +11,17 @@
 //   JSONファイルを読み込む → 内容を確認 → ノードへアナウンスのみ実行
 //   ※ 秘密鍵は一切扱わない。
 
-import { appState, NetworkType } from "./config.js";
-import { signTxOnly } from "./auth.js";
+const {appState, NetworkType} = W.config;
+const {signTxOnly} = W.auth;
 
-export const OFFLINE_TX_TYPE = "KASANE_OFFLINE_TX";
-export const OFFLINE_TX_VERSION = 1;
+const OFFLINE_TX_TYPE = "KASANE_OFFLINE_TX";
+const OFFLINE_TX_VERSION = 1;
 
 /* ============================================================
    送金トランザクションを作成し、その場で署名する(アナウンスはしない)
    ログイン中のアカウント(SSS/ローカルどちらでも可)で署名される。
 ============================================================ */
-export async function composeAndSignOfflineTransfer({ recipientAddress, mosaicIdHex, amount, message }) {
+async function composeAndSignOfflineTransfer({ recipientAddress, mosaicIdHex, amount, message }) {
   const { descriptors, models } = appState.sdkSymbol;
 
   const divisibility = appState.mosaicInfo?.[mosaicIdHex.toUpperCase()]?.divisibility ?? 6;
@@ -73,7 +73,7 @@ export async function composeAndSignOfflineTransfer({ recipientAddress, mosaicId
 /* ============================================================
    JSONファイルとしてダウンロードさせる
 ============================================================ */
-export function downloadOfflineTxJson(offlineTxObject, filename = "offline-tx.json") {
+function downloadOfflineTxJson(offlineTxObject, filename = "offline-tx.json") {
   const blob = new Blob([JSON.stringify(offlineTxObject, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -88,7 +88,7 @@ export function downloadOfflineTxJson(offlineTxObject, filename = "offline-tx.js
 /* ============================================================
    署名済みJSONを検証(形式チェックのみ。秘密鍵は一切不要)
 ============================================================ */
-export function validateOfflineTxJson(json) {
+function validateOfflineTxJson(json) {
   if (!json || json.type !== OFFLINE_TX_TYPE) {
     throw new Error("このファイルはオフライントランザクション形式（KASANE_OFFLINE_TX）ではありません。");
   }
@@ -103,7 +103,7 @@ export function validateOfflineTxJson(json) {
    (二重ブロードキャスト防止)
    戻り値: "confirmed" | "unconfirmed" | "failed" | null(未提出)
 ============================================================ */
-export async function checkAlreadyBroadcastStatus(hash, nodeUrl) {
+async function checkAlreadyBroadcastStatus(hash, nodeUrl) {
   try {
     const res = await fetch(new URL(`/transactionStatus/${hash}`, nodeUrl));
     if (res.status === 404) return null;
@@ -120,7 +120,7 @@ export async function checkAlreadyBroadcastStatus(hash, nodeUrl) {
    ノードへアナウンス(ブロードキャスト)のみ実行。
    ログインやSDK初期化は一切不要(署名済みpayloadをそのまま送るだけ)。
 ============================================================ */
-export async function broadcastOfflineTx(json, nodeUrl) {
+async function broadcastOfflineTx(json, nodeUrl) {
   validateOfflineTxJson(json);
 
   const res = await fetch(new URL("/transactions", nodeUrl), {
@@ -135,3 +135,13 @@ export async function broadcastOfflineTx(json, nodeUrl) {
   }
   return result;
 }
+
+window.W.offline = {
+  OFFLINE_TX_TYPE,
+  OFFLINE_TX_VERSION,
+  composeAndSignOfflineTransfer,
+  downloadOfflineTxJson,
+  validateOfflineTxJson,
+  checkAlreadyBroadcastStatus,
+  broadcastOfflineTx
+};

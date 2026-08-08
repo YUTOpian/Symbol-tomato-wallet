@@ -2,14 +2,14 @@
 // Symbol SDK v3
 // モザイク送金トランザクション（SSS署名）
 
-import { appState } from "./config.js";
-import { setStatus } from "./ui.js";
-import { getRecipientPublicKey } from "./account.js";
-import { hexToBytes } from "./utils.js";
-import { signAndAnnounceTx, encryptMessageLocally } from "./auth.js";
-import { trackOutgoingTransaction } from "./txStatusTracker.js";
+const {appState} = W.config;
+const {setStatus} = W.ui;
+const {getRecipientPublicKey} = W.account;
+const {hexToBytes} = W.utils;
+const {signAndAnnounceTx, encryptMessageLocally} = W.auth;
+const {trackOutgoingTransaction} = W.txStatusTracker;
 
-export async function sendTx() {
+async function sendTx() {
   /*
     初期化確認
   */
@@ -178,3 +178,7 @@ export async function sendTx() {
     setStatus("tx-status", e.message ?? "署名または送信に失敗しました。", "error");
   }
 }
+
+window.W.transfer = {
+  sendTx
+};

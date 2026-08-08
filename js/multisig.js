@@ -10,10 +10,10 @@
 // という流れで「提案」し、他の連署者は後から「マルチシグ署名」画面で
 // 連署(cosign)して承認する、という設計にしている。
 
-import { appState, getXymMosaicIdHex } from "./config.js";
-import { signTxOnly, signAndAnnounceTx, cosignTransactionHash, estimateFeeFromTx } from "./auth.js";
-import { hexToBytes } from "./utils.js";
-import { requestTxConfirmation, formatTxDeadline, TxCancelledError } from "./txConfirm.js";
+const {appState, getXymMosaicIdHex} = W.config;
+const {signTxOnly, signAndAnnounceTx, cosignTransactionHash, estimateFeeFromTx} = W.auth;
+const {hexToBytes} = W.utils;
+const {requestTxConfirmation, formatTxDeadline, TxCancelledError} = W.txConfirm;
 
 const HASH_LOCK_AMOUNT = 10_000_000n; // 10 XYM (microXYM)
 
@@ -62,7 +62,7 @@ async function waitConfirmed(hash, { timeoutMs = 90000, intervalMs = 3000 } = {}
    ハッシュロック → 承認待ち → /transactions/partial アナウンス
    まで一括で行う共通処理
 ============================================================ */
-export async function proposeBondedAggregate(embeddedTransactions, cosignerCount, confirmInfo) {
+async function proposeBondedAggregate(embeddedTransactions, cosignerCount, confirmInfo) {
   const { descriptors, models } = appState.sdkSymbol;
 
   const aggregateDescriptor = new descriptors.AggregateBondedTransactionV3Descriptor(
@@ -151,7 +151,7 @@ export async function proposeBondedAggregate(embeddedTransactions, cosignerCount
 /* ============================================================
    マルチシグ情報の取得
 ============================================================ */
-export async function loadMultisigInfo() {
+async function loadMultisigInfo() {
   const el = document.getElementById("multisig-info");
   if (!el) return;
 
@@ -196,7 +196,7 @@ export async function loadMultisigInfo() {
 /* ============================================================
    自分が連署者になっているマルチシグアカウント一覧(送金元選択用)
 ============================================================ */
-export async function fetchCosignatoryOfAddresses() {
+async function fetchCosignatoryOfAddresses() {
   const address = appState.currentAddress.toString();
   const res = await fetch(`${appState.NODE}/account/${address}/multisig`);
   if (res.status === 404) return [];
@@ -208,7 +208,7 @@ export async function fetchCosignatoryOfAddresses() {
    マルチシグ設定(自分自身のアカウントを対象)
    追加する連署者は全員の同意(連署)が必要なため、常にボンデッドで提案する
 ============================================================ */
-export async function updateMultisigSettings({
+async function updateMultisigSettings({
   minApprovalDelta,
   minRemovalDelta,
   additionAddresses,
@@ -248,7 +248,7 @@ export async function updateMultisigSettings({
 /* ============================================================
    マルチシグ送金
 ============================================================ */
-export async function sendFromMultisig({ multisigAddress, recipientAddress, amountXym, message }) {
+async function sendFromMultisig({ multisigAddress, recipientAddress, amountXym, message }) {
   const { descriptors, models } = appState.sdkSymbol;
 
   // 送金元(マルチシグアカウント)の公開鍵を取得
@@ -338,7 +338,7 @@ function renderPendingItemHtml(hash, transaction, nodeUrl) {
    そのノードのキャッシュに載ってさえいれば、自分の接続ノードとは
    無関係に見つけられる。
 ============================================================ */
-export async function fetchPartialTransactionByHash(nodeUrl, hash) {
+async function fetchPartialTransactionByHash(nodeUrl, hash) {
   if (!nodeUrl || !hash) return null;
   try {
     const res = await fetch(`${nodeUrl}/transactions/partial/${hash}`);
@@ -355,7 +355,7 @@ export async function fetchPartialTransactionByHash(nodeUrl, hash) {
    externalHash: { hash, node } を渡すと、通常のアドレス検索結果に
    含まれていなかった場合のみ、そのノードへ直接問い合わせて追加表示する。
 ============================================================ */
-export async function loadPendingPartialTransactions(elId = "multisig-pending-list", externalHash = null) {
+async function loadPendingPartialTransactions(elId = "multisig-pending-list", externalHash = null) {
   const el = document.getElementById(elId);
   if (!el) return;
 
@@ -405,7 +405,7 @@ export async function loadPendingPartialTransactions(elId = "multisig-pending-li
    (相手から伝えられた「アナウンス先ノード」に確実に届けるため)。
    省略時は従来通り自分の接続中ノード(appState.NODE)を使う。
 ============================================================ */
-export async function cosignPending(transactionHashHex, nodeUrlOverride = null) {
+async function cosignPending(transactionHashHex, nodeUrlOverride = null) {
   const nodeUrl = nodeUrlOverride || appState.NODE;
 
   const confirmed = await requestTxConfirmation({
@@ -433,3 +433,14 @@ export async function cosignPending(transactionHashHex, nodeUrlOverride = null) 
   }
   return result;
 }
+
+window.W.multisig = {
+  proposeBondedAggregate,
+  loadMultisigInfo,
+  fetchCosignatoryOfAddresses,
+  updateMultisigSettings,
+  sendFromMultisig,
+  fetchPartialTransactionByHash,
+  loadPendingPartialTransactions,
+  cosignPending
+};

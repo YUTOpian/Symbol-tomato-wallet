@@ -6,8 +6,8 @@
 // 1件ずつ入力のたびに問い合わせると件数分だけノードへ負荷がかかるため、
 // 「内容を確認する」タイミングでまとめて・並列数を抑えて確認する方式にしている。
 
-import { appState } from "./config.js";
-import { formatMosaicAmount } from "./utils.js";
+const {appState} = W.config;
+const {formatMosaicAmount} = W.utils;
 
 const XYM_IDS = ["72C0212E67A08BCE", "6BED913FA20223F8"];
 const CONCURRENCY = 5;
@@ -99,7 +99,7 @@ function badgeHtml(result) {
    各行に結果バッジを表示する。
    戻り値: { total, okCount, newCount, warnCount }
 ============================================================ */
-export async function checkMultisendRows() {
+async function checkMultisendRows() {
   const rowEls = Array.from(document.querySelectorAll(".multisend-row"));
   const addresses = rowEls.map((row) => row.querySelector(".ms-address")?.value ?? "");
 
@@ -131,3 +131,7 @@ export async function checkMultisendRows() {
 
   return { total: results.length, okCount, newCount, warnCount };
 }
+
+window.W.multisendRecipientCheck = {
+  checkMultisendRows
+};
