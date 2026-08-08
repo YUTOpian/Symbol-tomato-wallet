@@ -98,6 +98,16 @@ async function loadChainSection() {
   }
 }
 
+// 目安手数料表示用の参考トランザクションサイズ(byte)
+// メッセージなしの単純なXYM送金トランザクション相当(settings.jsのREF_TX_SIZEと同じ考え方)
+const REF_TX_SIZE = 176;
+
+function estimateFeeXymText(multiplier) {
+  return ((multiplier * REF_TX_SIZE) / 1_000_000).toLocaleString("ja-JP", {
+    maximumFractionDigits: 6,
+  });
+}
+
 /* ============================================================
    手数料相場
 ============================================================ */
@@ -108,7 +118,7 @@ async function loadFeeSection() {
     const res = await fetch(new URL("/network/fees/transaction", appState.NODE));
     const json = await res.json();
     const median = json.medianFeeMultiplier ?? json.averageFeeMultiplier;
-    setText("data-fee-transfer-median", median != null ? `feeMultiplier: ${median}` : "---");
+    setText("data-fee-transfer-median", median != null ? `約 ${estimateFeeXymText(median)} XYM` : "---");
   } catch (e) {
     console.warn("送金手数料相場取得失敗:", e);
     setText("data-fee-transfer-median", "取得失敗");
