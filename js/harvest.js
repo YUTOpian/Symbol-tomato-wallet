@@ -1205,6 +1205,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
         let nodeRewardText = null;
         let nodeRewardLabel = null;
 
+        let feeIsZero = false;
         try {
           // ブロック一覧(/blocks?signerPublicKey=)の応答は beneficiaryAddress や
           // totalFee(meta)を含まないことがあるため、ブロック高ごとに詳細を
@@ -1296,6 +1297,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
           totalText = toText(totalAtomic);
           inflationText = toText(harvesterInflationAtomic);
           feeText = toText(harvesterFeeAtomic);
+          feeIsZero = harvesterFeeAtomic === 0n;
           if (beneficiaryAddress) {
             nodeRewardText = toText(nodeRewardAtomic);
             nodeRewardLabel =
@@ -1311,7 +1313,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
           ? Number(appState.epochAdjustment) * 1000 + Number(item.block.timestamp)
           : null;
 
-        return { height, totalText, inflationText, feeText, nodeRewardText, nodeRewardLabel, timeMs, kind: item.__harvestKind };
+        return { height, totalText, inflationText, feeText, feeIsZero, nodeRewardText, nodeRewardLabel, timeMs, kind: item.__harvestKind };
       })
     );
 
@@ -1326,10 +1328,10 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
 
     el.innerHTML = rows
       .flatMap((r) => {
-        const cards = [
-          rewardCardHtml("インフレ報酬", r.inflationText, r),
-          rewardCardHtml("トランザクション手数料報酬", r.feeText, r),
-        ];
+        const cards = [rewardCardHtml("インフレ報酬", r.inflationText, r)];
+        if (!r.feeIsZero) {
+          cards.push(rewardCardHtml("トランザクション手数料報酬", r.feeText, r));
+        }
         if (r.nodeRewardText) {
           cards.push(rewardCardHtml(r.nodeRewardLabel, r.nodeRewardText, r));
         }
