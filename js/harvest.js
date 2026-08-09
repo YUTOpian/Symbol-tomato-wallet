@@ -245,15 +245,12 @@ async function resolveHarvestSignerPublicKeys(address) {
 
 /* ============================================================
    ハーベスト種別（本人 / ノード委任）を示す小さなバッジHTML
+   ※ 内部的には self(本体アカウントの鍵) / node(委任先ノードのリモート鍵)
+     を区別しているが、表示上はどちらも同じ「ハーベスト」ラベルにする
 ============================================================ */
 function harvestKindBadgeHtml(kind) {
-  if (kind === "node") {
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#1e3a5f;color:#7dd3fc;">🖥️ ハーベスト(ノード)</span>`;
-  }
-  if (kind === "self") {
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#3f2d1e;color:#fbbf24;">📍 ハーベスト(アカウント)</span>`;
-  }
-  return "";
+  if (kind !== "node" && kind !== "self") return "";
+  return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#3f2d1e;color:#fbbf24;">🍅 ハーベスト</span>`;
 }
 
 /* ============================================================
@@ -1068,17 +1065,24 @@ function initLiveHarvestStatusRefresh(address) {
    ハーベスト報酬(自分が実際にハーベストしたブロックと、その報酬)
    ・ブロック一覧: GET /blocks?signerPublicKey={自分}
    ・報酬額: 各ブロックの高さについて GET /statements/transaction?height={高さ}
-     で取得できるレシート(statement.receipts)のうち、
-     Harvest_Fee(type=8515)で自分のアドレス宛のものを合算する
+     で取得できるレシート(statement.receipts)のうち、自分のアドレス宛の
+       - Harvest_Fee (type=8515)  … トランザクション手数料報酬
+       - Inflation   (type=20803) … インフレ報酬
+     をそれぞれ別に合算し、その合計を「報酬合計」として一番上に表示する。
+     (ブロック報酬 = トランザクション手数料 + インフレ による新規発行分。
+      以前はHarvest_Feeのみを合算しておりインフレ報酬が反映されていなかった)
      ※ 以前は存在しない /blocks/{height}/statements を参照しており、
        常に取得に失敗して "---" 表示になっていたバグを修正。
    ・本体アカウントの鍵(self)とリモート鍵(node)のどちらでハーベストされた
-     ブロックかをバッジで区別して表示する。
-   ・報酬額は円・ドル換算をあわせて表示する。
+     ブロックかは内部的に区別しているが、表示上はどちらも同じ「ハーベスト」
+     バッジで表示する。
+   ・報酬額(合計・インフレ報酬・トランザクション手数料報酬の3つとも)は
+     円・ドル換算をあわせて表示する。
    ※ レシート取得はブロックごとに個別リクエストが必要なため、
      直近pageSize件のみを対象にする
 ============================================================ */
-const HARVEST_FEE_RECEIPT_TYPE = 8515; // Harvest_Fee
+const HARVEST_FEE_RECEIPT_TYPE = 8515;  // Harvest_Fee（トランザクション手数料報酬）
+const INFLATION_RECEIPT_TYPE = 20803;   // Inflation（インフレ報酬）
 
 function normalizeReceiptAddress(addr) {
   if (!addr || typeof addr !== "string") return null;
@@ -1147,23 +1151,33 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
       blocks.map(async (item) => {
         const b = item.block;
         const height = b.height;
-        let rewardText = "---";
+        let totalText = "---";
+        let inflationText = "---";
+        let feeText = "---";
 
         try {
           const params = new URLSearchParams({ height: String(height), pageSize: 50 });
           const stRes = await fetch(`${appState.NODE}/statements/transaction?${params}`);
           const stJson = await stRes.json();
           const statementItems = stJson.data ?? [];
+          const receipts = statementItems.flatMap((entry) => entry.statement?.receipts ?? []);
 
-          const totalAtomic = statementItems
-            .flatMap((entry) => entry.statement?.receipts ?? [])
-            .filter((r) => Number(r.type) === HARVEST_FEE_RECEIPT_TYPE)
-            .filter((r) => normalizeReceiptAddress(r.targetAddress) === myAddress)
-            .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
+          const sumByType = (type) =>
+            receipts
+              .filter((r) => Number(r.type) === type)
+              .filter((r) => normalizeReceiptAddress(r.targetAddress) === myAddress)
+              .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
 
-          const xymAmountNumber = Number(totalAtomic) / 1_000_000;
-          rewardText =
-            formatMosaicAmount(totalAtomic, 6) + " XYM" + formatFiatSuffix(xymAmountNumber, jpyRate, usdRate);
+          const feeAtomic = sumByType(HARVEST_FEE_RECEIPT_TYPE);
+          const inflationAtomic = sumByType(INFLATION_RECEIPT_TYPE);
+          const totalAtomic = feeAtomic + inflationAtomic;
+
+          const toText = (atomic) =>
+            formatMosaicAmount(atomic, 6) + " XYM" + formatFiatSuffix(Number(atomic) / 1_000_000, jpyRate, usdRate);
+
+          totalText = toText(totalAtomic);
+          inflationText = toText(inflationAtomic);
+          feeText = toText(feeAtomic);
         } catch (e) {
           console.warn("ハーベスト報酬レシート取得失敗:", height, e);
         }
@@ -1172,7 +1186,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
           ? Number(appState.epochAdjustment) * 1000 + Number(b.timestamp)
           : null;
 
-        return { height, rewardText, timeMs, kind: item.__harvestKind };
+        return { height, totalText, inflationText, feeText, timeMs, kind: item.__harvestKind };
       })
     );
 
@@ -1181,7 +1195,11 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
         (r) => `
       <div class="harvest-history-item">
         <div>${harvestKindBadgeHtml(r.kind)}</div>
-        <div class="harvest-reward-amount">報酬: ${r.rewardText}</div>
+        <div class="harvest-reward-amount">報酬合計: ${r.totalText}</div>
+        <div class="harvest-reward-breakdown">
+          <div>インフレ報酬: ${r.inflationText}</div>
+          <div>トランザクション手数料報酬: ${r.feeText}</div>
+        </div>
         <div class="harvest-reward-time">高さ: ${r.height}${r.timeMs ? ` ・ ${new Date(r.timeMs).toLocaleString("ja-JP", { hour12: false })}` : ""}</div>
       </div>
     `
