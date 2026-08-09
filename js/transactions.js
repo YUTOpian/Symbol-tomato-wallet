@@ -153,8 +153,45 @@ function getMosaicName(id) {
 }
 
 /* ============================================================
-   Mosaic取得
+   送金(Transfer)以外のトランザクション種別の表示名
+   マルチシグの連署対象になったトランザクションなど、recipientAddressや
+   mosaicsを持たない種別が「アクティビティ」に混ざってくることがあるため、
+   それらは種別名だけを表示する(送金として誤表示しない)
 ============================================================ */
+const TRANSACTION_TYPE_LABELS = {
+  16705: "アグリゲート(即時)",
+  16708: "メタデータ(アカウント)",
+  16712: "ハッシュロック",
+  16716: "アカウント鍵リンク",
+  16717: "モザイク定義",
+  16718: "ネームスペース登録",
+  16720: "アカウント制限(アドレス)",
+  16721: "モザイクグローバル制限",
+  16722: "シークレットロック",
+  16724: "送金",
+  16725: "マルチシグ設定変更",
+  16961: "アグリゲート(ボンデッド)",
+  16963: "VRF鍵リンク",
+  16964: "メタデータ(モザイク)",
+  16972: "ノード鍵リンク",
+  16973: "モザイク供給量変更",
+  16974: "アドレスエイリアス",
+  16976: "アカウント制限(モザイク)",
+  16977: "モザイクアドレス制限",
+  16978: "シークレットプルーフ",
+  17220: "メタデータ(ネームスペース)",
+  17229: "モザイク供給量強制回収",
+  17230: "モザイクエイリアス",
+  17232: "アカウント制限(操作)",
+};
+
+function getTransactionTypeLabel(type) {
+  const num = Number(type);
+  if (TRANSACTION_TYPE_LABELS[num]) return TRANSACTION_TYPE_LABELS[num];
+  return Number.isFinite(num) ? `その他のトランザクション (type: ${num})` : "その他のトランザクション";
+}
+
+
 function extractAmount(tx) {
   if (!tx.mosaics || tx.mosaics.length === 0) return null;
 
@@ -195,8 +232,27 @@ function getExplorerUrl(hash) {
    Txカード
 ============================================================ */
 function createTxCard(txInfo) {
-  const { hash, msg, state, timestamp, mosaics, direction, sender, recipient } = txInfo;
+  const { hash, state, timestamp } = txInfo;
   const explorer = getExplorerUrl(hash);
+
+  // recipientAddressフィールドを持たない = TransferTransactionではない
+  // (マルチシグの連署対象になった設定変更トランザクションなどが該当する)。
+  // このケースを送金として扱うと、無関係な「送金元」表示や
+  // 実在しない「送金先」("---")が出てしまうため、種別名のみのカードにする。
+  if (!txInfo.isTransfer) {
+    return `
+      <div class="tx-item ${state === "unconfirmed" ? "unconfirmed" : "confirmed"}" id="tx-${hash}" onclick="window.open('${explorer}','_blank')">
+        <div class="tx-body">
+          <div class="tx-title">${txInfo.typeLabel}</div>
+          <div class="tx-status">${state.toUpperCase()}</div>
+          <div class="tx-address"><span class="tx-address-label">実行アカウント</span><span class="tx-address-value">${txInfo.signerAddress ?? "---"}</span></div>
+          ${state === "confirmed" && timestamp ? `<div class="tx-time">🕒 ${formatTimestamp(timestamp)}</div>` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  const { msg, mosaics, direction, sender, recipient } = txInfo;
   const isSend = direction === "send";
   const label = isSend ? "送信" : "受信";
   const labelClass = isSend ? "tx-label-send" : "tx-label-receive";
@@ -264,13 +320,19 @@ async function loadRecentTx(elId = "tx-list") {
     el.innerHTML = json.data.map(item => {
       const tx = item.transaction;
       const meta = item.meta;
-      const amountInfo = extractAmount(tx);
+      // recipientAddressフィールドの有無でTransferTransactionかどうかを判定する
+      // (マルチシグの連署対象になった非送金トランザクションが混ざることがあるため)
+      const isTransfer = tx.recipientAddress !== undefined && tx.recipientAddress !== null;
+      const amountInfo = isTransfer ? extractAmount(tx) : null;
 
       const txInfo = {
         hash: meta.hash,
+        isTransfer,
+        typeLabel: getTransactionTypeLabel(tx.type),
+        signerAddress: publicKeyToAddress(tx.signerPublicKey),
         sender: amountInfo?.direction === "send" ? address : publicKeyToAddress(tx.signerPublicKey),
-        recipient: formatAddress(tx.recipientAddress),
-        msg: decodeMessage(tx.message),
+        recipient: isTransfer ? formatAddress(tx.recipientAddress) : null,
+        msg: isTransfer ? decodeMessage(tx.message) : null,
         state: "confirmed",
         timestamp: meta.timestamp,
         mosaics: amountInfo?.mosaics ?? [],
@@ -298,12 +360,16 @@ function initLiveTx(address) {
 
     await resolveMosaicNames((tx.transaction.mosaics || []).map(m => m.id));
 
-    const amountInfo = extractAmount(tx.transaction);
+    const isTransfer = tx.transaction.recipientAddress !== undefined && tx.transaction.recipientAddress !== null;
+    const amountInfo = isTransfer ? extractAmount(tx.transaction) : null;
     const txInfo = {
       hash,
+      isTransfer,
+      typeLabel: getTransactionTypeLabel(tx.transaction.type),
+      signerAddress: publicKeyToAddress(tx.transaction.signerPublicKey),
       sender: amountInfo?.direction === "send" ? address : publicKeyToAddress(tx.transaction.signerPublicKey),
-      recipient: formatAddress(tx.transaction.recipientAddress),
-      msg: decodeMessage(tx.transaction.message),
+      recipient: isTransfer ? formatAddress(tx.transaction.recipientAddress) : null,
+      msg: isTransfer ? decodeMessage(tx.transaction.message) : null,
       state: "unconfirmed",
       timestamp: null,
       mosaics: amountInfo?.mosaics ?? [],
@@ -322,12 +388,16 @@ function initLiveTx(address) {
     await resolveMosaicNames((tx.transaction.mosaics || []).map(m => m.id));
 
     const blockTs = await getBlockTimestamp(tx.meta.height);
-    const amountInfo = extractAmount(tx.transaction);
+    const isTransfer = tx.transaction.recipientAddress !== undefined && tx.transaction.recipientAddress !== null;
+    const amountInfo = isTransfer ? extractAmount(tx.transaction) : null;
     const txInfo = {
       hash,
+      isTransfer,
+      typeLabel: getTransactionTypeLabel(tx.transaction.type),
+      signerAddress: publicKeyToAddress(tx.transaction.signerPublicKey),
       sender: amountInfo?.direction === "send" ? address : publicKeyToAddress(tx.transaction.signerPublicKey),
-      recipient: formatAddress(tx.transaction.recipientAddress),
-      msg: decodeMessage(tx.transaction.message),
+      recipient: isTransfer ? formatAddress(tx.transaction.recipientAddress) : null,
+      msg: isTransfer ? decodeMessage(tx.transaction.message) : null,
       state: "confirmed",
       timestamp: blockTs,
       mosaics: amountInfo?.mosaics ?? [],
