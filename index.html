@@ -862,9 +862,6 @@
         <button id="menu-restriction" class="settings-menu-item">
           🚧 制限機能
         </button>
-        <button id="menu-offline-tx" class="settings-menu-item">
-          📡 オフライントランザクション
-        </button>
         <button id="menu-offline-import" class="settings-menu-item">
           📥 オフライン署名データを読み込む
         </button>
@@ -1538,46 +1535,6 @@
 
         <button id="maddress-submit" class="button-primary">この内容で設定する</button>
         <div id="maddress-status"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       オフライントランザクション作成・署名(ログイン中のみ)
-  ============================================================ -->
-  <div id="offline-tx-create-page" class="page">
-    <div class="card">
-      <h2>オフライントランザクション</h2>
-      <button id="back-advanced-offline-tx" class="button-primary">← 戻る</button>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        ここで作成した送金内容はこの場で署名され、ノードへは送信されません。
-        署名済みデータをJSONファイルとして保存し、オンライン環境の端末でブロードキャストしてください。
-        秘密鍵がオンライン環境に渡ることはありません。
-      </p>
-
-      <p><b>宛先アドレス：</b></p>
-      <input id="offline-tx-recipient" class="input-box" placeholder="宛先アドレス">
-
-      <p><b>モザイクID（16進、空欄ならXYM）：</b></p>
-      <input id="offline-tx-mosaic" class="input-box" placeholder="空欄ならXYM">
-
-      <p><b>数量：</b></p>
-      <input id="offline-tx-amount" class="input-box" type="number" min="0" step="any" value="0">
-
-      <p><b>メッセージ（任意）：</b></p>
-      <textarea id="offline-tx-message" class="input-box" placeholder="メッセージ"></textarea>
-
-      <button id="offline-tx-sign-btn" class="button-primary">署名してファイルを生成する</button>
-      <div id="offline-tx-status"></div>
-
-      <div id="offline-tx-result" style="display:none;">
-        <hr>
-        <h3>署名済みデータ</h3>
-        <div style="font-size:12px;color:#94a3b8;word-break:break-all;">
-          Hash: <span id="offline-tx-hash"></span>
-        </div>
-        <button id="offline-tx-download-btn" class="button-primary">📥 JSONファイルをダウンロード</button>
       </div>
     </div>
   </div>
