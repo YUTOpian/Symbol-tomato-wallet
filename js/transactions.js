@@ -240,6 +240,8 @@ function buildTransferDetail(tx, myAddress) {
       返ってくるため、事前に集約しておいたマップ(aggregateHash単位)を使う。
    2) WebSocketや単発hash取得など、tx自身が tx.transactions として
       埋め込み内容をネストで持っている場合はそちらを使う。
+   ※ 上記いずれも無い場合はここでは何もしない(呼び出し側で
+      fetchAggregateDetail() によるフォールバックを行う)。
 ============================================================ */
 function getEmbeddedTxBodies(tx, aggregateHash, embeddedByAggregateHash) {
   if (embeddedByAggregateHash && embeddedByAggregateHash[aggregateHash]) {
@@ -249,6 +251,34 @@ function getEmbeddedTxBodies(tx, aggregateHash, embeddedByAggregateHash) {
     return tx.transactions.map(inner => inner.transaction).filter(Boolean);
   }
   return [];
+}
+
+/* ============================================================
+   アグリゲート本体をhash指定で個別に取得し直し、埋め込み内容を得る。
+   ※ Symbol RESTには既知の制限があり、address指定 + embedded=true の
+      一覧検索では埋め込みトランザクションが結果に含まれないことがある
+      (https://github.com/symbol/explorer/issues/905)。
+      その場合のフォールバックとして、確定済みなら /transactions/confirmed/{hash}、
+      未承認なら /transactions/unconfirmed/{hash} を個別に取得し、
+      レスポンスに含まれる transaction.transactions (埋め込み分のネスト)を使う。
+      (apostille.js の searchApostilleTransactions と同じ手法)
+============================================================ */
+async function fetchAggregateDetail(hash, state) {
+  if (!appState.NODE) return [];
+
+  const endpoint = state === "unconfirmed" ? "unconfirmed" : "confirmed";
+
+  try {
+    const res = await fetch(`${appState.NODE}/transactions/${endpoint}/${hash}`);
+    if (!res.ok) return [];
+
+    const json = await res.json();
+    const innerTxs = json.transaction?.transactions ?? [];
+    return innerTxs.map(inner => inner.transaction).filter(Boolean);
+  } catch (e) {
+    console.warn("アグリゲート詳細の取得に失敗しました:", hash, e);
+    return [];
+  }
 }
 
 /* ============================================================
@@ -274,12 +304,23 @@ function buildAggregateTransferInfo(embeddedTxs, myAddress) {
 /* ============================================================
    表示用txInfoの組み立て(通常のトランザクション / アグリゲート共通)
 ============================================================ */
-function buildTxInfo({ tx, hash, address, state, timestamp, embeddedByAggregateHash }) {
+async function buildTxInfo({ tx, hash, address, state, timestamp, embeddedByAggregateHash }) {
   const signerAddress = publicKeyToAddress(tx.signerPublicKey);
   const aggregate = isAggregateType(tx.type);
 
   if (aggregate) {
-    const embeddedTxs = getEmbeddedTxBodies(tx, hash, embeddedByAggregateHash);
+    let embeddedTxs = getEmbeddedTxBodies(tx, hash, embeddedByAggregateHash);
+
+    // 一覧検索・ペイロードのどちらからも埋め込み内容が得られなかった場合、
+    // アグリゲート本体をhash指定で取得し直して補う
+    if (embeddedTxs.length === 0) {
+      embeddedTxs = await fetchAggregateDetail(hash, state);
+    }
+
+    if (embeddedTxs.length > 0) {
+      await resolveMosaicNames(embeddedTxs.flatMap(t => (t.mosaics || []).map(m => m.id)));
+    }
+
     const info = buildAggregateTransferInfo(embeddedTxs, address);
 
     if (info) {
@@ -324,6 +365,7 @@ function buildTxInfo({ tx, hash, address, state, timestamp, embeddedByAggregateH
     };
   }
 
+  await resolveMosaicNames((tx.mosaics || []).map(m => m.id));
   const detail = buildTransferDetail(tx, address);
 
   return {
@@ -475,11 +517,11 @@ async function loadRecentTx(elId = "tx-list") {
     // トップレベル(埋め込みでない)のトランザクションのみをカード表示する
     const topLevelItems = json.data.filter(item => !item.meta?.aggregateHash);
 
-    el.innerHTML = topLevelItems.map(item => {
+    const cards = await Promise.all(topLevelItems.map(async item => {
       const tx = item.transaction;
       const meta = item.meta;
 
-      const txInfo = buildTxInfo({
+      const txInfo = await buildTxInfo({
         tx,
         hash: meta.hash,
         address,
@@ -490,7 +532,9 @@ async function loadRecentTx(elId = "tx-list") {
 
       txMap[meta.hash] = txInfo;
       return createTxCard(txInfo);
-    }).join("");
+    }));
+
+    el.innerHTML = cards.join("");
   } catch(e) {
     console.error(e);
     el.textContent = "読み込みエラー";
@@ -509,16 +553,7 @@ function initLiveTx(address) {
 
     const tx = item.transaction;
 
-    // アグリゲートの場合、埋め込みトランザクション(tx.transactions)の
-    // モザイクも含めて名前解決しておく
-    const embeddedTxs = getEmbeddedTxBodies(tx, hash, null);
-    const mosaicIds = [
-      ...(tx.mosaics || []).map(m => m.id),
-      ...embeddedTxs.flatMap(t => (t.mosaics || []).map(m => m.id))
-    ];
-    await resolveMosaicNames(mosaicIds);
-
-    const txInfo = buildTxInfo({
+    const txInfo = await buildTxInfo({
       tx,
       hash,
       address,
@@ -537,17 +572,9 @@ function initLiveTx(address) {
     const hash = item.meta.hash;
 
     const tx = item.transaction;
-
-    const embeddedTxs = getEmbeddedTxBodies(tx, hash, null);
-    const mosaicIds = [
-      ...(tx.mosaics || []).map(m => m.id),
-      ...embeddedTxs.flatMap(t => (t.mosaics || []).map(m => m.id))
-    ];
-    await resolveMosaicNames(mosaicIds);
-
     const blockTs = await getBlockTimestamp(item.meta.height);
 
-    const txInfo = buildTxInfo({
+    const txInfo = await buildTxInfo({
       tx,
       hash,
       address,
