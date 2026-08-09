@@ -797,6 +797,16 @@ body {
   font-size: 12px;
 }
 
+/* 報酬合計の下に表示する、インフレ報酬・トランザクション手数料報酬の内訳 */
+.harvest-history-item .harvest-reward-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 8px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
 /* ============================================================
    設定メニュー(歯車ボタン・メニュー項目・手数料オプション)
 ============================================================ */
