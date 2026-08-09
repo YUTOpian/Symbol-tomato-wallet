@@ -1065,19 +1065,29 @@ function initLiveHarvestStatusRefresh(address) {
    ハーベスト報酬(自分が実際にハーベストしたブロックと、その報酬)
    ・ブロック一覧: GET /blocks?signerPublicKey={自分}
    ・報酬額: 各ブロックの高さについて GET /statements/transaction?height={高さ}
-     で取得できるレシート(statement.receipts)のうち、自分のアドレス宛の
-       - Harvest_Fee (type=8515)  … トランザクション手数料報酬
-       - Inflation   (type=20803) … インフレ報酬
-     をそれぞれ別に合算し、その合計を「報酬合計」として一番上に表示する。
-     (ブロック報酬 = トランザクション手数料 + インフレ による新規発行分。
-      以前はHarvest_Feeのみを合算しておりインフレ報酬が反映されていなかった)
-     ※ 以前は存在しない /blocks/{height}/statements を参照しており、
-       常に取得に失敗して "---" 表示になっていたバグを修正。
+     で取得できるレシート(statement.receipts)から算出する。
+     [実チェーンのデータで検証済みの実際の仕組み]
+       - Inflation (type=20803) レシートには targetAddress が存在しない。
+         これは「このブロックで新規発行された総額」を示すだけの記録。
+       - トランザクション手数料(ブロックのmeta.totalFee)とインフレ発行分は、
+         まず1つの「プール」として合算され、そのプールが
+         Harvest_Fee (type=8515) レシートとして
+           ・ネットワーク手数料シンク(harvestNetworkPercentage %)
+           ・委任先ノードのbeneficiary(harvestBeneficiaryPercentage %)
+           ・ハーベスター本人(残り)
+         の3者に配分される。
+       - よって「自分宛のインフレ報酬」を直接レシートから読み取ることはできず、
+         (自分の受取総額)×(プール内のインフレ比率)で案分して算出する。
+     ※ 以前は「Harvest_Fee/Inflationそれぞれを自分宛に合算するだけ」の
+       実装だったため、Inflationが常に0円になり、かつbeneficiary=自分自身の
+       ケースでノード取り分が手数料報酬に混入したまま表示されるバグがあった。
    ・ノード報酬(委任先ノードのbeneficiaryとしての取り分):
-     委任ハーベスティングでは、ブロックの一部報酬が委任先ノードの
-     beneficiaryAddress(block.beneficiaryAddress)宛にも配分されることがある。
-     これは自分が受け取る金額ではなく、あくまで参考情報として、
-     beneficiaryが設定されておりかつ自分自身と異なる場合のみ追加行で表示する。
+     ブロックのbeneficiaryAddress(block.beneficiaryAddress)を見て、
+       - 自分と別アドレス → そのアドレス宛のHarvest_Feeレシートをそのまま
+         合算(参考情報。自分の残高には反映されない)
+       - 自分自身と同じアドレス → 自分の受取額の中にノード取り分も混在して
+         いるため、harvestBeneficiaryPercentageから逆算して分離する
+     beneficiaryが未設定(全ゼロ)のブロックでは、この行自体を表示しない。
    ・本体アカウントの鍵(self)とリモート鍵(node)のどちらでハーベストされた
      ブロックかは内部的に区別しているが、表示上はどちらも同じ「ハーベスト」
      バッジで表示する。
@@ -1196,79 +1206,96 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
         let nodeRewardLabel = null;
 
         try {
-          // ブロック一覧(/blocks?signerPublicKey=)の応答は beneficiaryAddress を
-          // 含まないことがあるため、ブロック高ごとに詳細を個別取得して確実に得る
+          // ブロック一覧(/blocks?signerPublicKey=)の応答は beneficiaryAddress や
+          // totalFee(meta)を含まないことがあるため、ブロック高ごとに詳細を
+          // 個別取得して確実に得る
           const [blockRes, stRes] = await Promise.all([
             fetch(`${appState.NODE}/blocks/${height}`),
             fetch(`${appState.NODE}/statements/transaction?${new URLSearchParams({ height: String(height), pageSize: 50 })}`),
           ]);
           const blockJson = await blockRes.json();
           const b = blockJson.block ?? {};
+          const meta = blockJson.meta ?? {};
 
           const stJson = await stRes.json();
           const statementItems = stJson.data ?? [];
           const receipts = statementItems.flatMap((entry) => entry.statement?.receipts ?? []);
 
-          const sumByType = (type, targetAddr) =>
-            receipts
-              .filter((r) => Number(r.type) === type)
-              .filter((r) => normalizeReceiptAddress(r.targetAddress) === targetAddr)
-              .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
-
           const toText = (atomic) =>
             formatMosaicAmount(atomic, 6) + " XYM" + formatFiatSuffix(Number(atomic) / 1_000_000, jpyRate, usdRate);
 
-          // 自分のアドレス宛のレシートをいったん合算する
-          // (委任先ノードのbeneficiaryが自分自身と同じ場合、ノードとしての取り分も
-          //  同じ宛先の別レシートとしてここに混ざって入ってくる)
-          let feeAtomic = sumByType(HARVEST_FEE_RECEIPT_TYPE, myAddress);
-          let inflationAtomic = sumByType(INFLATION_RECEIPT_TYPE, myAddress);
-          let myRawTotal = feeAtomic + inflationAtomic;
+          // ------------------------------------------------------------
+          // Symbolのブロック報酬は「トランザクション手数料 + インフレ発行分」の
+          // 1つのプールとしてまとめて計算され、そのプールが
+          //   ・ネットワーク手数料シンク(harvestNetworkPercentage %)
+          //   ・委任先ノードのbeneficiary(harvestBeneficiaryPercentage %)
+          //   ・ハーベスター本人(残り)
+          // の3者にHarvest_Fee(type=8515)レシートとして配分される。
+          // Inflation(type=20803)レシートには宛先アドレスが存在せず、
+          // 「このブロックで新規発行された総額」を示すだけなので、
+          // 個別アドレス宛のインフレ報酬をレシートから直接読み取ることはできない。
+          // そのため、まず「プール総額」→「自分の受取総額」→「その中の
+          // ノード取り分」を求め、最後にプール内の手数料:インフレ比率を使って
+          // 案分することで、自分の取り分の中の内訳を算出する。
+          // ------------------------------------------------------------
+          const feeTotalBlock = BigInt(meta.totalFee ?? 0); // このブロックの実際の取引手数料合計
+          const inflationTotalBlock = receipts
+            .filter((r) => Number(r.type) === INFLATION_RECEIPT_TYPE)
+            .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n); // このブロックの新規発行総額
+          const poolTotal = feeTotalBlock + inflationTotalBlock; // 分配前のプール総額
+
+          // 自分のアドレス宛のHarvest_Feeレシート合計(=自分が実際に受け取った額。
+          // beneficiary=自分自身の場合はノード取り分もここに混ざって入っている)
+          const myReceivedAtomic = receipts
+            .filter((r) => Number(r.type) === HARVEST_FEE_RECEIPT_TYPE)
+            .filter((r) => normalizeReceiptAddress(r.targetAddress) === myAddress)
+            .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
 
           const beneficiaryAddress = !isZeroAddressHex(b.beneficiaryAddress)
             ? normalizeReceiptAddress(b.beneficiaryAddress)
             : null;
 
           let nodeRewardAtomic = 0n;
+          let harvesterCutAtomic = myReceivedAtomic;
 
           if (beneficiaryAddress && beneficiaryAddress !== myAddress) {
-            // ケース1: 委任先ノードのbeneficiaryが自分とは別アドレス
-            // → そのアドレス宛のレシートをそのまま合算すればノード取り分になる
-            //   (自分のレシート集計にはそもそも混ざっていないので調整不要)
-            nodeRewardAtomic =
-              sumByType(HARVEST_FEE_RECEIPT_TYPE, beneficiaryAddress) +
-              sumByType(INFLATION_RECEIPT_TYPE, beneficiaryAddress);
-          } else if (beneficiaryAddress && beneficiaryAddress === myAddress && beneficiaryPct > 0) {
-            // ケース2: 委任先ノードのbeneficiaryが自分自身と同じアドレス
-            // (自分でノードを立てて自分自身をbeneficiaryに設定している場合など)
-            // → ノード取り分・自分の取り分の両方が同じ宛先の別レシートとして
+            // beneficiaryが自分とは別アドレス
+            // → 自分の受取額(myReceivedAtomic)は最初から自分の取り分のみで、
+            //   ノード取り分は混ざっていない。そのアドレス宛のレシートを
+            //   別途合算すれば、それがそのままノード取り分(参考情報)になる。
+            nodeRewardAtomic = receipts
+              .filter((r) => Number(r.type) === HARVEST_FEE_RECEIPT_TYPE)
+              .filter((r) => normalizeReceiptAddress(r.targetAddress) === beneficiaryAddress)
+              .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
+          } else if (beneficiaryAddress && beneficiaryAddress === myAddress && poolTotal > 0n) {
+            // beneficiaryが自分自身と同じアドレス(自分のノードで自分自身を
+            // beneficiaryに設定している場合)
+            // → ノード取り分・ハーベスター取り分の両方が同じ宛先の別レシートとして
             //   記録されており、宛先だけでは区別できない。
             //   ネットワーク設定のharvestBeneficiaryPercentageから
-            //   ノード取り分を逆算し、自分の取り分(手数料/インフレ)からは
-            //   その分を差し引く(二重計上防止)。
-            nodeRewardAtomic = (myRawTotal * BigInt(Math.round(beneficiaryPct * 100))) / 10000n;
+            //   プール総額に対するノード取り分を計算し、自分の受取額から差し引く。
+            nodeRewardAtomic = (poolTotal * BigInt(Math.round(beneficiaryPct * 100))) / 10000n;
+            harvesterCutAtomic = myReceivedAtomic - nodeRewardAtomic;
+          }
 
-            if (myRawTotal > 0n) {
-              // 手数料・インフレそれぞれの比率に応じて案分して差し引く
-              const feeShare = (nodeRewardAtomic * feeAtomic) / myRawTotal;
-              const inflationShare = nodeRewardAtomic - feeShare;
-              feeAtomic -= feeShare;
-              inflationAtomic -= inflationShare;
-            }
+          // ハーベスター取り分(自分の純粋な報酬)を、プール内の手数料:インフレ比率で案分する
+          let harvesterFeeAtomic = 0n;
+          let harvesterInflationAtomic = 0n;
+          if (poolTotal > 0n && harvesterCutAtomic > 0n) {
+            harvesterInflationAtomic = (harvesterCutAtomic * inflationTotalBlock) / poolTotal;
+            harvesterFeeAtomic = harvesterCutAtomic - harvesterInflationAtomic;
           }
 
           // 報酬合計:
           // ・beneficiaryが自分自身の場合 → ノード取り分も実際に自分の残高に
-          //   反映される実質的な報酬なので、合計に含める(内訳の3項目を
-          //   足すとちょうど合計に一致する)
+          //   反映されるので、合計に含める(= myReceivedAtomicと一致する)
           // ・beneficiaryが自分とは別アドレスの場合 → そのお金は自分には
-          //   入らないため、合計には含めない(あくまで参考情報として別行で表示)
-          const totalAtomic =
-            feeAtomic + inflationAtomic + (beneficiaryAddress === myAddress ? nodeRewardAtomic : 0n);
+          //   入らないため、合計には含めない
+          const totalAtomic = harvesterFeeAtomic + harvesterInflationAtomic + nodeRewardAtomic * (beneficiaryAddress === myAddress ? 1n : 0n);
 
           totalText = toText(totalAtomic);
-          inflationText = toText(inflationAtomic);
-          feeText = toText(feeAtomic);
+          inflationText = toText(harvesterInflationAtomic);
+          feeText = toText(harvesterFeeAtomic);
           if (beneficiaryAddress) {
             nodeRewardText = toText(nodeRewardAtomic);
             nodeRewardLabel =
