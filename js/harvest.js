@@ -1073,11 +1073,16 @@ function initLiveHarvestStatusRefresh(address) {
       以前はHarvest_Feeのみを合算しておりインフレ報酬が反映されていなかった)
      ※ 以前は存在しない /blocks/{height}/statements を参照しており、
        常に取得に失敗して "---" 表示になっていたバグを修正。
+   ・ノード報酬(委任先ノードのbeneficiaryとしての取り分):
+     委任ハーベスティングでは、ブロックの一部報酬が委任先ノードの
+     beneficiaryAddress(block.beneficiaryAddress)宛にも配分されることがある。
+     これは自分が受け取る金額ではなく、あくまで参考情報として、
+     beneficiaryが設定されておりかつ自分自身と異なる場合のみ追加行で表示する。
    ・本体アカウントの鍵(self)とリモート鍵(node)のどちらでハーベストされた
      ブロックかは内部的に区別しているが、表示上はどちらも同じ「ハーベスト」
      バッジで表示する。
-   ・報酬額(合計・インフレ報酬・トランザクション手数料報酬の3つとも)は
-     円・ドル換算をあわせて表示する。
+   ・報酬額(合計・インフレ報酬・トランザクション手数料報酬・ノード報酬)は
+     いずれも円・ドル換算をあわせて表示する。
    ※ レシート取得はブロックごとに個別リクエストが必要なため、
      直近pageSize件のみを対象にする
 ============================================================ */
@@ -1095,6 +1100,12 @@ function normalizeReceiptAddress(addr) {
     }
   }
   return null;
+}
+
+// ブロックの beneficiaryAddress が「未設定」(全ゼロ)かどうか
+// (委任先ノードがbeneficiaryを指定していない場合、この値は全ゼロで返ってくる)
+function isZeroAddressHex(hex) {
+  return !hex || /^0+$/.test(hex);
 }
 
 async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20, address } = {}) {
@@ -1154,6 +1165,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
         let totalText = "---";
         let inflationText = "---";
         let feeText = "---";
+        let nodeRewardText = null;
 
         try {
           const params = new URLSearchParams({ height: String(height), pageSize: 50 });
@@ -1162,22 +1174,37 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
           const statementItems = stJson.data ?? [];
           const receipts = statementItems.flatMap((entry) => entry.statement?.receipts ?? []);
 
-          const sumByType = (type) =>
+          const sumByType = (type, targetAddr) =>
             receipts
               .filter((r) => Number(r.type) === type)
-              .filter((r) => normalizeReceiptAddress(r.targetAddress) === myAddress)
+              .filter((r) => normalizeReceiptAddress(r.targetAddress) === targetAddr)
               .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
-
-          const feeAtomic = sumByType(HARVEST_FEE_RECEIPT_TYPE);
-          const inflationAtomic = sumByType(INFLATION_RECEIPT_TYPE);
-          const totalAtomic = feeAtomic + inflationAtomic;
 
           const toText = (atomic) =>
             formatMosaicAmount(atomic, 6) + " XYM" + formatFiatSuffix(Number(atomic) / 1_000_000, jpyRate, usdRate);
 
+          // 自分(ハーベスターまたはマルチシグ対象アカウント)が実際に受け取った分
+          const feeAtomic = sumByType(HARVEST_FEE_RECEIPT_TYPE, myAddress);
+          const inflationAtomic = sumByType(INFLATION_RECEIPT_TYPE, myAddress);
+          const totalAtomic = feeAtomic + inflationAtomic;
+
           totalText = toText(totalAtomic);
           inflationText = toText(inflationAtomic);
           feeText = toText(feeAtomic);
+
+          // 委任先ノードが beneficiary として受け取った分(自分の取り分とは別に、
+          // 参考情報として表示する。ブロックにbeneficiaryが設定されていない、
+          // または自分自身がbeneficiaryの場合は表示しない)
+          const beneficiaryAddress = !isZeroAddressHex(b.beneficiaryAddress)
+            ? normalizeReceiptAddress(b.beneficiaryAddress)
+            : null;
+
+          if (beneficiaryAddress && beneficiaryAddress !== myAddress) {
+            const nodeRewardAtomic =
+              sumByType(HARVEST_FEE_RECEIPT_TYPE, beneficiaryAddress) +
+              sumByType(INFLATION_RECEIPT_TYPE, beneficiaryAddress);
+            nodeRewardText = toText(nodeRewardAtomic);
+          }
         } catch (e) {
           console.warn("ハーベスト報酬レシート取得失敗:", height, e);
         }
@@ -1186,7 +1213,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
           ? Number(appState.epochAdjustment) * 1000 + Number(b.timestamp)
           : null;
 
-        return { height, totalText, inflationText, feeText, timeMs, kind: item.__harvestKind };
+        return { height, totalText, inflationText, feeText, nodeRewardText, timeMs, kind: item.__harvestKind };
       })
     );
 
@@ -1199,6 +1226,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
         <div class="harvest-reward-breakdown">
           <div>インフレ報酬: ${r.inflationText}</div>
           <div>トランザクション手数料報酬: ${r.feeText}</div>
+          ${r.nodeRewardText ? `<div>ノード報酬(委任先ノードの取り分): ${r.nodeRewardText}</div>` : ""}
         </div>
         <div class="harvest-reward-time">高さ: ${r.height}${r.timeMs ? ` ・ ${new Date(r.timeMs).toLocaleString("ja-JP", { hour12: false })}` : ""}</div>
       </div>
