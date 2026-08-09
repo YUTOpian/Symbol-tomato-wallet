@@ -24,6 +24,7 @@ const {setStatus} = W.ui;
 const {trackOutgoingTransaction} = W.txStatusTracker;
 const {addCallback} = W.ws;
 const {hexToBytes, formatMosaicAmount} = W.utils;
+const {getXymJpyRate, getXymUsdRate} = W.priceRates;
 
 /* ============================================================
    委任先ノード候補の読み込み（NodeWatchから取得しプルダウンに反映）
@@ -193,6 +194,9 @@ async function resolveAccountPublicKeyHex(address) {
    委任ハーベスティングで実際にブロックを生成していても
    常にヒットしない(誤って「ハーベスト履歴なし」と表示される)ため、
    本体の鍵とリモート鍵の両方を候補として返す。
+   ・kind: "self" … 本体アカウントの鍵で直接ハーベスト(委任なし)
+   ・kind: "node" … リモート鍵で署名＝ノードへの委任ハーベスティング
+   両方をUI側で区別して表示できるよう、鍵とあわせて種別を返す。
 ============================================================ */
 async function resolveHarvestSignerPublicKeys(address) {
   if (!address || !appState.NODE) return [];
@@ -204,19 +208,26 @@ async function resolveHarvestSignerPublicKeys(address) {
     const account = json.account;
     if (!account) return [];
 
-    const keys = new Set();
+    const seen = new Set();
+    const result = [];
 
     const mainPubKey = account.publicKey;
     if (mainPubKey && !/^0+$/.test(mainPubKey)) {
-      keys.add(mainPubKey.toUpperCase());
+      const key = mainPubKey.toUpperCase();
+      seen.add(key);
+      result.push({ key, kind: "self" });
     }
 
     const linkedPubKey = account.supplementalPublicKeys?.linked?.publicKey;
     if (linkedPubKey && !/^0+$/.test(linkedPubKey)) {
-      keys.add(linkedPubKey.toUpperCase());
+      const key = linkedPubKey.toUpperCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ key, kind: "node" });
+      }
     }
 
-    return [...keys];
+    return result;
   } catch (e) {
     console.warn("ハーベスト署名鍵の解決に失敗しました:", address, e);
     return [];
@@ -224,8 +235,40 @@ async function resolveHarvestSignerPublicKeys(address) {
 }
 
 /* ============================================================
+   ハーベスト種別（本人 / ノード委任）を示す小さなバッジHTML
+============================================================ */
+function harvestKindBadgeHtml(kind) {
+  if (kind === "node") {
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#1e3a5f;color:#7dd3fc;">🖥️ ノードのハーベスト（委任・リモート鍵）</span>`;
+  }
+  if (kind === "self") {
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#3f2d1e;color:#fbbf24;">👤 アカウント自身のハーベスト（本鍵）</span>`;
+  }
+  return "";
+}
+
+/* ============================================================
+   XYM数量(atomic)から、円・ドル換算を「(32円 / 0.21ドル)」の形で
+   付け足すための文字列を作る。レートが取得できていない側は省略する。
+   (account.jsの残高換算表示と同じ考え方)
+============================================================ */
+function formatFiatSuffix(xymAmountNumber, jpyRate, usdRate) {
+  const parts = [];
+  if (jpyRate != null) {
+    const jpy = Math.round(xymAmountNumber * jpyRate);
+    parts.push(`${jpy.toLocaleString("ja-JP")}円`);
+  }
+  if (usdRate != null) {
+    const usd = xymAmountNumber * usdRate;
+    parts.push(`${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}ドル`);
+  }
+  return parts.length > 0 ? ` (${parts.join(" / ")})` : "";
+}
+
+/* ============================================================
    複数の signerPublicKey で取得したブロック一覧を、高さ(height)で
    重複排除しつつ新しい順に並べ直す
+   (各itemに付与された __harvestKind はそのまま保持される)
 ============================================================ */
 function dedupeAndSortBlocksDesc(items) {
   const seen = new Set();
@@ -532,6 +575,8 @@ async function announcePersistentDelegationRequest(remoteKeyPair, vrfKeyPair, no
    ハーベスト履歴
    このアカウントが実際にハーベスト(ブロック生成)した履歴を
    /blocks?signerPublicKey= で取得して一覧表示する
+   ・本体アカウントの鍵(self)とリモート鍵(node)の両方を検索し、
+     どちらでハーベストされたブロックかをバッジで区別する
 ============================================================ */
 async function loadHarvestHistory(targetAddress) {
   const el = document.getElementById("harvest-history");
@@ -549,15 +594,15 @@ async function loadHarvestHistory(targetAddress) {
     // 空(null)のケースでも、チェーン上に公開鍵が登録済みであれば履歴を取得できるようにする。
     // 委任ハーベスティングはリモート鍵で署名されるため、本体の鍵とリモート鍵の
     // 両方を候補にして検索する。
-    const signerPublicKeys = await resolveHarvestSignerPublicKeys(address);
+    const signerEntries = await resolveHarvestSignerPublicKeys(address);
 
-    if (signerPublicKeys.length === 0) {
+    if (signerEntries.length === 0) {
       el.innerHTML = `<div style="color:#94a3b8;">このアカウントはまだ自分自身でトランザクションを送信していないため、公開鍵が未登録です（ハーベスト履歴は照会できません）</div>`;
       return;
     }
 
     const perKeyResults = await Promise.all(
-      signerPublicKeys.map(async (signerPublicKey) => {
+      signerEntries.map(async ({ key: signerPublicKey, kind }) => {
         const params = new URLSearchParams({
           signerPublicKey,
           order: "desc",
@@ -565,7 +610,7 @@ async function loadHarvestHistory(targetAddress) {
         });
         const res = await fetch(`${appState.NODE}/blocks?${params}`);
         const json = await res.json();
-        return json.data ?? [];
+        return (json.data ?? []).map((item) => ({ ...item, __harvestKind: kind }));
       })
     );
 
@@ -592,6 +637,7 @@ async function loadHarvestHistory(targetAddress) {
 
       return `
         <div class="harvest-history-item">
+          <div>${harvestKindBadgeHtml(item.__harvestKind)}</div>
           <div>高さ: ${height}</div>
           <div>日時: ${dateStr}</div>
           <div>獲得手数料(概算): ${feeXym} XYM</div>
@@ -1013,8 +1059,14 @@ function initLiveHarvestStatusRefresh(address) {
 /* ============================================================
    ハーベスト報酬(自分が実際にハーベストしたブロックと、その報酬)
    ・ブロック一覧: GET /blocks?signerPublicKey={自分}
-   ・報酬額: 各ブロックの GET /blocks/{height}/statements のレシートのうち
-     Harvest_Fee(type=8515)で自分のアドレス宛のものを合算
+   ・報酬額: 各ブロックの高さについて GET /statements/transaction?height={高さ}
+     で取得できるレシート(statement.receipts)のうち、
+     Harvest_Fee(type=8515)で自分のアドレス宛のものを合算する
+     ※ 以前は存在しない /blocks/{height}/statements を参照しており、
+       常に取得に失敗して "---" 表示になっていたバグを修正。
+   ・本体アカウントの鍵(self)とリモート鍵(node)のどちらでハーベストされた
+     ブロックかをバッジで区別して表示する。
+   ・報酬額は円・ドル換算をあわせて表示する。
    ※ レシート取得はブロックごとに個別リクエストが必要なため、
      直近pageSize件のみを対象にする
 ============================================================ */
@@ -1046,14 +1098,14 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
     // appState.currentPubKey が null のため、チェーン上の公開鍵を代わりに解決する。
     // 委任ハーベスティングはリモート鍵で署名されるため、本体の鍵とリモート鍵の
     // 両方を候補にして検索する(本体の鍵だけでは常に0件になってしまうバグがあった)。
-    const signerPublicKeys = await resolveHarvestSignerPublicKeys(myAddress);
-    if (signerPublicKeys.length === 0) {
+    const signerEntries = await resolveHarvestSignerPublicKeys(myAddress);
+    if (signerEntries.length === 0) {
       el.innerHTML = `<div style="color:#94a3b8;">このアカウントはまだ自分自身でトランザクションを送信していないため、公開鍵が未登録です（ハーベスト報酬は照会できません）</div>`;
       return;
     }
 
     const perKeyResults = await Promise.all(
-      signerPublicKeys.map(async (signerPublicKey) => {
+      signerEntries.map(async ({ key: signerPublicKey, kind }) => {
         const params = new URLSearchParams({
           signerPublicKey,
           order: "desc",
@@ -1061,7 +1113,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
         });
         const res = await fetch(`${appState.NODE}/blocks?${params}`);
         const json = await res.json();
-        return json.data ?? [];
+        return (json.data ?? []).map((item) => ({ ...item, __harvestKind: kind }));
       })
     );
 
@@ -1072,6 +1124,10 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
       return;
     }
 
+    // 円・ドル換算レートは(行ごとではなく)1回だけまとめて取得する
+    const [jpyRate, usdResult] = await Promise.all([getXymJpyRate(), getXymUsdRate()]);
+    const usdRate = usdResult?.rate ?? null;
+
     const rows = await Promise.all(
       blocks.map(async (item) => {
         const b = item.block;
@@ -1079,16 +1135,20 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
         let rewardText = "---";
 
         try {
-          const stRes = await fetch(`${appState.NODE}/blocks/${height}/statements`);
+          const params = new URLSearchParams({ height: String(height), pageSize: 50 });
+          const stRes = await fetch(`${appState.NODE}/statements/transaction?${params}`);
           const stJson = await stRes.json();
-          const receipts = stJson.statement?.receipts ?? [];
+          const statementItems = stJson.data ?? [];
 
-          const totalAtomic = receipts
+          const totalAtomic = statementItems
+            .flatMap((entry) => entry.statement?.receipts ?? [])
             .filter((r) => Number(r.type) === HARVEST_FEE_RECEIPT_TYPE)
             .filter((r) => normalizeReceiptAddress(r.targetAddress) === myAddress)
             .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
 
-          rewardText = formatMosaicAmount(totalAtomic, 6) + " XYM";
+          const xymAmountNumber = Number(totalAtomic) / 1_000_000;
+          rewardText =
+            formatMosaicAmount(totalAtomic, 6) + " XYM" + formatFiatSuffix(xymAmountNumber, jpyRate, usdRate);
         } catch (e) {
           console.warn("ハーベスト報酬レシート取得失敗:", height, e);
         }
@@ -1097,7 +1157,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
           ? Number(appState.epochAdjustment) * 1000 + Number(b.timestamp)
           : null;
 
-        return { height, rewardText, timeMs };
+        return { height, rewardText, timeMs, kind: item.__harvestKind };
       })
     );
 
@@ -1105,6 +1165,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
       .map(
         (r) => `
       <div class="harvest-history-item">
+        <div>${harvestKindBadgeHtml(r.kind)}</div>
         <div>高さ: ${r.height}</div>
         <div>報酬: ${r.rewardText}</div>
         ${r.timeMs ? `<div>${new Date(r.timeMs).toLocaleString("ja-JP", { hour12: false })}</div>` : ""}
