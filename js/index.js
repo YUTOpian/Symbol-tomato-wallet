@@ -945,7 +945,7 @@ window.addEventListener("load", async () => {
     if (!mosaicSelect) return;
 
     if (!address) {
-      mosaicSelect.innerHTML = `<option value="">-- 送金元を選択してください --</option>`;
+      mosaicSelect.innerHTML = `<option value="">-- 先に送金元マルチシグアカウントを選択してください --</option>`;
       return;
     }
 
