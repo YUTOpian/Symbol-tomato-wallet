@@ -252,9 +252,76 @@ async function updateMultisigSettings({
 }
 
 /* ============================================================
-   マルチシグ送金
+   マルチシグ送金: 送金元マルチシグアカウントが保有するモザイク一覧
+   (送金するモザイクを選べるようにするため。XYM固定ではなく、
+    保有しているモザイクすべてを候補として返す)
+   ネームスペースがリンクされているモザイクは、そのネームスペース名を
+   表示名として使う(account.jsの保有モザイク一覧と同じ考え方)。
 ============================================================ */
-async function sendFromMultisig({ multisigAddress, recipientAddress, amountXym, message }) {
+async function fetchMultisigMosaicOptions(multisigAddress) {
+  const res = await fetch(new URL("/accounts/" + multisigAddress, appState.NODE));
+  if (!res.ok) return [];
+  const json = await res.json();
+  const mosaics = json.account?.mosaics || [];
+  const xymId = getXymMosaicIdHex();
+
+  // MosaicId → ネームスペース名 のマップをまとめて取得(1回のリクエストで解決)
+  const namespaceMap = {};
+  try {
+    const mosaicIds = mosaics.map((m) => String(m.id).toUpperCase());
+    const namespaceInfo = await fetch(new URL("/namespaces/mosaic/names", appState.NODE), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mosaicIds }),
+    }).then((r) => r.json());
+
+    for (const item of namespaceInfo.mosaicNames || []) {
+      const mosaicId = item.mosaicId.toUpperCase();
+      if (item.names && item.names.length > 0) {
+        const first = item.names[0];
+        // names[] の各要素は文字列の場合とオブジェクト({name, parentId, ...})の場合がある
+        const resolvedName = typeof first === "string" ? first : first?.name;
+        if (resolvedName) {
+          namespaceMap[mosaicId] = resolvedName;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("マルチシグ保有モザイクのネームスペース取得失敗:", e);
+  }
+
+  return await Promise.all(
+    mosaics.map(async (m) => {
+      const mosaicId = String(m.id).toUpperCase();
+
+      if (mosaicId === xymId) {
+        return { mosaicId, name: "XYM", divisibility: 6, amount: m.amount };
+      }
+
+      const namespaceName = namespaceMap[mosaicId];
+
+      try {
+        const mosaicRes = await fetch(new URL("/mosaics/" + mosaicId, appState.NODE));
+        const mosaicJson = await mosaicRes.json();
+        return {
+          mosaicId,
+          name: namespaceName ?? mosaicId,
+          divisibility: Number(mosaicJson.mosaic?.divisibility ?? 0),
+          amount: m.amount,
+        };
+      } catch (e) {
+        console.warn("モザイク情報取得失敗:", mosaicId, e);
+        return { mosaicId, name: namespaceName ?? mosaicId, divisibility: 0, amount: m.amount };
+      }
+    })
+  );
+}
+
+/* ============================================================
+   マルチシグ送金
+   mosaicIdHex / divisibility を省略した場合はXYM(可分性6)として扱う
+============================================================ */
+async function sendFromMultisig({ multisigAddress, recipientAddress, mosaicIdHex, divisibility, amount, message }) {
   const { descriptors, models } = appState.sdkSymbol;
 
   // 送金元(マルチシグアカウント)の公開鍵を取得
@@ -266,13 +333,16 @@ async function sendFromMultisig({ multisigAddress, recipientAddress, amountXym, 
     throw new Error("送金元アカウントの公開鍵が取得できません(未初期化アカウントの可能性があります)");
   }
 
-  const xymId = getXymMosaicIdHex();
+  const resolvedMosaicIdHex = (mosaicIdHex || getXymMosaicIdHex()).toUpperCase();
+  const resolvedDivisibility = Number.isFinite(divisibility) ? divisibility : 6;
+  const mosaicLabel = resolvedMosaicIdHex === getXymMosaicIdHex() ? "XYM" : resolvedMosaicIdHex;
+
   const mosaics =
-    amountXym > 0
+    amount > 0
       ? [
           new descriptors.UnresolvedMosaicDescriptor(
-            new models.UnresolvedMosaicId(BigInt("0x" + xymId)),
-            new models.Amount(BigInt(Math.floor(amountXym * 1_000_000)))
+            new models.UnresolvedMosaicId(BigInt("0x" + resolvedMosaicIdHex)),
+            new models.Amount(BigInt(Math.floor(amount * 10 ** resolvedDivisibility)))
           ),
         ]
       : [];
@@ -298,7 +368,8 @@ async function sendFromMultisig({ multisigAddress, recipientAddress, amountXym, 
     sender: multisigAddress,
     recipient: recipientAddress,
     details: [
-      { label: "数量", value: `${amountXym} XYM` },
+      { label: "モザイク", value: mosaicLabel },
+      { label: "数量", value: `${amount}` },
       { label: "メッセージ", value: message || "(なし)" },
     ],
   });
@@ -448,6 +519,7 @@ window.W.multisig = {
   loadMultisigInfo,
   fetchCosignatoryOfAddresses,
   updateMultisigSettings,
+  fetchMultisigMosaicOptions,
   sendFromMultisig,
   fetchPartialTransactionByHash,
   loadPendingPartialTransactions,

@@ -8,7 +8,7 @@ const {sendTx} = W.transfer;
 const {loadRecentTx, initLiveTx} = W.transactions;
 const {refreshAccount, loadWalletTargetOptions, getSelectedWalletTargetAddress, isWalletTargetSelf, loadMosaicListForAddress} = W.account;const {initWebSocket} = W.ws;
 const {selectNode} = W.nodeSelector;
-const {showPopup} = W.utils;
+const {showPopup, formatMosaicAmount} = W.utils;
 const {setStatus} = W.ui;
 const {checkHarvestStatus, startHarvest, stopHarvest, sendDelegationRequestOnly, loadHarvestNodeCandidates, loadHarvestTargetOptions, loadHarvestHistory, loadHarvestRewards} = W.harvest;
 const {showCurrentNode,
@@ -71,6 +71,7 @@ const {setMetadata, loadOwnMetadataList} = W.metadata;
 const {loadMultisigInfo,
   fetchCosignatoryOfAddresses,
   updateMultisigSettings,
+  fetchMultisigMosaicOptions,
   sendFromMultisig,
   loadPendingPartialTransactions,
   cosignPending,} = W.multisig;
@@ -934,7 +935,40 @@ window.addEventListener("load", async () => {
       console.error("fetchCosignatoryOfAddresses error:", e);
       select.innerHTML = `<option value="">-- 取得に失敗しました --</option>`;
     }
+    // 送金元が確定した時点(自動選択された1件目も含む)で、そのアカウントの
+    // 保有モザイク一覧を読み込む
+    await loadMultisigSendMosaicOptions(select.value);
   }
+
+  async function loadMultisigSendMosaicOptions(address) {
+    const mosaicSelect = document.getElementById("multisig-send-mosaic-select");
+    if (!mosaicSelect) return;
+
+    if (!address) {
+      mosaicSelect.innerHTML = `<option value="">-- 送金元を選択してください --</option>`;
+      return;
+    }
+
+    mosaicSelect.innerHTML = `<option value="">-- 読み込み中... --</option>`;
+    try {
+      const options = await fetchMultisigMosaicOptions(address);
+      mosaicSelect.innerHTML = options.length
+        ? options
+            .map(
+              (o) =>
+                `<option value="${o.mosaicId}" data-divisibility="${o.divisibility}">${o.name} (${formatMosaicAmount(o.amount, o.divisibility)})</option>`
+            )
+            .join("")
+        : `<option value="">-- 保有モザイクがありません --</option>`;
+    } catch (e) {
+      console.error("fetchMultisigMosaicOptions error:", e);
+      mosaicSelect.innerHTML = `<option value="">-- 取得に失敗しました --</option>`;
+    }
+  }
+
+  document.getElementById("multisig-send-from-select")?.addEventListener("change", (e) => {
+    loadMultisigSendMosaicOptions(e.target.value);
+  });
 
   function activateMultisigTab(tab) {
     document.querySelectorAll("#multisig-page .tab-btn").forEach(btn => {
@@ -998,12 +1032,19 @@ window.addEventListener("load", async () => {
 
   document.getElementById("submit-multisig-send-btn")?.addEventListener("click", async () => {
     const multisigAddress = document.getElementById("multisig-send-from-select").value;
+    const mosaicSelectEl = document.getElementById("multisig-send-mosaic-select");
+    const mosaicIdHex = mosaicSelectEl?.value || "";
+    const divisibility = Number(mosaicSelectEl?.selectedOptions?.[0]?.dataset?.divisibility ?? 6);
     const recipientAddress = document.getElementById("multisig-send-recipient").value.trim();
-    const amountXym = parseFloat(document.getElementById("multisig-send-amount").value) || 0;
+    const amount = parseFloat(document.getElementById("multisig-send-amount").value) || 0;
     const message = document.getElementById("multisig-send-message").value;
 
     if (!multisigAddress) {
       setStatus("multisig-send-status", "送金元マルチシグアカウントを選択してください。", "error");
+      return;
+    }
+    if (!mosaicIdHex) {
+      setStatus("multisig-send-status", "モザイクを選択してください。", "error");
       return;
     }
     if (!recipientAddress) {
@@ -1013,7 +1054,7 @@ window.addEventListener("load", async () => {
 
     setStatus("multisig-send-status", "提案中...（ハッシュロックの承認待ちを含むため数十秒かかります）");
     try {
-      const hash = await sendFromMultisig({ multisigAddress, recipientAddress, amountXym, message });
+      const hash = await sendFromMultisig({ multisigAddress, recipientAddress, mosaicIdHex, divisibility, amount, message });
       setStatus(
         "multisig-send-status",
         `✅ 送金を提案しました。Hash: ${hash}\n必要な承認数に応じて、他の連署者が「署名」タブから承認する必要があります。`,
