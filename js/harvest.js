@@ -113,9 +113,104 @@ async function fetchNodePublicKey(nodeUrl) {
 }
 
 /* ============================================================
-   ハーベスト状態確認
+   対象アカウントの選択（自分自身 / 連署者になっているマルチシグアカウント）
+   ハーベストは必ずしも「今ログイン中のアカウント」に対して設定するとは
+   限らない。マルチシグアカウントの委任ハーベスティングは、連署者が
+   自分自身のアカウントでログインした状態で、対象としてマルチシグの
+   アドレスを選び、提案(アグリゲートボンデッド)する形になる。
+   また、マルチシグアカウントの状態を確認するだけなら、読み取り専用
+   モードでそのアドレスを直接開いても良い(その場合は署名系の操作は
+   すべて弾かれる)。
 ============================================================ */
-async function checkHarvestStatus() {
+async function loadHarvestTargetOptions() {
+  const select = document.getElementById("harvest-target-select");
+  if (!select) return;
+
+  const selfAddress = appState.currentAddress?.toString();
+  select.innerHTML = `<option value="">-- 自分自身（${selfAddress ?? "---"}）--</option>`;
+
+  // 読み取り専用モードでは「連署者として提案する」ことができないため、
+  // マルチシグ候補の取得自体を行わない(自分自身の閲覧のみ)
+  if (appState.isReadOnly || !W.multisig) return;
+
+  try {
+    const addresses = await W.multisig.fetchCosignatoryOfAddresses();
+    for (const a of addresses) {
+      const option = document.createElement("option");
+      option.value = a;
+      option.textContent = `${a}（連署者として提案）`;
+      select.appendChild(option);
+    }
+  } catch (e) {
+    console.warn("マルチシグ候補の取得に失敗しました", e);
+  }
+}
+
+function getSelectedHarvestTargetAddress() {
+  const selected = document.getElementById("harvest-target-select")?.value?.trim();
+  return selected || appState.currentAddress?.toString();
+}
+
+/* ============================================================
+   指定アドレスの公開鍵を解決する。
+   - 自分自身（ログイン中のアカウント）なら appState.currentPubKey を使う
+     (まだ一度もチェーンへ送信していないアカウントでも、ログイン時点で
+     公開鍵は分かっているため)
+   - それ以外(マルチシグアカウントなど、秘密鍵を保持していない対象)は
+     チェーン上の /accounts/{address} から publicKey を取得する。
+     一度も自分自身でトランザクションを送信していないアカウントは
+     公開鍵がまだチェーンに登録されておらず(全ゼロ)、解決できない。
+============================================================ */
+async function resolveAccountPublicKeyHex(address) {
+  if (!address) return null;
+
+  if (appState.currentPubKey && address === appState.currentAddress?.toString()) {
+    return appState.currentPubKey.toString();
+  }
+
+  if (!appState.NODE) return null;
+
+  try {
+    const res = await fetch(`${appState.NODE}/accounts/${address}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const pubKey = json.account?.publicKey;
+    if (!pubKey || /^0+$/.test(pubKey)) return null;
+    return pubKey;
+  } catch (e) {
+    console.warn("公開鍵の解決に失敗しました:", address, e);
+    return null;
+  }
+}
+
+/* ============================================================
+   指定アドレスがマルチシグアカウントかどうか
+============================================================ */
+async function checkIsMultisig(address) {
+  try {
+    const res = await fetch(`${appState.NODE}/account/${address}/multisig`);
+    if (res.status === 404) return { isMultisig: false };
+    if (!res.ok) return { isMultisig: false };
+    const json = await res.json();
+    return { isMultisig: true, minApproval: json.multisig?.minApproval };
+  } catch (e) {
+    console.warn("マルチシグ判定に失敗しました:", address, e);
+    return { isMultisig: false };
+  }
+}
+
+/* ============================================================
+   ハーベスト状態確認
+   targetAddress省略時は harvest-target-select の選択(なければ自分自身)を使う
+============================================================ */
+async function checkHarvestStatus(targetAddress) {
+  const address = targetAddress || getSelectedHarvestTargetAddress();
+  const addressEl = document.getElementById("harvest-address");
+  if (addressEl && address) addressEl.textContent = address;
+  return await checkHarvestStatusFor(address);
+}
+
+async function checkHarvestStatusFor(address) {
   const statusEl = document.getElementById("harvest-status");
   const importanceEl = document.getElementById("harvest-importance");
   const badgeEl = document.getElementById("harvest-badge");
@@ -127,11 +222,16 @@ async function checkHarvestStatus() {
     badgeEl.textContent = text;
   };
 
+  if (!address) {
+    statusEl.textContent = "対象アカウントが未指定です";
+    setBadge("inactive", "❌ 未指定");
+    return;
+  }
+
   try {
     statusEl.textContent = "状態確認中...";
     setBadge("", "確認中...");
 
-    const address = appState.currentAddress.toString();
     const res = await fetch(`${appState.NODE}/accounts/${address}`);
     const json = await res.json();
     const account = json.account;
@@ -214,8 +314,9 @@ async function signAndAnnounce(tx, confirmInfo) {
 /* ============================================================
    ① + ② + ③ を1つのAggregate Complete Transactionにまとめて送信
 ============================================================ */
-async function announceKeyLinks(remoteKeyPair, vrfKeyPair, nodePublicKey, harvestNodeUrl) {
+async function announceKeyLinks(remoteKeyPair, vrfKeyPair, nodePublicKey, harvestNodeUrl, target) {
   const { descriptors, models } = appState.sdkSymbol;
+  const { signerPublicKey, viaMultisig, address } = target;
 
   const embedded = [
     appState.facade.createEmbeddedTransactionFromTypedDescriptor(
@@ -223,23 +324,47 @@ async function announceKeyLinks(remoteKeyPair, vrfKeyPair, nodePublicKey, harves
         remoteKeyPair.publicKey,
         models.LinkAction.LINK
       ),
-      appState.currentPubKey
+      signerPublicKey
     ),
     appState.facade.createEmbeddedTransactionFromTypedDescriptor(
       new descriptors.VrfKeyLinkTransactionV1Descriptor(
         vrfKeyPair.publicKey,
         models.LinkAction.LINK
       ),
-      appState.currentPubKey
+      signerPublicKey
     ),
     appState.facade.createEmbeddedTransactionFromTypedDescriptor(
       new descriptors.NodeKeyLinkTransactionV1Descriptor(
         nodePublicKey,
         models.LinkAction.LINK
       ),
-      appState.currentPubKey
+      signerPublicKey
     ),
   ];
+
+  const confirmInfo = {
+    typeLabel: viaMultisig ? "委任ハーベスティング設定(鍵リンク・マルチシグ提案)" : "委任ハーベスティング設定(鍵リンク)",
+    sender: address,
+    kind: "harvest",
+    details: [
+      { label: "対象アカウント", value: address },
+      { label: "委任先ノード", value: harvestNodeUrl },
+      { label: "リモート公開鍵", value: remoteKeyPair.publicKey.toString() },
+      { label: "VRF公開鍵", value: vrfKeyPair.publicKey.toString() },
+      { label: "ノード公開鍵", value: nodePublicKey.toString() },
+    ],
+  };
+
+  /*
+    マルチシグアカウントは自分自身の鍵で直接署名することができない
+    (ネットワーク側で拒否される)。連署者として、アグリゲートボンデッド
+    Tx + ハッシュロックで「提案」し、必要数の連署が集まるのを待つ形にする
+    (multisig.js の proposeBondedAggregate と同じ流れ)。
+  */
+  if (viaMultisig) {
+    const hash = await W.multisig.proposeBondedAggregate(embedded, 0, confirmInfo);
+    return { hash, pendingCosign: true };
+  }
 
   const aggregateDescriptor = new descriptors.AggregateCompleteTransactionV3Descriptor(
     appState.facade.static.hashEmbeddedTransactions(embedded),
@@ -248,21 +373,13 @@ async function announceKeyLinks(remoteKeyPair, vrfKeyPair, nodePublicKey, harves
 
   const aggregateTx = appState.facade.createTransactionFromTypedDescriptor(
     aggregateDescriptor,
-    appState.currentPubKey,
+    signerPublicKey,
     appState.feeMultiplier ?? 100,
     60 * 60
   );
 
-  return await signAndAnnounce(aggregateTx, {
-    typeLabel: "委任ハーベスティング設定(鍵リンク)",
-    kind: "harvest",
-    details: [
-      { label: "委任先ノード", value: harvestNodeUrl },
-      { label: "リモート公開鍵", value: remoteKeyPair.publicKey.toString() },
-      { label: "VRF公開鍵", value: vrfKeyPair.publicKey.toString() },
-      { label: "ノード公開鍵", value: nodePublicKey.toString() },
-    ],
-  });
+  const hash = await signAndAnnounce(aggregateTx, confirmInfo);
+  return { hash, pendingCosign: false };
 }
 
 /* ============================================================
@@ -271,7 +388,8 @@ async function announceKeyLinks(remoteKeyPair, vrfKeyPair, nodePublicKey, harves
      見つからない場合は encoder のプロパティ一覧をconsoleに出して
      原因を特定できるようにしている。
 ============================================================ */
-async function announcePersistentDelegationRequest(remoteKeyPair, vrfKeyPair, nodePublicKey) {
+async function announcePersistentDelegationRequest(remoteKeyPair, vrfKeyPair, nodePublicKey, target) {
+  const { signerPublicKey, viaMultisig, address } = target;
   const { descriptors, MessageEncoder } = appState.sdkSymbol;
 
   if (typeof MessageEncoder !== "function") {
@@ -318,19 +436,39 @@ async function announcePersistentDelegationRequest(remoteKeyPair, vrfKeyPair, no
     encodedMessage
   );
 
+  const confirmInfo = {
+    typeLabel: viaMultisig
+      ? "委任ハーベスティング設定(委任リクエスト送信・マルチシグ提案)"
+      : "委任ハーベスティング設定(委任リクエスト送信)",
+    sender: address,
+    kind: "harvest",
+    recipient: nodeAddress.toString(),
+    details: [
+      { label: "対象アカウント", value: address },
+      { label: "内容", value: "リモート鍵・VRF鍵を暗号化してノード宛に送信します" },
+    ],
+  };
+
+  // ④もマルチシグアカウントからの送金(TransferTransaction)であるため、
+  // 自分自身が送信元でない限り、①②③と同じくボンデッド提案が必要
+  if (viaMultisig) {
+    const embeddedTx = appState.facade.createEmbeddedTransactionFromTypedDescriptor(
+      transferDescriptor,
+      signerPublicKey
+    );
+    const hash = await W.multisig.proposeBondedAggregate([embeddedTx], 0, confirmInfo);
+    return { hash, pendingCosign: true };
+  }
+
   const transferTx = appState.facade.createTransactionFromTypedDescriptor(
     transferDescriptor,
-    appState.currentPubKey,
+    signerPublicKey,
     appState.feeMultiplier ?? 100,
     60 * 60
   );
 
-  return await signAndAnnounce(transferTx, {
-    typeLabel: "委任ハーベスティング設定(委任リクエスト送信)",
-    kind: "harvest",
-    recipient: nodeAddress.toString(),
-    details: [{ label: "内容", value: "リモート鍵・VRF鍵を暗号化してノード宛に送信します" }],
-  });
+  const hash = await signAndAnnounce(transferTx, confirmInfo);
+  return { hash, pendingCosign: false };
 }
 
 /* ============================================================
@@ -338,19 +476,29 @@ async function announcePersistentDelegationRequest(remoteKeyPair, vrfKeyPair, no
    このアカウントが実際にハーベスト(ブロック生成)した履歴を
    /blocks?signerPublicKey= で取得して一覧表示する
 ============================================================ */
-async function loadHarvestHistory() {
+async function loadHarvestHistory(targetAddress) {
   const el = document.getElementById("harvest-history");
   if (!el) return;
 
   el.textContent = "読み込み中...";
 
   try {
-    if (!appState.NODE || !appState.currentPubKey) {
+    if (!appState.NODE) {
       throw new Error("アカウント未接続です");
     }
 
+    const address = targetAddress || getSelectedHarvestTargetAddress();
+    // 読み取り専用モードやマルチシグアカウントの閲覧など、appState.currentPubKey が
+    // 空(null)のケースでも、チェーン上に公開鍵が登録済みであれば履歴を取得できるようにする
+    const signerPublicKey = await resolveAccountPublicKeyHex(address);
+
+    if (!signerPublicKey) {
+      el.innerHTML = `<div style="color:#94a3b8;">このアカウントはまだ自分自身でトランザクションを送信していないため、公開鍵が未登録です（ハーベスト履歴は照会できません）</div>`;
+      return;
+    }
+
     const params = new URLSearchParams({
-      signerPublicKey: appState.currentPubKey,
+      signerPublicKey,
       order: "desc",
       pageSize: 10,
     });
@@ -395,6 +543,58 @@ async function loadHarvestHistory() {
 /* ============================================================
    委任ハーベスティング開始（メインエントリポイント）
 ============================================================ */
+/* ============================================================
+   対象アカウント情報を解決する(自分自身 か マルチシグか)。
+   ・自分自身: appState.currentPubKey をそのまま使い、従来通り
+     アグリゲートコンプリートで即時アナウンスする。
+   ・マルチシグ(選択された対象が自分自身と異なる、または自分自身の
+     アカウントがチェーン上マルチシグ化されている): その口座は
+     自分の秘密鍵だけでは直接署名できない(ネットワーク側で拒否される)
+     ため、連署者としてアグリゲートボンデッド+ハッシュロックで
+     「提案」する必要がある。
+============================================================ */
+async function resolveHarvestTarget() {
+  if (!appState.facade) {
+    throw new Error("SDK未初期化です");
+  }
+  if (appState.isReadOnly) {
+    throw new Error("読み取り専用アカウントのため署名できません。SSS Extensionまたはニーモニック/秘密鍵でログインしてください。");
+  }
+  if (!appState.currentPubKey) {
+    throw new Error("アカウント未接続です");
+  }
+
+  const address = getSelectedHarvestTargetAddress();
+  if (!address) {
+    throw new Error("対象アカウントが未指定です");
+  }
+
+  const selfAddress = appState.currentAddress.toString();
+  const isSelf = address === selfAddress;
+
+  if (isSelf) {
+    // 自分自身のアカウント自体がチェーン上マルチシグ化されている場合、
+    // 自分の鍵だけでは直接署名できない(このアプリには他の連署者の鍵は
+    // ないため、その連署者自身のアカウントでログインして「対象アカウント」に
+    // このアドレスを選び直してもらう必要がある)
+    const { isMultisig } = await checkIsMultisig(address);
+    if (isMultisig) {
+      throw new Error(
+        "このアカウント自体がマルチシグ化されているため、自分自身の鍵だけでは設定できません。" +
+        "このアカウントの連署者のアカウントでログインし直し、「対象アカウント」欄でこのアドレスを選択してから提案してください。"
+      );
+    }
+    return { address, signerPublicKey: appState.currentPubKey.toString(), viaMultisig: false };
+  }
+
+  // 自分自身以外(=「連署者になっているマルチシグアカウント」一覧から選んだ対象)
+  const signerPublicKey = await resolveAccountPublicKeyHex(address);
+  if (!signerPublicKey) {
+    throw new Error("対象アカウントの公開鍵がチェーン上でまだ確認できません(一度も自分自身でトランザクションを送信していない可能性があります)");
+  }
+  return { address, signerPublicKey, viaMultisig: true };
+}
+
 async function startHarvest() {
   const statusEl = document.getElementById("harvest-status");
   const setLine = (text) => {
@@ -403,9 +603,7 @@ async function startHarvest() {
   };
 
   try {
-    if (!appState.facade || !appState.currentPubKey) {
-      throw new Error("SDK未初期化またはアカウント未接続です");
-    }
+    const target = await resolveHarvestTarget();
 
     const harvestNodeUrl = getSelectedHarvestNodeUrl();
     if (!harvestNodeUrl) {
@@ -419,10 +617,13 @@ async function startHarvest() {
     const remoteKeyPair = new appState.sdkSymbol.KeyPair(randomPrivateKey());
     const vrfKeyPair = new appState.sdkSymbol.KeyPair(randomPrivateKey());
 
-    // 画面に残しておく（④が失敗しても後で再送できるように）
+    // 画面に残しておく（④が失敗した場合、または④を後から個別に
+    // 再送する場合のために、対象アカウント情報とあわせて保持する）
     lastGeneratedKeys = {
       remotePrivateKey: toHex(remoteKeyPair.privateKey),
       vrfPrivateKey: toHex(vrfKeyPair.privateKey),
+      target,
+      harvestNodeUrl,
     };
     console.warn(
       "生成したリモート鍵・VRF鍵の秘密鍵（この画面を閉じると失われます。再送が必要な場合のため控えてください）:",
@@ -430,25 +631,50 @@ async function startHarvest() {
     );
 
     setLine(
-      appState.authMode === "local"
+      target.viaMultisig
+        ? "① AccountKeyLink / ② VrfKeyLink / ③ NodeKeyLink をマルチシグ提案として署名しています..."
+        : appState.authMode === "local"
         ? "① AccountKeyLink / ② VrfKeyLink / ③ NodeKeyLink を署名しています..."
         : "① AccountKeyLink / ② VrfKeyLink / ③ NodeKeyLink をSSSで署名してください..."
     );
-    const aggHash = await announceKeyLinks(remoteKeyPair, vrfKeyPair, nodePublicKey, harvestNodeUrl);
-    setLine("鍵リンクTxを送信しました。承認を待っています...");
+    const { hash: aggHash, pendingCosign } = await announceKeyLinks(
+      remoteKeyPair,
+      vrfKeyPair,
+      nodePublicKey,
+      harvestNodeUrl,
+      target
+    );
     trackOutgoingTransaction({
       hash: aggHash,
-      label: "ハーベスト設定の追跡（鍵リンク）",
+      label: target.viaMultisig ? "ハーベスト設定の追跡（鍵リンク・マルチシグ提案）" : "ハーベスト設定の追跡（鍵リンク）",
       containerId: "harvest-tracking",
     });
 
+    if (pendingCosign) {
+      // マルチシグ提案の場合、他の連署者の承認(コサイン)が集まるまで
+      // 鍵リンクは確定しない。このアプリのセッション内で自動的に
+      // 待ち続けることはせず、「マルチシグ署名」画面で連署が済んだのを
+      // 確認したのち、改めてこの画面の「④ 委任リクエストを送信」から
+      // 続きを行ってもらう。
+      setLine("鍵リンクのマルチシグ提案を送信しました。");
+      alert(
+        "① AccountKeyLink / ② VrfKeyLink / ③ NodeKeyLink をマルチシグ提案として送信しました。\n\n" +
+        "この提案は、対象アカウントの連署者が「マルチシグ署名」画面で必要数の承認(連署)を行うまで確定しません。\n" +
+        "承認が完了して鍵リンクが反映されたら(このハーベスト画面のバッジが「設定済み」になったら)、\n" +
+        "改めて「④ 委任リクエストを送信」ボタンから委任リクエストを送信してください。"
+      );
+      return;
+    }
+
+    setLine("鍵リンクTxを送信しました。承認を待っています...");
     await waitConfirmed(aggHash);
     setLine("鍵リンク承認完了。④ 委任リクエストを送信します...");
 
-    const delegationHash = await announcePersistentDelegationRequest(
+    const { hash: delegationHash } = await announcePersistentDelegationRequest(
       remoteKeyPair,
       vrfKeyPair,
-      nodePublicKey
+      nodePublicKey,
+      target
     );
 
     setLine("✅ 委任リクエスト送信完了。ノード側の反映をお待ちください。");
@@ -484,6 +710,78 @@ async function startHarvest() {
 }
 
 /* ============================================================
+   ④ 委任リクエストのみを個別に(再)送信する。
+   マルチシグ提案(①②③)が連署されて確定した後の続きや、
+   ④だけが何らかの理由で失敗・未送信だった場合の再送に使う。
+   直前の startHarvest() 実行時にセッション内へ保持した
+   リモート鍵・VRF鍵(lastGeneratedKeys)が必要(ページ再読み込みで失われる)。
+============================================================ */
+async function sendDelegationRequestOnly() {
+  const statusEl = document.getElementById("harvest-status");
+  const setLine = (text) => {
+    if (statusEl) statusEl.textContent = text;
+    console.log("[harvest]", text);
+  };
+
+  try {
+    if (!lastGeneratedKeys) {
+      throw new Error(
+        "送信できるリモート鍵・VRF鍵がセッション内にありません（ページを再読み込みすると失われます）。" +
+        "「開始」から改めて鍵リンクの設定をやり直してください。"
+      );
+    }
+
+    const target = await resolveHarvestTarget();
+    if (target.address !== lastGeneratedKeys.target?.address) {
+      throw new Error("対象アカウントが①②③実行時と異なります。「対象アカウント」欄を元に戻してください。");
+    }
+
+    const nodePublicKey = await fetchNodePublicKey(lastGeneratedKeys.harvestNodeUrl);
+    const remoteKeyPair = new appState.sdkSymbol.KeyPair(
+      new appState.sdkCore.PrivateKey(hexToBytes(lastGeneratedKeys.remotePrivateKey))
+    );
+    const vrfKeyPair = new appState.sdkSymbol.KeyPair(
+      new appState.sdkCore.PrivateKey(hexToBytes(lastGeneratedKeys.vrfPrivateKey))
+    );
+
+    setLine("④ 委任リクエストを送信します...");
+    const { hash, pendingCosign } = await announcePersistentDelegationRequest(
+      remoteKeyPair,
+      vrfKeyPair,
+      nodePublicKey,
+      target
+    );
+
+    trackOutgoingTransaction({
+      hash,
+      label: pendingCosign ? "ハーベスト設定の追跡（委任リクエスト・マルチシグ提案）" : "ハーベスト設定の追跡（委任リクエスト）",
+      containerId: "harvest-tracking",
+    });
+
+    if (pendingCosign) {
+      setLine("委任リクエストのマルチシグ提案を送信しました。連署者の承認をお待ちください。");
+      alert("委任リクエストをマルチシグ提案として送信しました。「マルチシグ署名」画面で連署者の承認が完了すると設定が反映されます。");
+      return;
+    }
+
+    setLine("✅ 委任リクエスト送信完了。ノード側の反映をお待ちください。");
+    alert("委任リクエストを送信しました。ノードが承諾すると数分〜数十分程度でハーベストが始まる場合があります。");
+  } catch (e) {
+    if (e?.cancelled) {
+      setLine("キャンセルしました");
+      return;
+    }
+    if (e?.offlineExported) {
+      setLine("📥 " + e.message);
+      return;
+    }
+    console.error("sendDelegationRequestOnly error:", e);
+    setLine("❌ 委任リクエスト送信失敗: " + e.message);
+    alert("委任リクエスト送信失敗: " + e.message);
+  }
+}
+
+/* ============================================================
    委任解除（Unlink）
    ※ セッション内の一時キーには依存せず、REST APIで
      「現在チェーン上にリンクされている公開鍵」を取得して
@@ -497,13 +795,10 @@ async function stopHarvest() {
   };
 
   try {
-    if (!appState.facade || !appState.currentPubKey) {
-      throw new Error("SDK未初期化またはアカウント未接続です");
-    }
+    const target = await resolveHarvestTarget();
 
     setLine("現在の委任状況を確認中...");
-    const address = appState.currentAddress.toString();
-    const res = await fetch(`${appState.NODE}/accounts/${address}`);
+    const res = await fetch(`${appState.NODE}/accounts/${target.address}`);
     const json = await res.json();
     const keys = json.account?.supplementalPublicKeys;
 
@@ -533,7 +828,7 @@ async function stopHarvest() {
             new appState.sdkCore.PublicKey(linkedHex),
             models.LinkAction.UNLINK
           ),
-          appState.currentPubKey
+          target.signerPublicKey
         )
       );
     }
@@ -544,7 +839,7 @@ async function stopHarvest() {
             new appState.sdkCore.PublicKey(vrfHex),
             models.LinkAction.UNLINK
           ),
-          appState.currentPubKey
+          target.signerPublicKey
         )
       );
     }
@@ -555,40 +850,62 @@ async function stopHarvest() {
             new appState.sdkCore.PublicKey(nodeHex),
             models.LinkAction.UNLINK
           ),
-          appState.currentPubKey
+          target.signerPublicKey
         )
       );
     }
 
-    const aggregateDescriptor = new descriptors.AggregateCompleteTransactionV3Descriptor(
-      appState.facade.static.hashEmbeddedTransactions(embedded),
-      embedded
-    );
-
-    const aggregateTx = appState.facade.createTransactionFromTypedDescriptor(
-      aggregateDescriptor,
-      appState.currentPubKey,
-      appState.feeMultiplier ?? 100,
-      60 * 60
-    );
-
-    setLine(
-      appState.authMode === "local"
-        ? "解除トランザクションを署名しています..."
-        : "解除トランザクションをSSSで署名してください..."
-    );
-    const hash = await signAndAnnounce(aggregateTx, {
-      typeLabel: "委任ハーベスティング解除",
+    const confirmInfo = {
+      typeLabel: target.viaMultisig ? "委任ハーベスティング解除(マルチシグ提案)" : "委任ハーベスティング解除",
+      sender: target.address,
       kind: "harvest",
-      details: [{ label: "解除対象", value: summary || "(なし)" }],
-    });
-    setLine("解除トランザクションを送信しました。承認を待っています...");
+      details: [
+        { label: "対象アカウント", value: target.address },
+        { label: "解除対象", value: summary || "(なし)" },
+      ],
+    };
+
+    let hash;
+    let pendingCosign = false;
+
+    if (target.viaMultisig) {
+      setLine("解除トランザクションをマルチシグ提案として署名しています...");
+      hash = await W.multisig.proposeBondedAggregate(embedded, 0, confirmInfo);
+      pendingCosign = true;
+    } else {
+      const aggregateDescriptor = new descriptors.AggregateCompleteTransactionV3Descriptor(
+        appState.facade.static.hashEmbeddedTransactions(embedded),
+        embedded
+      );
+
+      const aggregateTx = appState.facade.createTransactionFromTypedDescriptor(
+        aggregateDescriptor,
+        target.signerPublicKey,
+        appState.feeMultiplier ?? 100,
+        60 * 60
+      );
+
+      setLine(
+        appState.authMode === "local"
+          ? "解除トランザクションを署名しています..."
+          : "解除トランザクションをSSSで署名してください..."
+      );
+      hash = await signAndAnnounce(aggregateTx, confirmInfo);
+    }
+
     trackOutgoingTransaction({
       hash,
-      label: "ハーベスト解除の追跡",
+      label: pendingCosign ? "ハーベスト解除の追跡（マルチシグ提案）" : "ハーベスト解除の追跡",
       containerId: "harvest-tracking",
     });
 
+    if (pendingCosign) {
+      setLine("解除トランザクションのマルチシグ提案を送信しました。連署者の承認をお待ちください。");
+      alert("委任ハーベスティング解除をマルチシグ提案として送信しました。「マルチシグ署名」画面で連署者の承認が完了すると解除されます。");
+      return;
+    }
+
+    setLine("解除トランザクションを送信しました。承認を待っています...");
     await waitConfirmed(hash);
 
     lastGeneratedKeys = null;
@@ -658,8 +975,16 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
   el.textContent = "読み込み中...";
 
   try {
-    const pubKey = appState.currentPubKey?.toString();
-    if (!pubKey || !appState.NODE) throw new Error("未ログインです");
+    if (!appState.NODE || !appState.currentAddress) throw new Error("未ログインです");
+
+    const myAddress = appState.currentAddress.toString();
+    // 読み取り専用モード(マルチシグアカウントのアドレスを直接閲覧している場合など)では
+    // appState.currentPubKey が null のため、チェーン上の公開鍵を代わりに解決する
+    const pubKey = await resolveAccountPublicKeyHex(myAddress);
+    if (!pubKey) {
+      el.innerHTML = `<div style="color:#94a3b8;">このアカウントはまだ自分自身でトランザクションを送信していないため、公開鍵が未登録です（ハーベスト報酬は照会できません）</div>`;
+      return;
+    }
 
     const params = new URLSearchParams({
       signerPublicKey: pubKey,
@@ -674,8 +999,6 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
       el.innerHTML = `<div style="color:#94a3b8;">ハーベストしたブロックはまだありません</div>`;
       return;
     }
-
-    const myAddress = appState.currentAddress.toString();
 
     const rows = await Promise.all(
       blocks.map(async (item) => {
@@ -725,10 +1048,12 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
 
 window.W.harvest = {
   loadHarvestNodeCandidates,
+  loadHarvestTargetOptions,
   checkHarvestStatus,
   loadHarvestHistory,
   startHarvest,
   stopHarvest,
+  sendDelegationRequestOnly,
   initLiveHarvestStatusRefresh,
   loadHarvestRewards
 };

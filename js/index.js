@@ -10,7 +10,7 @@ const {initWebSocket} = W.ws;
 const {selectNode} = W.nodeSelector;
 const {showPopup} = W.utils;
 const {setStatus} = W.ui;
-const {checkHarvestStatus, startHarvest, stopHarvest, loadHarvestNodeCandidates, loadHarvestHistory, loadHarvestRewards} = W.harvest;
+const {checkHarvestStatus, startHarvest, stopHarvest, sendDelegationRequestOnly, loadHarvestNodeCandidates, loadHarvestTargetOptions, loadHarvestHistory, loadHarvestRewards} = W.harvest;
 const {showCurrentNode,
   loadNodeSettingsCandidates,
   applyNodeChange,
@@ -768,21 +768,29 @@ window.addEventListener("load", async () => {
   // ============================
   // ハーベスト画面
   // ============================
+  async function refreshHarvestPageForSelectedTarget() {
+    await checkHarvestStatus();
+    await loadHarvestHistory();
+  }
+
   document.getElementById("menu-harvest")?.addEventListener("click", async () => {
     showPage(harvestPage);
-    const address = appState.currentAddress.toString();
-    document.getElementById("harvest-address").textContent = address;
 
-    await checkHarvestStatus();
+    await loadHarvestTargetOptions();
+    await refreshHarvestPageForSelectedTarget();
     await loadHarvestNodeCandidates();
-    await loadHarvestHistory();
   });
+
+  // 対象アカウント（自分自身 / 連署者になっているマルチシグアカウント）を
+  // 切り替えたら、その対象について状態・履歴を取得し直す
+  document.getElementById("harvest-target-select")?.addEventListener("change", refreshHarvestPageForSelectedTarget);
 
   // ============================
   // ハーベスト開始
   // ============================
   document.getElementById("start-harvest-btn")?.addEventListener("click", startHarvest);
   document.getElementById("stop-harvest-btn")?.addEventListener("click", stopHarvest);
+  document.getElementById("send-delegation-request-btn")?.addEventListener("click", sendDelegationRequestOnly);
 
   // ============================
   // 高度機能
