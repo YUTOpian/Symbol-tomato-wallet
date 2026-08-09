@@ -158,9 +158,13 @@ function getMosaicName(id) {
 function extractAmount(tx) {
   if (!tx.mosaics || tx.mosaics.length === 0) return null;
 
-  const signer = (tx.signerPublicKey || "").toUpperCase();
-  const myPub = (appState.currentPubKey || "").toUpperCase();
-  const direction = signer === myPub ? "send" : "receive";
+  // appState.currentPubKey は読み取り専用モード(アドレス照会)では常にnullになるため、
+  // 公開鍵同士の比較ではなく、常に取得できるアドレス同士で送受信方向を判定する
+  // (公開鍵で比較すると、読み取り専用モードでは自分が送ったトランザクションまで
+  //  すべて「受信」判定になってしまうバグがあった)
+  const signerAddress = publicKeyToAddress(tx.signerPublicKey);
+  const myAddress = appState.currentAddress?.toString() ?? "";
+  const direction = signerAddress && signerAddress === myAddress ? "send" : "receive";
 
   const mosaics = tx.mosaics.map(mosaic => {
     const id = mosaic.id?.toUpperCase();

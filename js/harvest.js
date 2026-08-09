@@ -184,6 +184,63 @@ async function resolveAccountPublicKeyHex(address) {
 }
 
 /* ============================================================
+   ハーベストしたブロックの検索に使う「実際にブロックへ署名した鍵」を
+   すべて解決する。
+   Symbolの委任ハーベスティングでは、ブロックは本体アカウントの鍵ではなく
+   AccountKeyLinkでリンクした「リモート鍵」で署名される
+   (supplementalPublicKeys.linked.publicKey がそれにあたる)。
+   本体アカウントの鍵だけで /blocks?signerPublicKey= を検索すると、
+   委任ハーベスティングで実際にブロックを生成していても
+   常にヒットしない(誤って「ハーベスト履歴なし」と表示される)ため、
+   本体の鍵とリモート鍵の両方を候補として返す。
+============================================================ */
+async function resolveHarvestSignerPublicKeys(address) {
+  if (!address || !appState.NODE) return [];
+
+  try {
+    const res = await fetch(`${appState.NODE}/accounts/${address}`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const account = json.account;
+    if (!account) return [];
+
+    const keys = new Set();
+
+    const mainPubKey = account.publicKey;
+    if (mainPubKey && !/^0+$/.test(mainPubKey)) {
+      keys.add(mainPubKey.toUpperCase());
+    }
+
+    const linkedPubKey = account.supplementalPublicKeys?.linked?.publicKey;
+    if (linkedPubKey && !/^0+$/.test(linkedPubKey)) {
+      keys.add(linkedPubKey.toUpperCase());
+    }
+
+    return [...keys];
+  } catch (e) {
+    console.warn("ハーベスト署名鍵の解決に失敗しました:", address, e);
+    return [];
+  }
+}
+
+/* ============================================================
+   複数の signerPublicKey で取得したブロック一覧を、高さ(height)で
+   重複排除しつつ新しい順に並べ直す
+============================================================ */
+function dedupeAndSortBlocksDesc(items) {
+  const seen = new Set();
+  const unique = [];
+  for (const item of items) {
+    const height = String(item.block?.height);
+    if (seen.has(height)) continue;
+    seen.add(height);
+    unique.push(item);
+  }
+  unique.sort((a, b) => Number(b.block.height) - Number(a.block.height));
+  return unique;
+}
+
+/* ============================================================
    指定アドレスがマルチシグアカウントかどうか
 ============================================================ */
 async function checkIsMultisig(address) {
@@ -489,23 +546,30 @@ async function loadHarvestHistory(targetAddress) {
 
     const address = targetAddress || getSelectedHarvestTargetAddress();
     // 読み取り専用モードやマルチシグアカウントの閲覧など、appState.currentPubKey が
-    // 空(null)のケースでも、チェーン上に公開鍵が登録済みであれば履歴を取得できるようにする
-    const signerPublicKey = await resolveAccountPublicKeyHex(address);
+    // 空(null)のケースでも、チェーン上に公開鍵が登録済みであれば履歴を取得できるようにする。
+    // 委任ハーベスティングはリモート鍵で署名されるため、本体の鍵とリモート鍵の
+    // 両方を候補にして検索する。
+    const signerPublicKeys = await resolveHarvestSignerPublicKeys(address);
 
-    if (!signerPublicKey) {
+    if (signerPublicKeys.length === 0) {
       el.innerHTML = `<div style="color:#94a3b8;">このアカウントはまだ自分自身でトランザクションを送信していないため、公開鍵が未登録です（ハーベスト履歴は照会できません）</div>`;
       return;
     }
 
-    const params = new URLSearchParams({
-      signerPublicKey,
-      order: "desc",
-      pageSize: 10,
-    });
+    const perKeyResults = await Promise.all(
+      signerPublicKeys.map(async (signerPublicKey) => {
+        const params = new URLSearchParams({
+          signerPublicKey,
+          order: "desc",
+          pageSize: 10,
+        });
+        const res = await fetch(`${appState.NODE}/blocks?${params}`);
+        const json = await res.json();
+        return json.data ?? [];
+      })
+    );
 
-    const res = await fetch(`${appState.NODE}/blocks?${params}`);
-    const json = await res.json();
-    const items = json.data ?? [];
+    const items = dedupeAndSortBlocksDesc(perKeyResults.flat()).slice(0, 10);
 
     if (items.length === 0) {
       el.innerHTML = `<div>ハーベスト履歴はありません</div>`;
@@ -979,21 +1043,29 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 
 
     const myAddress = appState.currentAddress.toString();
     // 読み取り専用モード(マルチシグアカウントのアドレスを直接閲覧している場合など)では
-    // appState.currentPubKey が null のため、チェーン上の公開鍵を代わりに解決する
-    const pubKey = await resolveAccountPublicKeyHex(myAddress);
-    if (!pubKey) {
+    // appState.currentPubKey が null のため、チェーン上の公開鍵を代わりに解決する。
+    // 委任ハーベスティングはリモート鍵で署名されるため、本体の鍵とリモート鍵の
+    // 両方を候補にして検索する(本体の鍵だけでは常に0件になってしまうバグがあった)。
+    const signerPublicKeys = await resolveHarvestSignerPublicKeys(myAddress);
+    if (signerPublicKeys.length === 0) {
       el.innerHTML = `<div style="color:#94a3b8;">このアカウントはまだ自分自身でトランザクションを送信していないため、公開鍵が未登録です（ハーベスト報酬は照会できません）</div>`;
       return;
     }
 
-    const params = new URLSearchParams({
-      signerPublicKey: pubKey,
-      order: "desc",
-      pageSize,
-    });
-    const res = await fetch(`${appState.NODE}/blocks?${params}`);
-    const json = await res.json();
-    const blocks = json.data ?? [];
+    const perKeyResults = await Promise.all(
+      signerPublicKeys.map(async (signerPublicKey) => {
+        const params = new URLSearchParams({
+          signerPublicKey,
+          order: "desc",
+          pageSize,
+        });
+        const res = await fetch(`${appState.NODE}/blocks?${params}`);
+        const json = await res.json();
+        return json.data ?? [];
+      })
+    );
+
+    const blocks = dedupeAndSortBlocksDesc(perKeyResults.flat()).slice(0, pageSize);
 
     if (blocks.length === 0) {
       el.innerHTML = `<div style="color:#94a3b8;">ハーベストしたブロックはまだありません</div>`;
