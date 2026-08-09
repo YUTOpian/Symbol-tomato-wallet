@@ -295,6 +295,13 @@
 
       <hr>
 
+      <p style="font-size:12px;color:#94a3b8;margin-bottom:4px;">
+        対象アカウント（自分自身、または連署者になっているマルチシグアカウント）:
+      </p>
+      <select id="wallet-target-select" class="input-box">
+        <option value="">-- 自分自身 --</option>
+      </select>
+
       <!-- タブ -->
       <div class="wallet-tabs">
         <div id="tab-token" class="wallet-tab active">保有モザイク</div>
@@ -314,12 +321,6 @@
 
       <!-- ハーベスト報酬 -->
       <div id="harvest-reward-content" style="display:none;">
-        <p style="font-size:12px;color:#94a3b8;margin-bottom:4px;">
-          対象アカウント（自分自身、または連署者になっているマルチシグアカウント）:
-        </p>
-        <select id="harvest-reward-target-select" class="input-box">
-          <option value="">-- 自分自身 --</option>
-        </select>
         <div id="harvest-reward-list">読み込み中...</div>
       </div>
     </div>
