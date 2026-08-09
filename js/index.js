@@ -10,7 +10,7 @@ const {initWebSocket} = W.ws;
 const {selectNode} = W.nodeSelector;
 const {showPopup} = W.utils;
 const {setStatus} = W.ui;
-const {checkHarvestStatus, startHarvest, stopHarvest, sendDelegationRequestOnly, loadHarvestNodeCandidates, loadHarvestTargetOptions, loadHarvestHistory, loadHarvestRewards} = W.harvest;
+const {checkHarvestStatus, startHarvest, stopHarvest, sendDelegationRequestOnly, loadHarvestNodeCandidates, loadHarvestTargetOptions, loadHarvestHistory, loadHarvestRewards, loadHarvestRewardTargetOptions} = W.harvest;
 const {showCurrentNode,
   loadNodeSettingsCandidates,
   applyNodeChange,
@@ -2848,8 +2848,21 @@ window.addEventListener("load", async () => {
   setupTabGroup(
     ["tab-token", "tab-activity", "tab-harvest-reward"],
     ["token-content", "activity-content", "harvest-reward-content"],
-    [null, null, () => loadHarvestRewards()]
+    [
+      null,
+      null,
+      async () => {
+        await loadHarvestRewardTargetOptions();
+        await loadHarvestRewards();
+      },
+    ]
   );
+
+  // ハーベスト報酬タブの対象アカウント（自分自身 / マルチシグ）を切り替えたら
+  // その対象について報酬を取得し直す
+  document.getElementById("harvest-reward-target-select")?.addEventListener("change", () => {
+    loadHarvestRewards();
+  });
 
   setupTabGroup(
     ["mosaic-tab-owned", "mosaic-tab-create", "mosaic-tab-supply"],

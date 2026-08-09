@@ -153,6 +153,70 @@ function getSelectedHarvestTargetAddress() {
 }
 
 /* ============================================================
+   REST APIから返るアドレス表現は 16進(48文字) と base32(39文字) が
+   混在するため、常に base32(39文字・大文字)に統一する。
+   (recipientInfo.js の normalizeMaybeHexAddress と同じ考え方。
+    fetchCosignatoryOfAddresses() が返す値のSDKバージョン差異にも
+    対応できるようにするため)
+============================================================ */
+function normalizeToBase32Address(raw) {
+  if (!raw || typeof raw !== "string") return raw;
+  const trimmed = raw.trim().toUpperCase();
+  if (trimmed.length === 39) return trimmed;
+  if (trimmed.length === 48 && /^[0-9A-F]+$/.test(trimmed) && appState.sdkSymbol) {
+    try {
+      return new appState.sdkSymbol.Address(hexToBytes(trimmed)).toString();
+    } catch {
+      return trimmed;
+    }
+  }
+  return trimmed;
+}
+
+/* ============================================================
+   「ハーベスト報酬」タブ用の対象アカウント選択
+   (ハーベスト設定画面の harvest-target-select と同じ考え方だが、
+    ウォレット画面の報酬タブは独立してどのアカウントの報酬を見るか
+    選べるようにする。自分自身 と、自分が連署者になっている
+    マルチシグアカウントを候補にする。読み取り専用モードでは
+    「連署者として提案する」操作ができないため、閲覧中のアドレス
+    自身のみを対象にする)
+============================================================ */
+async function loadHarvestRewardTargetOptions() {
+  const select = document.getElementById("harvest-reward-target-select");
+  if (!select) return;
+
+  const selfAddress = appState.currentAddress?.toString();
+  const previousValue = select.value;
+  select.innerHTML = `<option value="">-- 自分自身（${selfAddress ?? "---"}）--</option>`;
+
+  if (!appState.isReadOnly && W.multisig) {
+    try {
+      const addresses = await W.multisig.fetchCosignatoryOfAddresses();
+      for (const raw of addresses) {
+        const a = normalizeToBase32Address(raw);
+        const option = document.createElement("option");
+        option.value = a;
+        option.textContent = `${a}（連署者になっているマルチシグ）`;
+        select.appendChild(option);
+      }
+    } catch (e) {
+      console.warn("マルチシグ候補の取得に失敗しました（報酬タブ）", e);
+    }
+  }
+
+  // 選び直しの手間を減らすため、選択肢が残っていれば選択状態を保つ
+  if (previousValue && Array.from(select.options).some((o) => o.value === previousValue)) {
+    select.value = previousValue;
+  }
+}
+
+function getSelectedHarvestRewardTargetAddress() {
+  const selected = document.getElementById("harvest-reward-target-select")?.value?.trim();
+  return normalizeToBase32Address(selected) || appState.currentAddress?.toString();
+}
+
+/* ============================================================
    指定アドレスの公開鍵を解決する。
    - 自分自身（ログイン中のアカウント）なら appState.currentPubKey を使う
      (まだ一度もチェーンへ送信していないアカウントでも、ログイン時点で
@@ -242,7 +306,7 @@ function harvestKindBadgeHtml(kind) {
     return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#1e3a5f;color:#7dd3fc;">🖥️ ノードのハーベスト（委任・リモート鍵）</span>`;
   }
   if (kind === "self") {
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#3f2d1e;color:#fbbf24;">👤 アカウント自身のハーベスト（本鍵）</span>`;
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#3f2d1e;color:#fbbf24;">📍 アドレスのハーベスト（本人鍵）</span>`;
   }
   return "";
 }
@@ -1085,17 +1149,24 @@ function normalizeReceiptAddress(addr) {
   return null;
 }
 
-async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20 } = {}) {
+async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20, address } = {}) {
   const el = document.getElementById(elId);
   if (!el) return;
   el.textContent = "読み込み中...";
 
   try {
-    if (!appState.NODE || !appState.currentAddress) throw new Error("未ログインです");
+    if (!appState.NODE) throw new Error("未ログインです");
 
-    const myAddress = appState.currentAddress.toString();
-    // 読み取り専用モード(マルチシグアカウントのアドレスを直接閲覧している場合など)では
-    // appState.currentPubKey が null のため、チェーン上の公開鍵を代わりに解決する。
+    // address省略時は「ハーベスト報酬」タブの対象アカウント選択(自分自身 or
+    // 連署者になっているマルチシグアカウント)に従う。これにより、閲覧モード・
+    // ウォレットモードのどちらでも、また自分自身のアカウントでもマルチシグ
+    // アカウントでも、同じ画面から報酬を確認できるようにしている。
+    const myAddress = address || getSelectedHarvestRewardTargetAddress();
+    if (!myAddress) throw new Error("対象アカウントが未指定です");
+
+    // 読み取り専用モード(マルチシグアカウントのアドレスを直接閲覧している場合など)や、
+    // マルチシグアカウントを対象アカウントとして選択した場合は appState.currentPubKey が
+    // 対象アカウントの鍵と一致しないため、チェーン上の公開鍵を代わりに解決する。
     // 委任ハーベスティングはリモート鍵で署名されるため、本体の鍵とリモート鍵の
     // 両方を候補にして検索する(本体の鍵だけでは常に0件になってしまうバグがあった)。
     const signerEntries = await resolveHarvestSignerPublicKeys(myAddress);
@@ -1188,7 +1259,8 @@ window.W.harvest = {
   stopHarvest,
   sendDelegationRequestOnly,
   initLiveHarvestStatusRefresh,
-  loadHarvestRewards
+  loadHarvestRewards,
+  loadHarvestRewardTargetOptions
 };
 
 })();
