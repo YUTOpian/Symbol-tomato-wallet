@@ -6,7 +6,7 @@
 
 const {appState} = W.config;
 const {setText, setStatus} = W.ui;
-const {formatMosaicAmount} = W.utils;
+const {formatMosaicAmount, hexToBytes} = W.utils;
 const {addCallback} = W.ws;
 const {getXymJpyRate, getXymUsdRate} = W.priceRates;
 
@@ -375,10 +375,175 @@ async function getRecipientPublicKey(address) {
   return publicKey;
 }
 
+/* ============================================================
+   「対象アカウント」共有選択（ウォレット画面の 保有モザイク / アクティビティ /
+   ハーベスト報酬 の3タブすべてで共通利用）
+   ・自分自身 と、自分が連署者になっているマルチシグアカウントを候補にする
+   ・読み取り専用モードでは「連署者として提案する」操作ができないため、
+     閲覧中のアドレス自身のみを対象にする
+============================================================ */
+
+// REST APIから返るアドレス表現は 16進(48文字) と base32(39文字) が
+// 混在するため、常に base32(39文字・大文字)に統一する
+// (recipientInfo.js の normalizeMaybeHexAddress と同じ考え方)
+function normalizeToBase32Address(raw) {
+  if (!raw || typeof raw !== "string") return raw;
+  const trimmed = raw.trim().toUpperCase();
+  if (trimmed.length === 39) return trimmed;
+  if (trimmed.length === 48 && /^[0-9A-F]+$/.test(trimmed) && appState.sdkSymbol) {
+    try {
+      return new appState.sdkSymbol.Address(hexToBytes(trimmed)).toString();
+    } catch {
+      return trimmed;
+    }
+  }
+  return trimmed;
+}
+
+async function loadWalletTargetOptions() {
+  const select = document.getElementById("wallet-target-select");
+  if (!select) return;
+
+  const selfAddress = appState.currentAddress?.toString();
+  const previousValue = select.value;
+  select.innerHTML = `<option value="">-- 自分自身（${selfAddress ?? "---"}）--</option>`;
+
+  if (!appState.isReadOnly && W.multisig) {
+    try {
+      const addresses = await W.multisig.fetchCosignatoryOfAddresses();
+      for (const raw of addresses) {
+        const a = normalizeToBase32Address(raw);
+        const option = document.createElement("option");
+        option.value = a;
+        option.textContent = `${a}（連署者になっているマルチシグ）`;
+        select.appendChild(option);
+      }
+    } catch (e) {
+      console.warn("マルチシグ候補の取得に失敗しました（対象アカウント選択）", e);
+    }
+  }
+
+  // 選び直しの手間を減らすため、選択肢が残っていれば選択状態を保つ
+  if (previousValue && Array.from(select.options).some((o) => o.value === previousValue)) {
+    select.value = previousValue;
+  }
+}
+
+function getSelectedWalletTargetAddress() {
+  const selected = document.getElementById("wallet-target-select")?.value?.trim();
+  return normalizeToBase32Address(selected) || appState.currentAddress?.toString();
+}
+
+function isWalletTargetSelf(address) {
+  const selfAddress = appState.currentAddress?.toString();
+  return !address || !selfAddress || address === selfAddress;
+}
+
+/* ============================================================
+   任意アドレス(主にマルチシグアカウント)の保有モザイク一覧を、
+   閲覧専用として #mosaic-list 相当の要素へ描画する。
+   refreshAccount() と違い、以下は一切行わない:
+     ・appState.mosaicInfo の書き換え(ログイン中アカウントの送金用情報を破壊しないため)
+     ・送金用モザイク選択(#tx-mosaic)の更新
+     ・XYM残高ヘッダー(#account-balance)の更新
+     ・クリックで送金ダイアログを開く動作(マルチシグからの送金は
+       別途「連署者として提案」の手続きが必要なため、単純な送金
+       ダイアログに繋げると誤操作のもとになる)
+============================================================ */
+async function loadMosaicListForAddress(address, elId = "mosaic-list") {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!appState.NODE || !address) return;
+
+  el.innerHTML = "読み込み中...";
+
+  try {
+    const accountInfo = await fetch(new URL("/accounts/" + address, appState.NODE))
+      .then((res) => (res.status === 404 ? null : res.json()))
+      .then((json) => (json ? json.account : null));
+
+    const mosaics = accountInfo?.mosaics || [];
+
+    if (mosaics.length === 0) {
+      el.innerHTML = `<div>保有Mosaicはありません</div>`;
+      return;
+    }
+
+    const mosaicIds = mosaics.map((m) => toHexMosaicId(m.id));
+    const namespaceMap = {};
+
+    try {
+      const namespaceInfo = await fetch(new URL("/namespaces/mosaic/names", appState.NODE), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mosaicIds }),
+      }).then((res) => res.json());
+
+      for (const item of namespaceInfo.mosaicNames || []) {
+        const mosaicId = item.mosaicId.toUpperCase();
+        const first = item.names?.[0];
+        const resolvedName = typeof first === "string" ? first : first?.name;
+        if (resolvedName) namespaceMap[mosaicId] = resolvedName;
+      }
+    } catch (e) {
+      console.warn("Namespace取得失敗(対象アカウント閲覧):", e);
+    }
+
+    const xymId = appState.networkType === 152 ? "72C0212E67A08BCE" : "6BED913FA20223F8";
+
+    const rows = await Promise.all(
+      mosaics.map(async (mosaic) => {
+        const mosaicId = toHexMosaicId(mosaic.id);
+        let mosaicName = namespaceMap[mosaicId] ?? mosaicId;
+        let divisibility = 0;
+
+        if (mosaicId === xymId) {
+          mosaicName = "XYM";
+          divisibility = 6;
+        } else {
+          try {
+            const mosaicInfo = await fetch(new URL("/mosaics/" + mosaicId, appState.NODE))
+              .then((res) => res.json())
+              .then((json) => json.mosaic);
+            divisibility = mosaicInfo.divisibility;
+          } catch (e) {
+            console.warn("MosaicInfo取得失敗(対象アカウント閲覧)", mosaicId, e);
+          }
+        }
+
+        return { mosaicId, amount: mosaic.amount, divisibility, mosaicName };
+      })
+    );
+
+    el.innerHTML = rows
+      .map(
+        ({ mosaicId, amount, divisibility, mosaicName }) => `
+        <div class="mosaic-item">
+          <div class="mosaic-left">
+            <div class="mosaic-name">${mosaicName}</div>
+            <div class="mosaic-id">${mosaicId}</div>
+          </div>
+          <div class="mosaic-right">
+            <div class="mosaic-amount">${formatMosaicAmount(amount, divisibility)}</div>
+          </div>
+        </div>
+      `
+      )
+      .join("");
+  } catch (e) {
+    console.error("loadMosaicListForAddress error:", e);
+    el.innerHTML = "取得に失敗しました";
+  }
+}
+
 window.W.account = {
   refreshAccount,
   initLiveBalanceRefresh,
-  getRecipientPublicKey
+  getRecipientPublicKey,
+  loadWalletTargetOptions,
+  getSelectedWalletTargetAddress,
+  isWalletTargetSelf,
+  loadMosaicListForAddress
 };
 
 })();

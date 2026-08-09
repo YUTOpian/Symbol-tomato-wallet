@@ -480,12 +480,12 @@ function appendTx(txInfo) {
 /* ============================================================
    直近10件取得 (Symbol v3 REST API)
 ============================================================ */
-async function loadRecentTx(elId = "tx-list") {
+async function loadRecentTx(elId = "tx-list", targetAddress) {
   const el = document.getElementById(elId);
   if (!el) return;
   el.textContent = "読み込み中…";
 
-  const address = appState.currentAddress.toString();
+  const address = targetAddress || appState.currentAddress.toString();
   const params = new URLSearchParams({
     address,
     embedded: true,

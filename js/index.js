@@ -6,11 +6,11 @@
 const {appState, NetworkType, getXymMosaicIdHex} = W.config;
 const {sendTx} = W.transfer;
 const {loadRecentTx, initLiveTx} = W.transactions;
-const {initWebSocket} = W.ws;
+const {refreshAccount, loadWalletTargetOptions, getSelectedWalletTargetAddress, isWalletTargetSelf, loadMosaicListForAddress} = W.account;const {initWebSocket} = W.ws;
 const {selectNode} = W.nodeSelector;
 const {showPopup} = W.utils;
 const {setStatus} = W.ui;
-const {checkHarvestStatus, startHarvest, stopHarvest, sendDelegationRequestOnly, loadHarvestNodeCandidates, loadHarvestTargetOptions, loadHarvestHistory, loadHarvestRewards, loadHarvestRewardTargetOptions} = W.harvest;
+const {checkHarvestStatus, startHarvest, stopHarvest, sendDelegationRequestOnly, loadHarvestNodeCandidates, loadHarvestTargetOptions, loadHarvestHistory, loadHarvestRewards} = W.harvest;
 const {showCurrentNode,
   loadNodeSettingsCandidates,
   applyNodeChange,
@@ -162,6 +162,7 @@ window.addEventListener("load", async () => {
   function goHome() {
     updateSwitcherVisibility();
     updateReadOnlyUiVisibility();
+    loadWalletTargetOptions();
     showPage(accountPage);
   }
 
@@ -2831,6 +2832,40 @@ window.addEventListener("load", async () => {
   // ============================
   // タブ切替
   // ============================
+
+  // ウォレット画面の「保有モザイク／アクティビティ／ハーベスト報酬」タブ共通:
+  // 対象アカウント選択(自分自身 / マルチシグ)に応じて表示を切り替える
+  const WALLET_TARGET_TABS = ["tab-token", "tab-activity", "tab-harvest-reward"];
+
+  async function refreshWalletTokenTab() {
+    const address = getSelectedWalletTargetAddress();
+    if (isWalletTargetSelf(address)) {
+      // 自分自身の場合は従来通り(送金用モザイク選択・残高ヘッダーも含む)
+      await refreshAccount();
+    } else {
+      // マルチシグアカウントの場合は閲覧専用の一覧を表示する
+      await loadMosaicListForAddress(address);
+    }
+  }
+
+  async function refreshWalletActivityTab() {
+    const address = getSelectedWalletTargetAddress();
+    await loadRecentTx("tx-list", isWalletTargetSelf(address) ? undefined : address);
+  }
+
+  function refreshActiveWalletTab() {
+    const activeTabId = WALLET_TARGET_TABS.find(
+      (id) => document.getElementById(id)?.classList.contains("active")
+    );
+    if (activeTabId === "tab-activity") {
+      refreshWalletActivityTab();
+    } else if (activeTabId === "tab-harvest-reward") {
+      loadHarvestRewards();
+    } else {
+      refreshWalletTokenTab();
+    }
+  }
+
   // 汎用タブ切替(モザイク・ネームスペース・メタデータ画面で使う)
   function setupTabGroup(tabIds, contentIds, onShow = []) {
     tabIds.forEach((tabId, i) => {
@@ -2849,19 +2884,16 @@ window.addEventListener("load", async () => {
     ["tab-token", "tab-activity", "tab-harvest-reward"],
     ["token-content", "activity-content", "harvest-reward-content"],
     [
-      null,
-      null,
-      async () => {
-        await loadHarvestRewardTargetOptions();
-        await loadHarvestRewards();
-      },
+      () => refreshWalletTokenTab(),
+      () => refreshWalletActivityTab(),
+      () => loadHarvestRewards(),
     ]
   );
 
-  // ハーベスト報酬タブの対象アカウント（自分自身 / マルチシグ）を切り替えたら
-  // その対象について報酬を取得し直す
-  document.getElementById("harvest-reward-target-select")?.addEventListener("change", () => {
-    loadHarvestRewards();
+  // ウォレット画面共通の対象アカウント(自分自身 / マルチシグ)を切り替えたら、
+  // 現在表示中のタブの内容をその対象について取得し直す
+  document.getElementById("wallet-target-select")?.addEventListener("change", () => {
+    refreshActiveWalletTab();
   });
 
   setupTabGroup(
