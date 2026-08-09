@@ -192,18 +192,27 @@ function getTransactionTypeLabel(type) {
 }
 
 
-function extractAmount(tx) {
-  if (!tx.mosaics || tx.mosaics.length === 0) return null;
+// アグリゲート(即時/ボンデッド)のトランザクションタイプ
+const AGGREGATE_TYPES = new Set([16705, 16961]);
 
-  // appState.currentPubKey は読み取り専用モード(アドレス照会)では常にnullになるため、
-  // 公開鍵同士の比較ではなく、常に取得できるアドレス同士で送受信方向を判定する
-  // (公開鍵で比較すると、読み取り専用モードでは自分が送ったトランザクションまで
-  //  すべて「受信」判定になってしまうバグがあった)
+function isAggregateType(type) {
+  return AGGREGATE_TYPES.has(Number(type));
+}
+
+/* ============================================================
+   単発の送金(Transfer)、またはアグリゲート内の1つの埋め込み送金から
+   表示用の詳細情報(送金元・送金先・モザイク・メッセージ・方向)を作る
+   ※ appState.currentPubKey は読み取り専用モード(アドレス照会)では
+     常にnullになるため、公開鍵同士の比較ではなく、常に取得できる
+     アドレス同士で送受信方向を判定する(公開鍵で比較すると、
+     読み取り専用モードでは自分が送ったトランザクションまですべて
+     「受信」判定になってしまうバグがあった)
+============================================================ */
+function buildTransferDetail(tx, myAddress) {
   const signerAddress = publicKeyToAddress(tx.signerPublicKey);
-  const myAddress = appState.currentAddress?.toString() ?? "";
   const direction = signerAddress && signerAddress === myAddress ? "send" : "receive";
 
-  const mosaics = tx.mosaics.map(mosaic => {
+  const mosaics = (tx.mosaics || []).map(mosaic => {
     const id = mosaic.id?.toUpperCase();
     const info = appState.mosaicInfo?.[id];
     const divisibility = info?.divisibility ?? 0;
@@ -216,7 +225,118 @@ function extractAmount(tx) {
     };
   });
 
-  return { mosaics, direction };
+  return {
+    direction,
+    sender: direction === "send" ? myAddress : signerAddress,
+    recipient: formatAddress(tx.recipientAddress),
+    mosaics,
+    msg: decodeMessage(tx.message)
+  };
+}
+
+/* ============================================================
+   アグリゲート内に含まれる埋め込みトランザクションの実体(生データ)を集める。
+   1) REST一覧検索(embedded=true)では、埋め込み分も別要素としてフラットに
+      返ってくるため、事前に集約しておいたマップ(aggregateHash単位)を使う。
+   2) WebSocketや単発hash取得など、tx自身が tx.transactions として
+      埋め込み内容をネストで持っている場合はそちらを使う。
+============================================================ */
+function getEmbeddedTxBodies(tx, aggregateHash, embeddedByAggregateHash) {
+  if (embeddedByAggregateHash && embeddedByAggregateHash[aggregateHash]) {
+    return embeddedByAggregateHash[aggregateHash];
+  }
+  if (Array.isArray(tx.transactions)) {
+    return tx.transactions.map(inner => inner.transaction).filter(Boolean);
+  }
+  return [];
+}
+
+/* ============================================================
+   アグリゲートに含まれる埋め込み送金(Transfer)から、
+   このアカウントに関係する送金情報をまとめて取り出す。
+   送金を1件も含まないアグリゲート(ネームスペース登録のみ等)はnullを返す。
+============================================================ */
+function buildAggregateTransferInfo(embeddedTxs, myAddress) {
+  const transferTxs = (embeddedTxs || []).filter(
+    (t) => t && t.recipientAddress !== undefined && t.recipientAddress !== null
+  );
+  if (transferTxs.length === 0) return null;
+
+  const transfers = transferTxs.map((t) => buildTransferDetail(t, myAddress));
+
+  // 代表方向: 自分が送信者になっている送金が1件でもあれば「送信」、
+  // 無ければ(すべて自分宛の受信)「受信」として扱う
+  const direction = transfers.some((t) => t.direction === "send") ? "send" : "receive";
+
+  return { transfers, direction };
+}
+
+/* ============================================================
+   表示用txInfoの組み立て(通常のトランザクション / アグリゲート共通)
+============================================================ */
+function buildTxInfo({ tx, hash, address, state, timestamp, embeddedByAggregateHash }) {
+  const signerAddress = publicKeyToAddress(tx.signerPublicKey);
+  const aggregate = isAggregateType(tx.type);
+
+  if (aggregate) {
+    const embeddedTxs = getEmbeddedTxBodies(tx, hash, embeddedByAggregateHash);
+    const info = buildAggregateTransferInfo(embeddedTxs, address);
+
+    if (info) {
+      return {
+        hash,
+        isTransfer: true,
+        isAggregate: true,
+        typeLabel: getTransactionTypeLabel(tx.type),
+        signerAddress,
+        direction: info.direction,
+        transfers: info.transfers,
+        state,
+        timestamp
+      };
+    }
+
+    // 送金を含まないアグリゲート(ネームスペース登録・メタデータのみ等)
+    return {
+      hash,
+      isTransfer: false,
+      isAggregate: true,
+      typeLabel: getTransactionTypeLabel(tx.type),
+      signerAddress,
+      state,
+      timestamp
+    };
+  }
+
+  // アグリゲートでない通常のトランザクション
+  // recipientAddressフィールドの有無でTransferTransactionかどうかを判定する
+  const isTransfer = tx.recipientAddress !== undefined && tx.recipientAddress !== null;
+
+  if (!isTransfer) {
+    return {
+      hash,
+      isTransfer: false,
+      isAggregate: false,
+      typeLabel: getTransactionTypeLabel(tx.type),
+      signerAddress,
+      state,
+      timestamp
+    };
+  }
+
+  const detail = buildTransferDetail(tx, address);
+
+  return {
+    hash,
+    isTransfer: true,
+    isAggregate: false,
+    typeLabel: getTransactionTypeLabel(tx.type),
+    signerAddress,
+    direction: detail.direction,
+    transfers: [detail],
+    state,
+    timestamp
+  };
 }
 
 /* ============================================================
@@ -235,10 +355,12 @@ function createTxCard(txInfo) {
   const { hash, state, timestamp } = txInfo;
   const explorer = getExplorerUrl(hash);
 
-  // recipientAddressフィールドを持たない = TransferTransactionではない
-  // (マルチシグの連署対象になった設定変更トランザクションなどが該当する)。
-  // このケースを送金として扱うと、無関係な「送金元」表示や
-  // 実在しない「送金先」("---")が出てしまうため、種別名のみのカードにする。
+  // 送金情報を持たない場合(recipientAddressを持たない通常のトランザクション、
+  // または送金を含まないアグリゲート(ネームスペース登録・メタデータのみ等))は
+  // 種別名のみのカードにする。
+  // (マルチシグの連署対象になった設定変更トランザクションなどもここに該当する。
+  //  これを送金として扱うと、無関係な「送金元」表示や実在しない
+  //  「送金先」("---")が出てしまうため。)
   if (!txInfo.isTransfer) {
     return `
       <div class="tx-item ${state === "unconfirmed" ? "unconfirmed" : "confirmed"}" id="tx-${hash}" onclick="window.open('${explorer}','_blank')">
@@ -252,32 +374,53 @@ function createTxCard(txInfo) {
     `;
   }
 
-  const { msg, mosaics, direction, sender, recipient } = txInfo;
+  // 送金(単発 or アグリゲートに含まれる送金)を持つ場合。
+  // アグリゲート(コンプリート/ボンデッド問わず)の場合は「送信(アグリゲート)」
+  // 「受信(アグリゲート)」というラベルにする。
+  const { direction, transfers = [], isAggregate } = txInfo;
   const isSend = direction === "send";
-  const label = isSend ? "送信" : "受信";
+  const baseLabel = isSend ? "送信" : "受信";
+  const label = isAggregate ? `${baseLabel}(アグリゲート)` : baseLabel;
   const labelClass = isSend ? "tx-label-send" : "tx-label-receive";
-  const amountClass = isSend ? "tx-amount-send" : "tx-amount-receive";
-  const sign = isSend ? "-" : "+";
 
-  let mosaicHtml = "";
-  if (mosaics && mosaics.length) {
-    mosaicHtml = mosaics.map(mosaic => `
-      <div class="tx-mosaic">
-        <span class="tx-mosaic-name">${mosaic.name}</span>
-        <span class="tx-mosaic-amount ${amountClass}">${sign}${mosaic.amount}</span>
-      </div>
-    `).join("");
-  }
+  // アグリゲートは複数の送金(例: 複数送信)を含むことがあるため、
+  // 送金ごとに「送金元・送金先・モザイク・メッセージ」のブロックを
+  // 並べて表示する(単発送金の場合はブロックは1つだけになる)。
+  const transfersHtml = transfers
+    .map((t, i) => {
+      const tIsSend = t.direction === "send";
+      const tAmountClass = tIsSend ? "tx-amount-send" : "tx-amount-receive";
+      const tSign = tIsSend ? "-" : "+";
+
+      let mosaicHtml = "";
+      if (t.mosaics && t.mosaics.length) {
+        mosaicHtml = t.mosaics.map(mosaic => `
+          <div class="tx-mosaic">
+            <span class="tx-mosaic-name">${mosaic.name}</span>
+            <span class="tx-mosaic-amount ${tAmountClass}">${tSign}${mosaic.amount}</span>
+          </div>
+        `).join("");
+      }
+
+      const dividerStyle = i > 0 ? ' style="margin-top:8px;padding-top:8px;border-top:1px dashed #374151;"' : "";
+
+      return `
+        <div${dividerStyle}>
+          <div class="tx-address"><span class="tx-address-label">送金元</span><span class="tx-address-value">${t.sender ?? "---"}</span></div>
+          <div class="tx-address"><span class="tx-address-label">送金先</span><span class="tx-address-value">${t.recipient ?? "---"}</span></div>
+          ${mosaicHtml}
+          <div class="tx-message"><span class="tx-message-label">メッセージ</span><span class="tx-message-value">${t.msg}</span></div>
+        </div>
+      `;
+    })
+    .join("");
 
   return `
     <div class="tx-item ${state === "unconfirmed" ? "unconfirmed" : "confirmed"}" id="tx-${hash}" onclick="window.open('${explorer}','_blank')">
       <div class="tx-body">
         <div class="tx-title ${labelClass}">${label}</div>
         <div class="tx-status">${state.toUpperCase()}</div>
-        <div class="tx-address"><span class="tx-address-label">送金元</span><span class="tx-address-value">${sender ?? "---"}</span></div>
-        <div class="tx-address"><span class="tx-address-label">送金先</span><span class="tx-address-value">${recipient ?? "---"}</span></div>
-        ${mosaicHtml}
-        <div class="tx-message"><span class="tx-message-label">メッセージ</span><span class="tx-message-value">${msg}</span></div>
+        ${transfersHtml}
         ${state === "confirmed" && timestamp ? `<div class="tx-time">🕒 ${formatTimestamp(timestamp)}</div>` : ""}
       </div>
     </div>
@@ -313,31 +456,37 @@ async function loadRecentTx(elId = "tx-list") {
     const res = await fetch(url);
     const json = await res.json();
 
-    // 事前に全モザイクのネームスペース名をまとめて解決しておく
+    // 事前に全モザイクのネームスペース名をまとめて解決しておく(埋め込み分も含む)
     const allMosaicIds = json.data.flatMap(item => (item.transaction.mosaics || []).map(m => m.id));
     await resolveMosaicNames(allMosaicIds);
 
-    el.innerHTML = json.data.map(item => {
+    // embedded=true により、アグリゲートに埋め込まれたトランザクションも
+    // 別要素としてフラットに返ってくる。これらは親アグリゲートのハッシュ
+    // (meta.aggregateHash)ごとにまとめておき、アグリゲート本体のカードに
+    // まとめて表示する(個別の重複カードにはしない)。
+    const embeddedByAggregateHash = {};
+    for (const item of json.data) {
+      const aggHash = item.meta?.aggregateHash;
+      if (!aggHash) continue;
+      if (!embeddedByAggregateHash[aggHash]) embeddedByAggregateHash[aggHash] = [];
+      embeddedByAggregateHash[aggHash].push(item.transaction);
+    }
+
+    // トップレベル(埋め込みでない)のトランザクションのみをカード表示する
+    const topLevelItems = json.data.filter(item => !item.meta?.aggregateHash);
+
+    el.innerHTML = topLevelItems.map(item => {
       const tx = item.transaction;
       const meta = item.meta;
-      // recipientAddressフィールドの有無でTransferTransactionかどうかを判定する
-      // (マルチシグの連署対象になった非送金トランザクションが混ざることがあるため)
-      const isTransfer = tx.recipientAddress !== undefined && tx.recipientAddress !== null;
-      const amountInfo = isTransfer ? extractAmount(tx) : null;
 
-      const txInfo = {
+      const txInfo = buildTxInfo({
+        tx,
         hash: meta.hash,
-        isTransfer,
-        typeLabel: getTransactionTypeLabel(tx.type),
-        signerAddress: publicKeyToAddress(tx.signerPublicKey),
-        sender: amountInfo?.direction === "send" ? address : publicKeyToAddress(tx.signerPublicKey),
-        recipient: isTransfer ? formatAddress(tx.recipientAddress) : null,
-        msg: isTransfer ? decodeMessage(tx.message) : null,
+        address,
         state: "confirmed",
         timestamp: meta.timestamp,
-        mosaics: amountInfo?.mosaics ?? [],
-        direction: amountInfo?.direction ?? null
-      };
+        embeddedByAggregateHash
+      });
 
       txMap[meta.hash] = txInfo;
       return createTxCard(txInfo);
@@ -354,27 +503,29 @@ async function loadRecentTx(elId = "tx-list") {
 function initLiveTx(address) {
   /* 未承認 */
   addCallback(`unconfirmedAdded/${address}`, async payload => {
-    const tx = payload.data;
-    const hash = tx.meta.hash;
+    const item = payload.data;
+    const hash = item.meta.hash;
     if (txMap[hash]) return;
 
-    await resolveMosaicNames((tx.transaction.mosaics || []).map(m => m.id));
+    const tx = item.transaction;
 
-    const isTransfer = tx.transaction.recipientAddress !== undefined && tx.transaction.recipientAddress !== null;
-    const amountInfo = isTransfer ? extractAmount(tx.transaction) : null;
-    const txInfo = {
+    // アグリゲートの場合、埋め込みトランザクション(tx.transactions)の
+    // モザイクも含めて名前解決しておく
+    const embeddedTxs = getEmbeddedTxBodies(tx, hash, null);
+    const mosaicIds = [
+      ...(tx.mosaics || []).map(m => m.id),
+      ...embeddedTxs.flatMap(t => (t.mosaics || []).map(m => m.id))
+    ];
+    await resolveMosaicNames(mosaicIds);
+
+    const txInfo = buildTxInfo({
+      tx,
       hash,
-      isTransfer,
-      typeLabel: getTransactionTypeLabel(tx.transaction.type),
-      signerAddress: publicKeyToAddress(tx.transaction.signerPublicKey),
-      sender: amountInfo?.direction === "send" ? address : publicKeyToAddress(tx.transaction.signerPublicKey),
-      recipient: isTransfer ? formatAddress(tx.transaction.recipientAddress) : null,
-      msg: isTransfer ? decodeMessage(tx.transaction.message) : null,
+      address,
       state: "unconfirmed",
       timestamp: null,
-      mosaics: amountInfo?.mosaics ?? [],
-      direction: amountInfo?.direction ?? null
-    };
+      embeddedByAggregateHash: null
+    });
 
     txMap[hash] = txInfo;
     appendTx(txInfo);
@@ -382,27 +533,28 @@ function initLiveTx(address) {
 
   /* 承認済み */
   addCallback(`confirmedAdded/${address}`, async payload => {
-    const tx = payload.data;
-    const hash = tx.meta.hash;
+    const item = payload.data;
+    const hash = item.meta.hash;
 
-    await resolveMosaicNames((tx.transaction.mosaics || []).map(m => m.id));
+    const tx = item.transaction;
 
-    const blockTs = await getBlockTimestamp(tx.meta.height);
-    const isTransfer = tx.transaction.recipientAddress !== undefined && tx.transaction.recipientAddress !== null;
-    const amountInfo = isTransfer ? extractAmount(tx.transaction) : null;
-    const txInfo = {
+    const embeddedTxs = getEmbeddedTxBodies(tx, hash, null);
+    const mosaicIds = [
+      ...(tx.mosaics || []).map(m => m.id),
+      ...embeddedTxs.flatMap(t => (t.mosaics || []).map(m => m.id))
+    ];
+    await resolveMosaicNames(mosaicIds);
+
+    const blockTs = await getBlockTimestamp(item.meta.height);
+
+    const txInfo = buildTxInfo({
+      tx,
       hash,
-      isTransfer,
-      typeLabel: getTransactionTypeLabel(tx.transaction.type),
-      signerAddress: publicKeyToAddress(tx.transaction.signerPublicKey),
-      sender: amountInfo?.direction === "send" ? address : publicKeyToAddress(tx.transaction.signerPublicKey),
-      recipient: isTransfer ? formatAddress(tx.transaction.recipientAddress) : null,
-      msg: isTransfer ? decodeMessage(tx.transaction.message) : null,
+      address,
       state: "confirmed",
       timestamp: blockTs,
-      mosaics: amountInfo?.mosaics ?? [],
-      direction: amountInfo?.direction ?? null
-    };
+      embeddedByAggregateHash: null
+    });
 
     txMap[hash] = txInfo;
     appendTx(txInfo);
