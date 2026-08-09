@@ -755,6 +755,49 @@ body {
 }
 
 /* ============================================================
+   汎用リスト行カード
+   (ハーベスト報酬/履歴・ネームスペース一覧・メタデータ一覧・
+    制限一覧・保有モザイク一覧・マルチシグ提案一覧など、
+    "harvest-history-item" クラスを使い回している各画面すべてに適用される)
+============================================================ */
+.harvest-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: #1a1f2b;
+  border: 1px solid #2d3748;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.harvest-history-item:last-child {
+  margin-bottom: 0;
+}
+
+/* 1行目(種別バッジ)の下に少し余白を空けて、値の行と視覚的に区切る */
+.harvest-history-item > :first-child {
+  margin-bottom: 2px;
+}
+
+.harvest-history-item > div:not(:first-child) {
+  color: #cbd5e1;
+}
+
+.harvest-history-item .harvest-reward-amount {
+  color: #f4d58d;
+  font-weight: bold;
+  font-size: 15px;
+}
+
+.harvest-history-item .harvest-reward-time {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+/* ============================================================
    設定メニュー(歯車ボタン・メニュー項目・手数料オプション)
 ============================================================ */
 .card-title-row {
