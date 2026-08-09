@@ -53,7 +53,7 @@ async function sendTx() {
   const recipientAddress = new appState.sdkSymbol.Address(recipientRaw);
   const amount = Number(amountStr);
 
-  if (Number.isNaN(amount) || amount <= 0) {
+  if (Number.isNaN(amount) || amount < 0) {
     setStatus("tx-status", "金額が不正です。", "error");
     return;
   }
@@ -65,11 +65,17 @@ async function sendTx() {
 
   /*
     Mosaic Descriptor作成
+    (数量が0の場合はメッセージのみの送金として、モザイクを含めない)
   */
-  const mosaic = new appState.sdkSymbol.descriptors.UnresolvedMosaicDescriptor(
-    new appState.sdkSymbol.models.UnresolvedMosaicId(BigInt("0x" + selectedMosaicId)),
-    new appState.sdkSymbol.models.Amount(BigInt(Math.floor(amount * (10 ** divisibility))))
-  );
+  const mosaics =
+    amount > 0
+      ? [
+          new appState.sdkSymbol.descriptors.UnresolvedMosaicDescriptor(
+            new appState.sdkSymbol.models.UnresolvedMosaicId(BigInt("0x" + selectedMosaicId)),
+            new appState.sdkSymbol.models.Amount(BigInt(Math.floor(amount * (10 ** divisibility))))
+          ),
+        ]
+      : [];
 
   /*
     Message
@@ -128,7 +134,7 @@ async function sendTx() {
   */
   const descriptor = new appState.sdkSymbol.descriptors.TransferTransactionV1Descriptor(
     recipientAddress,
-    [mosaic],
+    mosaics,
     message
   );
 
