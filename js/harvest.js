@@ -1315,21 +1315,26 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
       })
     );
 
-    el.innerHTML = rows
-      .map(
-        (r) => `
+    const rewardCardHtml = (label, amountText, r) => `
       <div class="harvest-history-item">
         <div>${harvestKindBadgeHtml(r.kind)}</div>
-        <div class="harvest-reward-amount">報酬合計: ${r.totalText}</div>
-        <div class="harvest-reward-breakdown">
-          <div>インフレ報酬: ${r.inflationText}</div>
-          <div>トランザクション手数料報酬: ${r.feeText}</div>
-          ${r.nodeRewardText ? `<div>${r.nodeRewardLabel}: ${r.nodeRewardText}</div>` : ""}
-        </div>
+        <div class="harvest-reward-label">${label}</div>
+        <div class="harvest-reward-amount">${amountText}</div>
         <div class="harvest-reward-time">高さ: ${r.height}${r.timeMs ? ` ・ ${new Date(r.timeMs).toLocaleString("ja-JP", { hour12: false })}` : ""}</div>
       </div>
-    `
-      )
+    `;
+
+    el.innerHTML = rows
+      .flatMap((r) => {
+        const cards = [
+          rewardCardHtml("インフレ報酬", r.inflationText, r),
+          rewardCardHtml("トランザクション手数料報酬", r.feeText, r),
+        ];
+        if (r.nodeRewardText) {
+          cards.push(rewardCardHtml(r.nodeRewardLabel, r.nodeRewardText, r));
+        }
+        return cards;
+      })
       .join("");
   } catch (e) {
     console.error("loadHarvestRewards error:", e);
