@@ -73,55 +73,6 @@ async function signTxOffline(tx, { kind, confirmInfo } = {}) {
 }
 
 /* ============================================================
-   送金トランザクションを作成し、その場で署名する(アナウンスはしない)
-   ログイン中のアカウント(SSS/ローカルどちらでも可)で署名される。
-   ※「高度機能 > オフライントランザクション」の手動作成画面専用。
-     通常の送金画面から書き出す場合は signTxOffline() を使う。
-============================================================ */
-async function composeAndSignOfflineTransfer({ recipientAddress, mosaicIdHex, amount, message }) {
-  const { descriptors, models } = appState.sdkSymbol;
-
-  const divisibility = appState.mosaicInfo?.[mosaicIdHex.toUpperCase()]?.divisibility ?? 6;
-
-  const mosaics =
-    amount > 0
-      ? [
-          new descriptors.UnresolvedMosaicDescriptor(
-            new models.UnresolvedMosaicId(BigInt("0x" + mosaicIdHex.toUpperCase())),
-            new models.Amount(BigInt(Math.round(amount * 10 ** divisibility)))
-          ),
-        ]
-      : [];
-
-  const messageBytes = new Uint8Array([0x00, ...new TextEncoder().encode(message || "")]);
-
-  const transferDescriptor = new descriptors.TransferTransactionV1Descriptor(
-    new appState.sdkSymbol.Address(recipientAddress),
-    mosaics,
-    messageBytes
-  );
-
-  const tx = appState.facade.createTransactionFromTypedDescriptor(
-    transferDescriptor,
-    appState.currentPubKey,
-    appState.feeMultiplier ?? 100,
-    60 * 60
-  );
-
-  return await signTxOffline(tx, {
-    kind: "transfer",
-    confirmInfo: {
-      typeLabel: "送金",
-      recipient: recipientAddress,
-      details: [
-        { label: "モザイクID", value: mosaicIdHex.toUpperCase() },
-        { label: "数量", value: amount },
-      ],
-    },
-  });
-}
-
-/* ============================================================
    JSONファイルとしてダウンロードさせる
 ============================================================ */
 function downloadOfflineTxJson(offlineTxObject, filename = "offline-tx.json") {
@@ -192,7 +143,6 @@ window.W.offline = {
   OFFLINE_TX_VERSION,
   getPageIdForKind,
   signTxOffline,
-  composeAndSignOfflineTransfer,
   downloadOfflineTxJson,
   validateOfflineTxJson,
   checkAlreadyBroadcastStatus,

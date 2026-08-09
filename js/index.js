@@ -87,9 +87,7 @@ const {loadAccountRestrictions,
   setMosaicAddressRestriction,
   OPERATION_TYPE_OPTIONS,
   MOSAIC_RESTRICTION_TYPE_OPTIONS,} = W.restriction;
-const {composeAndSignOfflineTransfer,
-  downloadOfflineTxJson,
-  validateOfflineTxJson,
+const {validateOfflineTxJson,
   broadcastOfflineTx,
   checkAlreadyBroadcastStatus,
   getPageIdForKind,} = W.offline;
@@ -139,7 +137,6 @@ window.addEventListener("load", async () => {
   const restrictionMenuPage = document.getElementById("restriction-menu-page");
   const restrictionAccountPage = document.getElementById("restriction-account-page");
   const restrictionMosaicdefPage = document.getElementById("restriction-mosaicdef-page");
-  const offlineTxCreatePage = document.getElementById("offline-tx-create-page");
   const offlineBroadcastPage = document.getElementById("offline-broadcast-page");
 
   // ============================
@@ -1613,61 +1610,6 @@ window.addEventListener("load", async () => {
   });
 
   // ============================
-  // オフライントランザクション(作成・署名 / ログイン中のみ)
-  // ============================
-  let offlineTxGenerated = null;
-
-  document.getElementById("menu-offline-tx")?.addEventListener("click", () => {
-    offlineTxGenerated = null;
-    document.getElementById("offline-tx-recipient").value = "";
-    document.getElementById("offline-tx-mosaic").value = "";
-    document.getElementById("offline-tx-amount").value = "0";
-    document.getElementById("offline-tx-message").value = "";
-    document.getElementById("offline-tx-result").style.display = "none";
-    setStatus("offline-tx-status", "", "default");
-    showPage(offlineTxCreatePage);
-  });
-
-  document.getElementById("offline-tx-sign-btn")?.addEventListener("click", async () => {
-    const recipientAddress = document.getElementById("offline-tx-recipient").value.trim();
-    const mosaicInput = document.getElementById("offline-tx-mosaic").value.trim();
-    const amount = Number(document.getElementById("offline-tx-amount").value);
-    const message = document.getElementById("offline-tx-message").value;
-
-    if (!recipientAddress) {
-      setStatus("offline-tx-status", "宛先アドレスを入力してください。", "error");
-      return;
-    }
-    if (!Number.isFinite(amount) || amount < 0) {
-      setStatus("offline-tx-status", "数量が不正です。", "error");
-      return;
-    }
-
-    const mosaicIdHex = mosaicInput || getXymMosaicIdHex();
-
-    setStatus("offline-tx-status", "署名中...");
-    try {
-      offlineTxGenerated = await composeAndSignOfflineTransfer({
-        recipientAddress,
-        mosaicIdHex,
-        amount,
-        message,
-      });
-      document.getElementById("offline-tx-hash").textContent = offlineTxGenerated.hash;
-      document.getElementById("offline-tx-result").style.display = "block";
-      setStatus("offline-tx-status", "✅ 署名しました。ノードへはまだ送信されていません。ファイルをダウンロードしてください。", "success");
-    } catch (e) {
-      console.error("composeAndSignOfflineTransfer error:", e);
-      setStatus("offline-tx-status", e.message || "署名に失敗しました。", "error");
-    }
-  });
-
-  document.getElementById("offline-tx-download-btn")?.addEventListener("click", () => {
-    if (!offlineTxGenerated) return;
-    downloadOfflineTxJson(offlineTxGenerated, `offline-tx-${offlineTxGenerated.hash.slice(0, 8)}.json`);
-  });
-
-  // ============================
   // オフライン署名データの読み込み(送金/ハーベスト/ネームスペースなど、
   // 各機能の確認画面から「オフライントランザクション」を選んで書き出した
   // JSONを読み込み、種類に応じて適切な画面へ遷移してからアナウンスする)
@@ -2826,7 +2768,6 @@ window.addEventListener("load", async () => {
   document.getElementById("back-advanced-restriction-menu")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-restriction-menu-account")?.addEventListener("click", () => showPage(restrictionMenuPage));
   document.getElementById("back-restriction-menu-mosaic-top")?.addEventListener("click", () => showPage(restrictionMenuPage));
-  document.getElementById("back-advanced-offline-tx")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-offline-broadcast")?.addEventListener("click", () => showPage(welcomePage));
 
   // ============================
