@@ -403,6 +403,11 @@
       <h2>ハーベスト設定</h2>
       <button id="back-account-harvest" class="button-primary">← 戻る</button>
 
+      <p>対象アカウント（マルチシグの場合は連署者として提案します）:</p>
+      <select id="harvest-target-select" class="input-box">
+        <option value="">-- 自分自身 --</option>
+      </select>
+
       <p>アカウント:</p>
       <div id="harvest-address">---</div>
       <div>
@@ -410,6 +415,11 @@
       </div>
 
       <div id="harvest-badge" class="harvest-badge">状態確認中...</div>
+      <p style="font-size:12px;color:#94a3b8;">
+        ※ マルチシグアカウントは自分自身の鍵だけでは直接設定できません。連署者としてログインした状態で
+        対象アカウントに選択すると、マルチシグ提案（ハッシュロック＋連署待ち）として送信されます。
+        提案が連署者に承認され、鍵リンクが確定した後は、「④ 委任リクエストを送信」から続きを行ってください。
+      </p>
 
       <hr>
 
@@ -426,8 +436,9 @@
       <hr>
 
       <h3>設定</h3>
-      <button id="start-harvest-btn" class="button-primary">開始</button>
-      <button id="stop-harvest-btn" class="button-primary">停止</button>
+      <button id="start-harvest-btn" class="button-primary">開始（①②③ 鍵リンク）</button>
+      <button id="stop-harvest-btn" class="button-primary">停止（解除）</button>
+      <button id="send-delegation-request-btn" class="button-primary">④ 委任リクエストを送信</button>
       <div id="harvest-status">状態確認中...</div>
       <div id="harvest-tracking" class="tx-tracking"></div>
     </div>
