@@ -303,10 +303,10 @@ async function resolveHarvestSignerPublicKeys(address) {
 ============================================================ */
 function harvestKindBadgeHtml(kind) {
   if (kind === "node") {
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#1e3a5f;color:#7dd3fc;">🖥️ ノードのハーベスト（委任・リモート鍵）</span>`;
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#1e3a5f;color:#7dd3fc;">🖥️ ハーベスト(ノード)</span>`;
   }
   if (kind === "self") {
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#3f2d1e;color:#fbbf24;">📍 アドレスのハーベスト（本人鍵）</span>`;
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#3f2d1e;color:#fbbf24;">📍 ハーベスト(アカウント)</span>`;
   }
   return "";
 }
@@ -702,9 +702,8 @@ async function loadHarvestHistory(targetAddress) {
       return `
         <div class="harvest-history-item">
           <div>${harvestKindBadgeHtml(item.__harvestKind)}</div>
-          <div>高さ: ${height}</div>
-          <div>日時: ${dateStr}</div>
-          <div>獲得手数料(概算): ${feeXym} XYM</div>
+          <div class="harvest-reward-amount">獲得手数料(概算): ${feeXym} XYM</div>
+          <div class="harvest-reward-time">高さ: ${height} ・ ${dateStr}</div>
         </div>
       `;
     }).join("");
@@ -1237,9 +1236,8 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
         (r) => `
       <div class="harvest-history-item">
         <div>${harvestKindBadgeHtml(r.kind)}</div>
-        <div>高さ: ${r.height}</div>
-        <div>報酬: ${r.rewardText}</div>
-        ${r.timeMs ? `<div>${new Date(r.timeMs).toLocaleString("ja-JP", { hour12: false })}</div>` : ""}
+        <div class="harvest-reward-amount">報酬: ${r.rewardText}</div>
+        <div class="harvest-reward-time">高さ: ${r.height}${r.timeMs ? ` ・ ${new Date(r.timeMs).toLocaleString("ja-JP", { hour12: false })}` : ""}</div>
       </div>
     `
       )
