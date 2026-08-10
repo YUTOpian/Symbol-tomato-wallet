@@ -824,13 +824,15 @@
           </div>
         </div>
         <div class="data-card data-card-wide">
-          <div class="data-card-title">オンチェーン分析(本日 UTC 0:00〜現在)</div>
+          <div class="data-card-title">オンチェーン分析</div>
           <div style="font-size:12px;color:#94a3b8;margin:2px 0 8px;">
             ブロックを遡って集計するため、少し時間がかかることがあります。
             送金以外のトランザクション種別(モザイク作成・ネームスペース登録等)の
             参加者は「アクティブアカウント数」に含まれない概算値です。
           </div>
-          <button id="onchain-analysis-run-btn" class="button-primary" type="button">分析を実行</button>
+          <button id="onchain-analysis-run-rolling-btn" class="button-primary" type="button">過去24時間</button>
+          <button id="onchain-analysis-run-yesterday-btn" class="button-primary" type="button">昨日(UTC)</button>
+          <div id="onchain-analysis-range-title" style="font-size:13px;font-weight:bold;margin-top:8px;color:#e5e7eb;"></div>
           <div id="onchain-analysis-status" style="font-size:12px;color:#94a3b8;margin-top:6px;"></div>
 
           <div class="data-card-mini-grid" style="margin-top:10px;">
@@ -865,7 +867,7 @@
           </div>
 
           <div class="data-card-title" style="margin-top:14px;">大口送金(10,000 XYM以上)</div>
-          <div id="onchain-whale-list" style="font-size:13px;">「分析を実行」を押してください</div>
+          <div id="onchain-whale-list" style="font-size:13px;">「過去24時間」または「昨日(UTC)」を押してください</div>
         </div>
       </div>
 
