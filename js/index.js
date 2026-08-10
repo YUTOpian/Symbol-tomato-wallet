@@ -478,6 +478,19 @@ window.addEventListener("load", async () => {
     showPage(addressLookupOrigin === "login" ? unlockPage : welcomePage);
   });
 
+  document.getElementById("address-lookup-qr-btn")?.addEventListener("click", () => {
+    setStatus("address-lookup-status", "", "default");
+    W.qrScanner?.openQrScanModal({
+      onAddress: (address) => {
+        document.getElementById("address-lookup-input").value = address;
+        setStatus("address-lookup-status", "✅ QRコードからアドレスを読み取りました。「照会する」を押してください。", "success");
+      },
+      onError: () => {
+        setStatus("address-lookup-status", "カメラを起動できませんでした。カメラへのアクセスを許可してください。", "error");
+      },
+    });
+  });
+
   document.getElementById("address-lookup-submit-btn")?.addEventListener("click", async () => {
     const addressInput = document.getElementById("address-lookup-input").value.trim();
 
