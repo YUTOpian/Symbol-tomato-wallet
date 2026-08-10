@@ -4,9 +4,10 @@
 // dataPage.js
 // 「データ」画面: アカウントの詳細情報とSymbolネットワーク統計をまとめて表示する
 
-const {appState, NetworkType} = W.config;
+const {appState, NetworkType, getXymMosaicIdHex} = W.config;
 const {estimateRootNamespaceRentalFee, estimateSubNamespaceRentalFee, estimateMosaicRentalFee} = W.rentalFees;
 const {fetchOwnedNamespaceOptions} = W.namespace;
+const {getBlockTimestamp} = W.ws;
 
 // 30秒/ブロックを前提とした1年あたりのブロック数(namespace.jsのBLOCKS_PER_DAYと同じ前提)
 const BLOCKS_PER_YEAR = Math.round((24 * 60 * 60) / 30 * 365);
@@ -213,6 +214,127 @@ async function loadNodeSection() {
 }
 
 /* ============================================================
+   直近24時間の統計: 平均ブロック生成間隔 / XYM総移動量 / 送金件数
+   ・現在の高さ/タイムスタンプから24時間前に相当するブロック高を、
+     30秒/ブロックの目安を起点にした二分探索で特定する。
+   ・平均ブロック生成間隔 = (終了ブロックの時刻 - 開始ブロックの時刻) ÷ ブロック数。
+   ・対象ブロック高範囲に含まれるTransferトランザクションを新しい順に
+     ページングしながら、範囲外に出た時点で打ち切って
+       - 送金件数(トランザクション件数)
+       - XYM総移動量(各トランザクションのXYMモザイク数量の合計)
+     をあわせて集計する。
+============================================================ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TRANSFER_TX_TYPE = 16724; // Transfer
+const TARGET_BLOCK_MS = 30 * 1000; // 目安のブロック生成間隔(30秒)
+
+// currentHeight/currentRaw(現在の高さと、そのタイムスタンプ[epochAdjustment基準ms])から、
+// targetRaw(24時間前に相当するタイムスタンプ)以前で最も新しいブロック高を求める
+async function findHeightAtOrBeforeTimestamp(targetRaw, currentHeight, currentRaw) {
+  const guessHeight = Math.min(
+    currentHeight - 1,
+    Math.max(1, currentHeight - Math.round((currentRaw - targetRaw) / TARGET_BLOCK_MS))
+  );
+
+  let lo = 1;
+  let hi = currentHeight;
+  let bestHeight = 1;
+
+  for (let i = 0; i < 14 && lo <= hi; i++) {
+    const mid = i === 0 ? guessHeight : Math.floor((lo + hi) / 2);
+    const raw = await getBlockTimestamp(mid);
+    if (raw == null) break;
+
+    const rawNum = Number(raw);
+    if (rawNum <= targetRaw) {
+      bestHeight = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  return bestHeight;
+}
+
+async function load24hSection() {
+  if (!appState.NODE) return;
+
+  setText("data-24h-block-interval", "---");
+  setText("data-24h-xym-volume", "---");
+  setText("data-24h-transfer-count", "---");
+
+  try {
+    const chainRes = await fetch(new URL("/chain/info", appState.NODE));
+    const chainJson = await chainRes.json();
+    const currentHeight = Number(chainJson.height);
+
+    const currentRawStr = await getBlockTimestamp(currentHeight);
+    if (currentRawStr == null) throw new Error("最新ブロックのタイムスタンプが取得できません");
+    const currentRaw = Number(currentRawStr);
+    const targetRaw = currentRaw - DAY_MS;
+
+    const startHeight = await findHeightAtOrBeforeTimestamp(targetRaw, currentHeight, currentRaw);
+    const startRawStr = await getBlockTimestamp(startHeight);
+    const startRaw = Number(startRawStr ?? currentRaw);
+
+    // 平均ブロック生成間隔
+    const blockDelta = currentHeight - startHeight;
+    if (blockDelta > 0) {
+      const avgIntervalSec = (currentRaw - startRaw) / 1000 / blockDelta;
+      setText("data-24h-block-interval", `${avgIntervalSec.toFixed(1)} 秒`);
+    }
+
+    // 送金件数・XYM総移動量(対象ブロック高範囲のTransferトランザクションを集計)
+    const xymMosaicId = getXymMosaicIdHex().toUpperCase();
+    let transferCount = 0;
+    let xymVolumeAtomic = 0n;
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 50; // 過度なリクエストを防ぐための上限
+
+    pageLoop:
+    for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber++) {
+      const params = new URLSearchParams({
+        type: String(TRANSFER_TX_TYPE),
+        order: "desc",
+        pageNumber: String(pageNumber),
+        pageSize: String(PAGE_SIZE),
+      });
+      const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`);
+      const json = await res.json();
+      const items = json.data ?? [];
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        const h = Number(item.meta?.height ?? 0);
+        if (h > currentHeight) continue;
+        if (h < startHeight) break pageLoop; // 対象範囲より古くなったら打ち切り
+
+        transferCount++;
+
+        const mosaics = item.transaction?.mosaics || [];
+        for (const m of mosaics) {
+          if (String(m.id).toUpperCase() === xymMosaicId) {
+            xymVolumeAtomic += BigInt(m.amount ?? 0);
+          }
+        }
+      }
+    }
+
+    setText("data-24h-transfer-count", `${transferCount.toLocaleString("ja-JP")} 件`);
+    setText(
+      "data-24h-xym-volume",
+      `${(Number(xymVolumeAtomic) / 1_000_000).toLocaleString("ja-JP", { maximumFractionDigits: 6 })} XYM`
+    );
+  } catch (e) {
+    console.warn("直近24時間の統計取得失敗:", e);
+    setText("data-24h-block-interval", "取得失敗");
+    setText("data-24h-xym-volume", "取得失敗");
+    setText("data-24h-transfer-count", "取得失敗");
+  }
+}
+
+/* ============================================================
    画面を開いたときにまとめて読み込む
 ============================================================ */
 async function loadDataPage() {
@@ -224,6 +346,7 @@ async function loadDataPage() {
     loadChainSection(),
     loadFeeSection(),
     loadNodeSection(),
+    load24hSection(),
   ]);
 
   if (statusEl) statusEl.textContent = "";
