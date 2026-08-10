@@ -6,22 +6,27 @@
 //
 // 対応形式:
 //   - Symbol Wallet形式(symbol-qr-library の AddressQR。type=7、data.address)
-//   - EXYM Wallet形式(type=3。data.payload に埋め込まれた、未署名の
-//     受取リクエスト送金トランザクションのrecipientAddressを復元する)
+//   - EXYM Wallet形式(symbol-qr-library の ContactQR。type=1、data.publicKey。
+//     公開鍵とQR内のnetwork_idからアドレスを導出する)
+//   - EXYM Wallet形式(受取リクエストQR。type=3、data.payload に埋め込まれた
+//     未署名送金トランザクションのrecipientAddressを復元する。上記と
+//     見た目のtypeが異なる別画面向けなので、念のため両方に対応しておく)
 //   - NFTDrive形式("{symbol:アドレス}" というプレーンテキスト)
 //   - 上記のいずれでもない場合、テキスト中にSymbolアドレスがそのまま
 //     含まれていれば拾う(保険的なフォールバック)
 //
-// これらは index.js の「受取」画面(generateReceiveQR / generateReceiveTransactionQR /
-// generateNftDriveExQR)が生成しているQRコードと同じ形式に合わせてある。
+// アドレスQR(type=7)・受取リクエストQR(type=3)は、index.js の「受取」画面
+// (generateReceiveQR / generateReceiveTransactionQR / generateNftDriveExQR)が
+// 生成しているQRコードと同じ形式に合わせてある。
 
 const {hexToBytes} = W.utils;
+const {NetworkType} = W.config;
 
 let jsQR = null;
-// EXYM Wallet形式のpayload(未署名送金Tx)を解析するためだけの、
-// 一時的なSDK参照。deserializeはバイト列そのものから判別するため、
-// facadeのネットワーク(mainnet/testnet)がどちらでも結果は変わらない。
-let cachedParserSdkSymbol = null;
+// 公開鍵からのアドレス導出・EXYM Wallet受取リクエストQRのpayload解析のための、
+// 一時的なSDK参照。ここでのfacadeはネットワーク(mainnet/testnet)を
+// QR内のnetwork_idから都度組み立てて使う。
+let cachedParserSdk = null;
 
 async function ensureJsQRLoaded() {
   if (!jsQR) {
@@ -30,12 +35,16 @@ async function ensureJsQRLoaded() {
   return jsQR;
 }
 
-async function ensureParserSdkSymbol() {
-  if (!cachedParserSdkSymbol) {
+async function ensureParserSdk() {
+  if (!cachedParserSdk) {
     const sdk = await import("https://unpkg.com/symbol-sdk@3.3.0/dist/bundle.web.js");
-    cachedParserSdkSymbol = sdk.symbol;
+    cachedParserSdk = { core: sdk.core, symbol: sdk.symbol };
   }
-  return cachedParserSdkSymbol;
+  return cachedParserSdk;
+}
+
+function networkIdToFacadeName(networkId) {
+  return Number(networkId) === NetworkType.TESTNET ? "testnet" : "mainnet";
 }
 
 function normalizeAddressText(raw) {
@@ -47,16 +56,30 @@ function isValidAddressShape(addr) {
 }
 
 /* ============================================================
-   EXYM Wallet形式: data.payload は「宛先=自分・数量0」の未署名
-   TransferTransactionのシリアライズ済みバイト列(16進)。
+   EXYM Wallet形式(受取リクエストQR): data.payload は「宛先=自分・
+   数量0」の未署名TransferTransactionのシリアライズ済みバイト列(16進)。
    これをデシリアライズしてrecipientAddressだけを取り出す。
+   (deserializeはバイト列そのものから判別するため、facadeの
+   ネットワークがどちらでも結果は変わらない)
 ============================================================ */
 async function extractAddressFromExymPayload(payloadHex) {
-  const sdkSymbol = await ensureParserSdkSymbol();
-  const facade = new sdkSymbol.SymbolFacade("mainnet");
+  const sdk = await ensureParserSdk();
+  const facade = new sdk.symbol.SymbolFacade("mainnet");
   const bytes = hexToBytes(payloadHex);
   const tx = facade.transactionFactory.static.deserialize(bytes);
   return normalizeAddressText(tx.recipientAddress?.toString());
+}
+
+/* ============================================================
+   EXYM Wallet形式(アカウントQR/ContactQR): data.publicKey とQR内の
+   network_idから、そのアカウントのアドレスを導出する。
+============================================================ */
+async function extractAddressFromPublicKey(publicKeyHex, networkId) {
+  const sdk = await ensureParserSdk();
+  const facade = new sdk.symbol.SymbolFacade(networkIdToFacadeName(networkId));
+  const pub = new sdk.core.PublicKey(publicKeyHex);
+  const publicAccount = facade.createPublicAccount(pub);
+  return normalizeAddressText(publicAccount.address?.toString());
 }
 
 /* ============================================================
@@ -74,6 +97,14 @@ async function parseAddressFromQrText(text) {
       if (typeof json.data.address === "string") {
         const addr = normalizeAddressText(json.data.address);
         if (isValidAddressShape(addr)) return addr;
+      }
+      if (typeof json.data.publicKey === "string") {
+        try {
+          const addr = await extractAddressFromPublicKey(json.data.publicKey, json.network_id);
+          if (isValidAddressShape(addr)) return addr;
+        } catch (e) {
+          console.warn("公開鍵からのアドレス導出に失敗しました:", e);
+        }
       }
       if (typeof json.data.payload === "string") {
         try {
