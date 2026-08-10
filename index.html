@@ -76,6 +76,7 @@
       </p>
 
       <input id="address-lookup-input" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX">
+      <button id="address-lookup-qr-btn" class="account-hide-btn" type="button">📷 QRコードを読み取る</button>
 
       <button id="address-lookup-submit-btn" class="button-primary">照会する</button>
       <div id="address-lookup-status"></div>
@@ -1587,6 +1588,23 @@
      送金・ネームスペース登録・モザイク作成・マルチシグ提案など、
      ノードへブロードキャストする直前に必ずこの画面を経由する。
 ============================================================ -->
+<dialog id="qr-scan-dialog">
+  <div class="card">
+    <h2>QRコードを読み取る</h2>
+    <p style="font-size:13px;color:#94a3b8;">
+      Symbol Wallet形式・EXYM Wallet形式・NFTDrive形式のアドレスQRコードに対応しています。
+      カメラにQRコードを映してください。
+    </p>
+
+    <video id="qr-scan-video" playsinline muted style="width:100%;border-radius:8px;background:#000;"></video>
+    <div id="qr-scan-status" style="font-size:13px;color:#94a3b8;margin-top:8px;"></div>
+
+    <div class="confirm-tx-actions">
+      <button id="qr-scan-cancel-btn" class="account-hide-btn" type="button">キャンセル</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="tx-confirm-dialog">
   <div class="card">
     <h2>トランザクション確認</h2>
@@ -1652,6 +1670,7 @@
 <script src="js/settings.js"></script>
 <script src="js/sss.js"></script>
 <script src="js/transfer.js"></script>
+<script src="js/qrScanner.js"></script>
 <script src="js/index.js"></script>
 
 </body>
