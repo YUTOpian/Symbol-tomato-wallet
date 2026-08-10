@@ -819,6 +819,10 @@ window.addEventListener("load", async () => {
     loadDataPage();
   });
 
+  document.getElementById("onchain-analysis-run-btn")?.addEventListener("click", () => {
+    W.onchainAnalysis?.loadOnchainAnalysis();
+  });
+
   document.getElementById("back-account-data")?.addEventListener("click", () => showPage(accountPage));
 
   document.getElementById("menu-namespace")?.addEventListener("click", async () => {
