@@ -827,6 +827,18 @@ window.addEventListener("load", async () => {
     W.onchainAnalysis?.loadOnchainAnalysis("yesterday");
   });
 
+  document.getElementById("exchange-flow-run-24h-btn")?.addEventListener("click", () => {
+    W.exchangeFlow?.loadExchangeFlowAnalysis("24h");
+  });
+
+  document.getElementById("exchange-flow-run-7d-btn")?.addEventListener("click", () => {
+    W.exchangeFlow?.loadExchangeFlowAnalysis("7d");
+  });
+
+  document.getElementById("exchange-flow-run-30d-btn")?.addEventListener("click", () => {
+    W.exchangeFlow?.loadExchangeFlowAnalysis("30d");
+  });
+
   document.getElementById("back-account-data")?.addEventListener("click", () => showPage(accountPage));
 
   document.getElementById("menu-namespace")?.addEventListener("click", async () => {

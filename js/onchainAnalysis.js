@@ -252,8 +252,10 @@ function renderWhaleList(whales) {
 /* ============================================================
    集計対象のブロック高範囲を決定する
    mode: "rolling24h"(現在時刻から過去24時間) | "yesterday"(UTC昨日 0:00〜24:00)
+         | "rollingHours"(現在時刻から過去 hours 時間。exchangeFlow.js等の
+            他モジュールから任意の期間で呼び出すために用意)
 ============================================================ */
-async function computeHeightRange(mode) {
+async function computeHeightRange(mode, hours) {
   const chainInfo = await fetch(new URL("/chain/info", appState.NODE)).then((r) => r.json());
   const currentHeight = Number(chainInfo.height);
   const currentTimestampMs = await fetchBlockTimestampMs(currentHeight);
@@ -267,6 +269,9 @@ async function computeHeightRange(mode) {
     fromMs = todayMidnightMs - 24 * 60 * 60 * 1000;
     const boundaryHeight = await findHeightForTimestamp(todayMidnightMs, currentHeight, currentTimestampMs);
     toHeight = Math.max(1, boundaryHeight - 1); // 今日0:00より前の最後の高さまでを「昨日」とする
+  } else if (mode === "rollingHours") {
+    fromMs = now.getTime() - (Number(hours) || 24) * 60 * 60 * 1000;
+    toHeight = currentHeight;
   } else {
     fromMs = now.getTime() - 24 * 60 * 60 * 1000;
     toHeight = currentHeight;
@@ -378,6 +383,8 @@ async function loadOnchainAnalysis(mode) {
 
 window.W.onchainAnalysis = {
   loadOnchainAnalysis,
+  computeHeightRange,
+  fetchBlockTimestampMs,
 };
 
 })();
