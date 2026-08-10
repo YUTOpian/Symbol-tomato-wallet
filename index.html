@@ -76,7 +76,6 @@
       </p>
 
       <input id="address-lookup-input" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX">
-      <button id="address-lookup-qr-btn" class="account-hide-btn" type="button">📷 QRコードを読み取る</button>
 
       <button id="address-lookup-submit-btn" class="button-primary">照会する</button>
       <div id="address-lookup-status"></div>
@@ -823,51 +822,21 @@
             </div>
           </div>
         </div>
-        <div class="data-card data-card-wide">
-          <div class="data-card-title">オンチェーン分析</div>
-          <div style="font-size:12px;color:#94a3b8;margin:2px 0 8px;">
-            ブロックを遡って集計するため、少し時間がかかることがあります。
-            送金以外のトランザクション種別(モザイク作成・ネームスペース登録等)の
-            参加者は「アクティブアカウント数」に含まれない概算値です。
-          </div>
-          <button id="onchain-analysis-run-rolling-btn" class="button-primary" type="button">過去24時間</button>
-          <button id="onchain-analysis-run-yesterday-btn" class="button-primary" type="button">昨日(UTC)</button>
-          <div id="onchain-analysis-range-title" style="font-size:13px;font-weight:bold;margin-top:8px;color:#e5e7eb;"></div>
-          <div id="onchain-analysis-status" style="font-size:12px;color:#94a3b8;margin-top:6px;"></div>
+      </div>
 
-          <div class="data-card-mini-grid" style="margin-top:10px;">
-            <div class="data-card-mini">
-              <div class="data-card-mini-label">24時間トランザクション数</div>
-              <div id="onchain-tx-count" class="data-card-mini-value">---</div>
-            </div>
-            <div class="data-card-mini">
-              <div class="data-card-mini-label">アクティブアカウント数</div>
-              <div id="onchain-active-accounts" class="data-card-mini-value">---</div>
-            </div>
-            <div class="data-card-mini">
-              <div class="data-card-mini-label">平均ブロック生成間隔</div>
-              <div id="onchain-avg-block-time" class="data-card-mini-value">---</div>
-            </div>
-            <div class="data-card-mini">
-              <div class="data-card-mini-label">XYM総移動量</div>
-              <div id="onchain-xym-volume" class="data-card-mini-value">---</div>
-            </div>
-            <div class="data-card-mini">
-              <div class="data-card-mini-label">送金件数</div>
-              <div id="onchain-transfer-count" class="data-card-mini-value">---</div>
-            </div>
-            <div class="data-card-mini">
-              <div class="data-card-mini-label">送金元アドレス数</div>
-              <div id="onchain-sender-count" class="data-card-mini-value">---</div>
-            </div>
-            <div class="data-card-mini">
-              <div class="data-card-mini-label">送金先アドレス数</div>
-              <div id="onchain-recipient-count" class="data-card-mini-value">---</div>
-            </div>
-          </div>
-
-          <div class="data-card-title" style="margin-top:14px;">大口送金(10,000 XYM以上)</div>
-          <div id="onchain-whale-list" style="font-size:13px;">「過去24時間」または「昨日(UTC)」を押してください</div>
+      <h3>直近24時間の統計</h3>
+      <div class="data-card-grid">
+        <div class="data-card">
+          <div id="data-24h-block-interval" class="data-card-value">---</div>
+          <div class="data-card-label">平均ブロック生成間隔</div>
+        </div>
+        <div class="data-card">
+          <div id="data-24h-xym-volume" class="data-card-value">---</div>
+          <div class="data-card-label">XYM総移動量</div>
+        </div>
+        <div class="data-card">
+          <div id="data-24h-transfer-count" class="data-card-value">---</div>
+          <div class="data-card-label">送金件数</div>
         </div>
       </div>
 
@@ -908,6 +877,9 @@
         </button>
         <button id="menu-restriction" class="settings-menu-item">
           🚧 制限機能
+        </button>
+        <button id="menu-offline-tx" class="settings-menu-item">
+          📡 オフライントランザクション
         </button>
         <button id="menu-offline-import" class="settings-menu-item">
           📥 オフライン署名データを読み込む
@@ -1219,15 +1191,10 @@
           <option value="">-- 読み込み中... --</option>
         </select>
 
-        <p><b>モザイク：</b></p>
-        <select id="multisig-send-mosaic-select" class="input-box">
-          <option value="">-- 先に送金元マルチシグアカウントを選択してください --</option>
-        </select>
-
         <p><b>宛先アドレス：</b></p>
         <input id="multisig-send-recipient" class="input-box" placeholder="宛先アドレス">
 
-        <p><b>送金額：</b></p>
+        <p><b>送金額（XYM）：</b></p>
         <input id="multisig-send-amount" class="input-box" type="number" min="0" step="any" value="0">
 
         <p><b>メッセージ（任意）：</b></p>
@@ -1592,6 +1559,46 @@
   </div>
 
   <!-- ============================================================
+       オフライントランザクション作成・署名(ログイン中のみ)
+  ============================================================ -->
+  <div id="offline-tx-create-page" class="page">
+    <div class="card">
+      <h2>オフライントランザクション</h2>
+      <button id="back-advanced-offline-tx" class="button-primary">← 戻る</button>
+
+      <p style="font-size:13px;color:#94a3b8;">
+        ここで作成した送金内容はこの場で署名され、ノードへは送信されません。
+        署名済みデータをJSONファイルとして保存し、オンライン環境の端末でブロードキャストしてください。
+        秘密鍵がオンライン環境に渡ることはありません。
+      </p>
+
+      <p><b>宛先アドレス：</b></p>
+      <input id="offline-tx-recipient" class="input-box" placeholder="宛先アドレス">
+
+      <p><b>モザイクID（16進、空欄ならXYM）：</b></p>
+      <input id="offline-tx-mosaic" class="input-box" placeholder="空欄ならXYM">
+
+      <p><b>数量：</b></p>
+      <input id="offline-tx-amount" class="input-box" type="number" min="0" step="any" value="0">
+
+      <p><b>メッセージ（任意）：</b></p>
+      <textarea id="offline-tx-message" class="input-box" placeholder="メッセージ"></textarea>
+
+      <button id="offline-tx-sign-btn" class="button-primary">署名してファイルを生成する</button>
+      <div id="offline-tx-status"></div>
+
+      <div id="offline-tx-result" style="display:none;">
+        <hr>
+        <h3>署名済みデータ</h3>
+        <div style="font-size:12px;color:#94a3b8;word-break:break-all;">
+          Hash: <span id="offline-tx-hash"></span>
+        </div>
+        <button id="offline-tx-download-btn" class="button-primary">📥 JSONファイルをダウンロード</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        オフライン署名データの読み込み・ブロードキャスト(ログイン不要)
   ============================================================ -->
   <div id="offline-broadcast-page" class="page">
@@ -1634,23 +1641,6 @@
      送金・ネームスペース登録・モザイク作成・マルチシグ提案など、
      ノードへブロードキャストする直前に必ずこの画面を経由する。
 ============================================================ -->
-<dialog id="qr-scan-dialog">
-  <div class="card">
-    <h2>QRコードを読み取る</h2>
-    <p style="font-size:13px;color:#94a3b8;">
-      Symbol Wallet形式・EXYM Wallet形式・NFTDrive形式のアドレスQRコードに対応しています。
-      カメラにQRコードを映してください。
-    </p>
-
-    <video id="qr-scan-video" playsinline muted style="width:100%;border-radius:8px;background:#000;"></video>
-    <div id="qr-scan-status" style="font-size:13px;color:#94a3b8;margin-top:8px;"></div>
-
-    <div class="confirm-tx-actions">
-      <button id="qr-scan-cancel-btn" class="account-hide-btn" type="button">キャンセル</button>
-    </div>
-  </div>
-</dialog>
-
 <dialog id="tx-confirm-dialog">
   <div class="card">
     <h2>トランザクション確認</h2>
@@ -1703,7 +1693,6 @@
 <script src="js/rentalFees.js"></script>
 <script src="js/namespace.js"></script>
 <script src="js/dataPage.js"></script>
-<script src="js/onchainAnalysis.js"></script>
 <script src="js/txStatusTracker.js"></script>
 <script src="js/harvest.js"></script>
 <script src="js/metadata.js"></script>
@@ -1717,7 +1706,6 @@
 <script src="js/settings.js"></script>
 <script src="js/sss.js"></script>
 <script src="js/transfer.js"></script>
-<script src="js/qrScanner.js"></script>
 <script src="js/index.js"></script>
 
 </body>
