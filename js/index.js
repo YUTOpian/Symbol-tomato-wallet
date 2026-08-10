@@ -819,8 +819,12 @@ window.addEventListener("load", async () => {
     loadDataPage();
   });
 
-  document.getElementById("onchain-analysis-run-btn")?.addEventListener("click", () => {
-    W.onchainAnalysis?.loadOnchainAnalysis();
+  document.getElementById("onchain-analysis-run-rolling-btn")?.addEventListener("click", () => {
+    W.onchainAnalysis?.loadOnchainAnalysis("rolling24h");
+  });
+
+  document.getElementById("onchain-analysis-run-yesterday-btn")?.addEventListener("click", () => {
+    W.onchainAnalysis?.loadOnchainAnalysis("yesterday");
   });
 
   document.getElementById("back-account-data")?.addEventListener("click", () => showPage(accountPage));

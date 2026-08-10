@@ -7,18 +7,21 @@
 // 「今」の状態を集計できるものだけを対象にしている(過去の残高推移や、
 // 取引所アドレス一覧が前提になるような指標は対象外)。
 //
+// 集計期間は2種類から選べる:
+//   - 過去24時間(rolling24h): 現在時刻から遡って24時間
+//   - 昨日(yesterday): UTCでの昨日 0:00〜24:00 の固定1日分
+//
 // 集計対象:
-//   - 24時間トランザクション数(本日UTC 0:00〜現在。全トランザクション種別)
-//   - アクティブアカウント数(本日、XYMの送受信をしたアドレスの延べ数。※送金以外の
+//   - トランザクション数(全トランザクション種別)
+//   - アクティブアカウント数(期間中、XYMの送受信をしたアドレスの延べ数。※送金以外の
 //     操作(モザイク作成等)のみを行ったアカウントは含まない概算値)
-//   - 平均ブロック生成間隔(本日分の実測値)
-//   - 24時間のXYM移動量(総移動量・送金件数・送金元/送金先アドレス数)
+//   - 平均ブロック生成間隔(期間中の実測値)
+//   - XYM移動量(総移動量・送金件数・送金元/送金先アドレス数)
 //   - 大口送金一覧(閾値以上のXYM送金)
 //
-// 集計はブロック高の範囲(今日のUTC 0:00に対応する高さ 〜 最新高さ)を
-// 二分探索で特定したうえで、/transactions/confirmed に fromHeight/toHeight
-// を指定して取得する。件数はpagination.totalEntriesを使うことで、
-// 全件取得せずに済む部分は極力軽量に済ませている。
+// 集計はブロック高の範囲を二分探索で特定したうえで、/transactions/confirmed に
+// fromHeight/toHeight を指定して取得する。件数はpagination.totalEntriesを
+// 使うことで、全件取得せずに済む部分は極力軽量に済ませている。
 
 const {appState} = W.config;
 const {getXymMosaicIdHex} = W.config;
@@ -201,45 +204,78 @@ function renderWhaleList(whales) {
 }
 
 /* ============================================================
-   分析本体。「データ」画面の「オンチェーン分析」カードから呼ばれる。
+   集計対象のブロック高範囲を決定する
+   mode: "rolling24h"(現在時刻から過去24時間) | "yesterday"(UTC昨日 0:00〜24:00)
 ============================================================ */
-async function loadOnchainAnalysis() {
+async function computeHeightRange(mode) {
+  const chainInfo = await fetch(new URL("/chain/info", appState.NODE)).then((r) => r.json());
+  const currentHeight = Number(chainInfo.height);
+  const currentTimestampMs = await fetchBlockTimestampMs(currentHeight);
+
+  const now = new Date();
+  const todayMidnightMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0);
+
+  let fromMs, toHeight;
+
+  if (mode === "yesterday") {
+    fromMs = todayMidnightMs - 24 * 60 * 60 * 1000;
+    const boundaryHeight = await findHeightForTimestamp(todayMidnightMs, currentHeight, currentTimestampMs);
+    toHeight = Math.max(1, boundaryHeight - 1); // 今日0:00より前の最後の高さまでを「昨日」とする
+  } else {
+    fromMs = now.getTime() - 24 * 60 * 60 * 1000;
+    toHeight = currentHeight;
+  }
+
+  const fromHeight = await findHeightForTimestamp(fromMs, currentHeight, currentTimestampMs);
+  const fromTimestampMs = await fetchBlockTimestampMs(fromHeight);
+  const toTimestampMs = toHeight === currentHeight ? currentTimestampMs : await fetchBlockTimestampMs(toHeight);
+
+  return { fromHeight, toHeight, fromTimestampMs, toTimestampMs };
+}
+
+/* ============================================================
+   分析本体。「データ」画面の「オンチェーン分析」カードから呼ばれる。
+   mode: "rolling24h" | "yesterday"
+============================================================ */
+async function loadOnchainAnalysis(mode) {
   const setText = (id, text) => {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
   };
   const statusEl = document.getElementById("onchain-analysis-status");
-  const runBtn = document.getElementById("onchain-analysis-run-btn");
+  const runBtns = [
+    document.getElementById("onchain-analysis-run-rolling-btn"),
+    document.getElementById("onchain-analysis-run-yesterday-btn"),
+  ];
 
   if (!appState.NODE || !appState.epochAdjustment || !appState.facade) {
     if (statusEl) statusEl.textContent = "接続完了後にご利用いただけます。";
     return;
   }
 
-  if (runBtn) runBtn.disabled = true;
-  if (statusEl) statusEl.textContent = "集計対象のブロック範囲を特定しています...";
+  runBtns.forEach((b) => { if (b) b.disabled = true; });
+  if (statusEl) {
+    statusEl.textContent =
+      (mode === "yesterday" ? "昨日(UTC)の" : "過去24時間の") + "集計対象のブロック範囲を特定しています...";
+  }
 
   const whaleListEl = document.getElementById("onchain-whale-list");
   if (whaleListEl) whaleListEl.innerHTML = `<div style="color:#94a3b8;">読み込み中...</div>`;
 
+  const titleEl = document.getElementById("onchain-analysis-range-title");
+  if (titleEl) {
+    titleEl.textContent = mode === "yesterday" ? "昨日(UTC 0:00〜24:00)" : "過去24時間(現在時刻基準)";
+  }
+
   try {
-    const chainInfo = await fetch(new URL("/chain/info", appState.NODE)).then((r) => r.json());
-    const currentHeight = Number(chainInfo.height);
-    const currentTimestampMs = await fetchBlockTimestampMs(currentHeight);
-
-    const now = new Date();
-    const startOfDayMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0);
-
-    const fromHeight = await findHeightForTimestamp(startOfDayMs, currentHeight, currentTimestampMs);
-    const toHeight = currentHeight;
-    const fromTimestampMs = await fetchBlockTimestampMs(fromHeight);
+    const { fromHeight, toHeight, fromTimestampMs, toTimestampMs } = await computeHeightRange(mode);
 
     // 平均ブロック生成間隔
     const blockCount = toHeight - fromHeight;
-    const avgBlockIntervalSec = blockCount > 0 ? (currentTimestampMs - fromTimestampMs) / 1000 / blockCount : null;
+    const avgBlockIntervalSec = blockCount > 0 ? (toTimestampMs - fromTimestampMs) / 1000 / blockCount : null;
     setText("onchain-avg-block-time", avgBlockIntervalSec != null ? `${avgBlockIntervalSec.toFixed(1)} 秒` : "---");
 
-    // 24時間トランザクション数(全種別。埋め込みトランザクションも含む)
+    // トランザクション数(全種別。埋め込みトランザクションも含む)
     if (statusEl) statusEl.textContent = "トランザクション総数を確認中...";
     const totalTxParams = new URLSearchParams({
       fromHeight: String(fromHeight),
@@ -305,14 +341,19 @@ async function loadOnchainAnalysis() {
     }
 
     const fromDate = new Date(fromTimestampMs);
+    const toDate = new Date(toTimestampMs);
+    const rangeLabel =
+      mode === "yesterday"
+        ? `${fromDate.toISOString().replace("T", " ").slice(0, 19)} 〜 ${toDate.toISOString().replace("T", " ").slice(0, 19)} UTC`
+        : `${fromDate.toISOString().replace("T", " ").slice(0, 19)} UTC 〜 現在`;
     if (statusEl) {
-      statusEl.textContent = `集計範囲: 高さ ${fromHeight.toLocaleString("ja-JP")} 〜 ${toHeight.toLocaleString("ja-JP")}（${fromDate.toISOString().replace("T", " ").slice(0, 19)} UTC 〜 現在）`;
+      statusEl.textContent = `集計範囲: 高さ ${fromHeight.toLocaleString("ja-JP")} 〜 ${toHeight.toLocaleString("ja-JP")}（${rangeLabel}）`;
     }
   } catch (e) {
     console.error("loadOnchainAnalysis error:", e);
     if (statusEl) statusEl.textContent = "オンチェーン分析の取得に失敗しました。";
   } finally {
-    if (runBtn) runBtn.disabled = false;
+    runBtns.forEach((b) => { if (b) b.disabled = false; });
   }
 }
 
