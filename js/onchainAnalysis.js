@@ -30,8 +30,7 @@ const {formatMosaicAmount} = W.utils;
 const TRANSFER_TYPE = 16724; // Transfer Transaction
 const WHALE_THRESHOLD_XYM = 10000; // 大口送金とみなす閾値
 const SCAN_PAGE_SIZE = 100;
-const SCAN_MAX_PAGES = 200; // 安全のための上限(最大 20,000 件)
-const DETAIL_SCAN_LIMIT = 20000; // これを超える送金件数の日は詳細集計(合計量・送金元/先等)を省略する
+const SCAN_MAX_PAGES = 200; // 安全のための上限(最大 20,000 件 / 20,000 ブロック)
 
 /* ============================================================
    REST APIのアドレス表現(16進 or base32)を統一する
@@ -156,14 +155,61 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
 
     onProgress?.(pageNumber);
 
-    const totalPages = json.pagination?.totalPages ?? pageNumber;
-    if (pageNumber >= totalPages) break;
+    // 新しいcatapult-restではpagination.totalPagesが廃止されているため、
+    // 「フルページ未満が返ってきたら最終ページ」という判定で継続/終了を決める
+    if (items.length < SCAN_PAGE_SIZE) break;
     pageNumber++;
   }
 
   if (pageNumber > SCAN_MAX_PAGES) truncated = true;
 
   return { totalAmount, transferCount, senderPublicKeys, recipientAddresses, whales, truncated };
+}
+
+/* ============================================================
+   指定した高さ範囲の全トランザクション数(埋め込みトランザクション含む)を、
+   個々のトランザクションではなくブロック一覧から集計する。
+   ブロックには totalTransactionsCount(埋め込み含む合計)が入っているため、
+   /transactions/confirmed を全件ページングするより大幅に少ないリクエスト数で済む。
+   /blocks は offset(=直前に見た高さ)を使ったカーソル方式でページングする。
+============================================================ */
+async function sumTransactionCountFromBlocks(fromHeight, toHeight) {
+  let total = 0;
+  let cursor = fromHeight - 1;
+  let pageNumber = 1;
+  let truncated = false;
+  let reachedEnd = false;
+
+  while (pageNumber <= SCAN_MAX_PAGES) {
+    const params = new URLSearchParams({
+      offset: String(cursor),
+      order: "asc",
+      pageSize: String(SCAN_PAGE_SIZE),
+    });
+
+    const res = await fetch(`${appState.NODE}/blocks?${params}`);
+    const json = await res.json();
+    const items = json.data ?? [];
+    if (items.length === 0) break;
+
+    for (const item of items) {
+      const height = Number(item.block.height);
+      if (height > toHeight) {
+        reachedEnd = true;
+        break;
+      }
+      total += Number(item.block.totalTransactionsCount ?? item.block.transactionsCount ?? 0);
+      cursor = height;
+    }
+
+    if (reachedEnd) break;
+    if (items.length < SCAN_PAGE_SIZE) break;
+    pageNumber++;
+  }
+
+  if (!reachedEnd && pageNumber > SCAN_MAX_PAGES) truncated = true;
+
+  return { total, truncated };
 }
 
 function renderWhaleList(whales) {
@@ -276,69 +322,42 @@ async function loadOnchainAnalysis(mode) {
     setText("onchain-avg-block-time", avgBlockIntervalSec != null ? `${avgBlockIntervalSec.toFixed(1)} 秒` : "---");
 
     // トランザクション数(全種別。埋め込みトランザクションも含む)
-    if (statusEl) statusEl.textContent = "トランザクション総数を確認中...";
-    const totalTxParams = new URLSearchParams({
-      fromHeight: String(fromHeight),
-      toHeight: String(toHeight),
-      embedded: "true",
-      pageSize: "1",
-      pageNumber: "1",
-    });
-    const totalTxJson = await fetch(`${appState.NODE}/transactions/confirmed?${totalTxParams}`).then((r) => r.json());
-    const totalTxCount = totalTxJson.pagination?.totalEntries;
-    setText("onchain-tx-count", totalTxCount != null ? totalTxCount.toLocaleString("ja-JP") + " 件" : "取得失敗");
-
-    // XYM送金の件数をまず軽量に確認する
-    const xymId = getXymMosaicIdHex();
-    const transferCountParams = new URLSearchParams({
-      type: String(TRANSFER_TYPE),
-      fromHeight: String(fromHeight),
-      toHeight: String(toHeight),
-      embedded: "true",
-      pageSize: "1",
-      pageNumber: "1",
-    });
-    const transferCountJson = await fetch(`${appState.NODE}/transactions/confirmed?${transferCountParams}`).then((r) =>
-      r.json()
+    // ブロック一覧のtotalTransactionsCountを合算する(トランザクション自体を
+    // 全件フェッチするより大幅に軽量)
+    if (statusEl) statusEl.textContent = "トランザクション総数を集計中...";
+    const txCountResult = await sumTransactionCountFromBlocks(fromHeight, toHeight);
+    setText(
+      "onchain-tx-count",
+      txCountResult.total.toLocaleString("ja-JP") + " 件" + (txCountResult.truncated ? " 以上(打ち切り)" : "")
     );
-    const totalTransferCount = transferCountJson.pagination?.totalEntries ?? 0;
 
-    if (totalTransferCount > DETAIL_SCAN_LIMIT) {
-      setText("onchain-transfer-count", `${totalTransferCount.toLocaleString("ja-JP")} 件(送金取引に限らない可能性あり)`);
-      setText("onchain-xym-volume", "件数が多いため省略");
-      setText("onchain-sender-count", "省略");
-      setText("onchain-recipient-count", "省略");
-      setText("onchain-active-accounts", "省略");
-      if (whaleListEl) {
-        whaleListEl.innerHTML = `<div style="color:#94a3b8;">送金件数が多いため、大口送金の集計は省略しました</div>`;
-      }
-    } else {
-      if (statusEl) statusEl.textContent = "XYM送金トランザクションを集計中...";
-      const result = await scanXymTransfers(fromHeight, toHeight, xymId, (page) => {
-        if (statusEl) statusEl.textContent = `XYM送金トランザクションを集計中...(${page}ページ目)`;
-      });
+    const xymId = getXymMosaicIdHex();
 
-      const suffix = result.truncated ? " 以上(件数が多いため打ち切り)" : "";
+    if (statusEl) statusEl.textContent = "XYM送金トランザクションを集計中...";
+    const result = await scanXymTransfers(fromHeight, toHeight, xymId, (page) => {
+      if (statusEl) statusEl.textContent = `XYM送金トランザクションを集計中...(${page}ページ目)`;
+    });
 
-      setText("onchain-transfer-count", result.transferCount.toLocaleString("ja-JP") + " 件" + suffix);
-      setText("onchain-xym-volume", formatMosaicAmount(result.totalAmount, 6) + " XYM" + suffix);
+    const suffix = result.truncated ? " 以上(件数が多いため打ち切り)" : "";
 
-      let senderAddresses;
-      try {
-        senderAddresses = new Set([...result.senderPublicKeys].map(publicKeyToAddress));
-      } catch (e) {
-        console.warn("送金元アドレス変換に失敗しました:", e);
-        senderAddresses = result.senderPublicKeys;
-      }
+    setText("onchain-transfer-count", result.transferCount.toLocaleString("ja-JP") + " 件" + suffix);
+    setText("onchain-xym-volume", formatMosaicAmount(result.totalAmount, 6) + " XYM" + suffix);
 
-      setText("onchain-sender-count", senderAddresses.size.toLocaleString("ja-JP") + " アドレス" + suffix);
-      setText("onchain-recipient-count", result.recipientAddresses.size.toLocaleString("ja-JP") + " アドレス" + suffix);
-
-      const activeAccounts = new Set([...senderAddresses, ...result.recipientAddresses]);
-      setText("onchain-active-accounts", activeAccounts.size.toLocaleString("ja-JP") + " アドレス(送金ベースの概算)" + suffix);
-
-      renderWhaleList(result.whales);
+    let senderAddresses;
+    try {
+      senderAddresses = new Set([...result.senderPublicKeys].map(publicKeyToAddress));
+    } catch (e) {
+      console.warn("送金元アドレス変換に失敗しました:", e);
+      senderAddresses = result.senderPublicKeys;
     }
+
+    setText("onchain-sender-count", senderAddresses.size.toLocaleString("ja-JP") + " アドレス" + suffix);
+    setText("onchain-recipient-count", result.recipientAddresses.size.toLocaleString("ja-JP") + " アドレス" + suffix);
+
+    const activeAccounts = new Set([...senderAddresses, ...result.recipientAddresses]);
+    setText("onchain-active-accounts", activeAccounts.size.toLocaleString("ja-JP") + " アドレス(送金ベースの概算)" + suffix);
+
+    renderWhaleList(result.whales);
 
     const fromDate = new Date(fromTimestampMs);
     const toDate = new Date(toTimestampMs);
