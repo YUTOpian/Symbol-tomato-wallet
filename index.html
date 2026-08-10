@@ -853,6 +853,25 @@
           <div class="data-card-title" style="margin-top:14px;">大口送金(10,000 XYM以上)</div>
           <div id="onchain-whale-list" style="font-size:13px;">「過去24時間」または「昨日(UTC)」を押してください</div>
         </div>
+
+        <div class="data-card data-card-wide">
+          <div class="data-card-title">取引所フロー分析</div>
+          <div style="font-size:12px;color:#94a3b8;margin:2px 0 8px;">
+            主要取引所アドレスへのXYM入金(流入)と、そこからの出金(流出)を集計します。
+            対象アドレスへの送金は流入、対象アドレスからの送金は流出として計算しています。
+            ブロックを遡って集計するため、期間が長いほど時間がかかることがあります。
+          </div>
+          <button id="exchange-flow-run-24h-btn" class="button-primary" type="button">過去24時間</button>
+          <button id="exchange-flow-run-7d-btn" class="button-primary" type="button">過去7日間</button>
+          <button id="exchange-flow-run-30d-btn" class="button-primary" type="button">過去30日間</button>
+          <div id="exchange-flow-range-title" style="font-size:13px;font-weight:bold;margin-top:8px;color:#e5e7eb;"></div>
+          <div id="exchange-flow-status" style="font-size:12px;color:#94a3b8;margin-top:6px;"></div>
+
+          <div id="exchange-flow-summary" style="margin-top:10px;font-size:13px;"></div>
+
+          <div class="data-card-title" style="margin-top:14px;">取引所別内訳</div>
+          <div id="exchange-flow-list" style="font-size:13px;">「過去24時間」「過去7日間」「過去30日間」いずれかを押してください</div>
+        </div>
       </div>
 
       <div id="data-page-status"></div>
@@ -1688,6 +1707,7 @@
 <script src="js/namespace.js"></script>
 <script src="js/dataPage.js"></script>
 <script src="js/onchainAnalysis.js"></script>
+<script src="js/exchangeFlow.js"></script>
 <script src="js/txStatusTracker.js"></script>
 <script src="js/harvest.js"></script>
 <script src="js/metadata.js"></script>
