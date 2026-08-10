@@ -860,6 +860,8 @@
             主要取引所アドレスへのXYM入金(流入)と、そこからの出金(流出)を集計します。
             対象アドレスへの送金は流入、対象アドレスからの送金は流出として計算しています。
             ブロックを遡って集計するため、期間が長いほど時間がかかることがあります。
+            各取引所の行をクリックすると、流入・流出の取引履歴を表示します
+            (10万XYM以上の取引は<span style="color:#facc15;">黄色</span>、100万XYM以上の取引は<span style="color:#f87171;">赤色</span>で強調表示されます)。
           </div>
           <button id="exchange-flow-run-24h-btn" class="button-primary" type="button">過去24時間</button>
           <button id="exchange-flow-run-7d-btn" class="button-primary" type="button">過去7日間</button>
@@ -875,6 +877,24 @@
       </div>
 
       <div id="data-page-status"></div>
+    </div>
+  </div>
+
+  <div id="exchange-flow-detail-page" class="page">
+    <div class="card">
+      <h2 id="exchange-flow-detail-title">取引所の流入・流出履歴</h2>
+      <button id="back-exchange-flow-detail" class="button-primary">← 戻る</button>
+
+      <div id="exchange-flow-detail-address" style="font-size:12px;color:#94a3b8;margin-top:8px;word-break:break-all;"></div>
+      <div id="exchange-flow-detail-range" style="font-size:12px;color:#94a3b8;margin-top:2px;"></div>
+
+      <div id="exchange-flow-detail-summary" style="margin-top:10px;font-size:13px;"></div>
+
+      <h3 style="margin-top:16px;">取引履歴</h3>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;">
+        10万XYM以上の取引は<span style="color:#facc15;">黄色</span>、100万XYM以上の取引は<span style="color:#f87171;">赤色</span>で表示しています。
+      </div>
+      <div id="exchange-flow-detail-list" style="font-size:13px;"></div>
     </div>
   </div>
 
