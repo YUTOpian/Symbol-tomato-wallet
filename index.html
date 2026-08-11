@@ -848,10 +848,20 @@
               <div class="data-card-mini-label">送金件数</div>
               <div id="onchain-transfer-count" class="data-card-mini-value">---</div>
             </div>
+            <div class="data-card-mini">
+              <div class="data-card-mini-label">24時間トランザクション数(全種別)</div>
+              <div id="onchain-tx-count" class="data-card-mini-value">---</div>
+            </div>
+            <div class="data-card-mini">
+              <div class="data-card-mini-label">ハーベスター数</div>
+              <div id="onchain-harvester-count" class="data-card-mini-value">---</div>
+            </div>
+            <div id="onchain-whale-count-card" class="data-card-mini" style="cursor:pointer;">
+              <div class="data-card-mini-label">大口XYM移動件数(10,000 XYM以上)</div>
+              <div id="onchain-whale-count" class="data-card-mini-value">---</div>
+              <div style="font-size:11px;color:#60a5fa;margin-top:2px;">クリックで一覧を見る →</div>
+            </div>
           </div>
-
-          <div class="data-card-title" style="margin-top:14px;">大口送金(10,000 XYM以上)</div>
-          <div id="onchain-whale-list" style="font-size:13px;">「過去24時間」または「昨日(UTC)」を押してください</div>
         </div>
 
         <div class="data-card data-card-wide">
@@ -895,6 +905,22 @@
         10万XYM以上の取引は<span style="color:#facc15;">黄色</span>、100万XYM以上の取引は<span style="color:#f87171;">赤色</span>で表示しています。
       </div>
       <div id="exchange-flow-detail-list" style="font-size:13px;"></div>
+    </div>
+  </div>
+
+  <div id="onchain-whale-detail-page" class="page">
+    <div class="card">
+      <h2>大口XYM移動一覧</h2>
+      <button id="back-onchain-whale-detail" class="button-primary">← 戻る</button>
+
+      <div id="onchain-whale-detail-range" style="font-size:12px;color:#94a3b8;margin-top:8px;"></div>
+      <div id="onchain-whale-detail-summary" style="margin-top:10px;font-size:13px;"></div>
+
+      <h3 style="margin-top:16px;">一覧(10,000 XYM以上)</h3>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;">
+        10万XYM以上の取引は<span style="color:#facc15;">黄色</span>、100万XYM以上の取引は<span style="color:#f87171;">赤色</span>で表示しています。
+      </div>
+      <div id="onchain-whale-detail-list" style="font-size:13px;"></div>
     </div>
   </div>
 
