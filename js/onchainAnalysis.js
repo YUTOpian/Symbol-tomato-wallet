@@ -33,6 +33,7 @@ const WHALE_MID_THRESHOLD_XYM = 100000; // 一覧内での強調表示: これ�
 const WHALE_HIGH_THRESHOLD_XYM = 1000000; // 一覧内での強調表示: これ以上は赤色
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 200; // 安全のための上限(最大 20,000 件 / 20,000 ブロック)
+const BLOCK_FETCH_CONCURRENCY = 8; // ブロック一覧の並列取得数(exchangeFlow.jsのアグリゲート並列取得と同じ考え方)
 
 // 直近の集計結果(大口一覧の詳細画面表示用)
 let lastWhaleResult = null; // { whales, rangeLabel }
@@ -181,23 +182,31 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
    指定した高さ範囲の全トランザクション数(埋め込みトランザクション含む)と、
    ハーベスター(ブロック生成者)の延べ集合を、個々のトランザクションではなく
    ブロック一覧から集計する。
-   ブロックには totalTransactionsCount(埋め込み含む合計)と
-   signerPublicKey(そのブロックを生成したハーベスターの公開鍵)が
-   入っているため、/transactions/confirmed を全件ページングするより
-   大幅に少ないリクエスト数で済む。
-   ページングは fromHeight/toHeight(範囲指定)+ pageNumber を使う
-   (scanXymTransfersや取引所フロー分析と同じ、動作実績のある方式。
-    offsetカーソル方式はノードによってブロック高と一致しないことがあり、
-    その場合1ページ目から0件になってしまうため使わない)
+   ブロックのトランザクション件数は item.meta.totalTransactionsCount に
+   入っている(item.blockはブロック本体のヘッダー情報のみで、集計値は
+   metaに入る)。
+   高さ範囲(fromHeight〜toHeight)はこちらで既知のため、必要なページ数を
+   先に計算し、サーバーからの「次のページがあるか」の応答を待たずに
+   まとめて並列取得する。これにより、ノードによっては toHeight が
+   正しく効かず際限なく取得し続けてしまう問題を避けつつ、速度も改善する。
+   各ページ取得後は、念のためheightがfromHeight〜toHeightの範囲内かを
+   クライアント側でも確認する(サーバー側フィルタが効かない場合の保険)。
 ============================================================ */
 async function summarizeBlocks(fromHeight, toHeight) {
+  const totalBlocksInRange = Math.max(0, toHeight - fromHeight + 1);
+  const maxScannableBlocks = SCAN_MAX_PAGES * SCAN_PAGE_SIZE;
+  const truncated = totalBlocksInRange > maxScannableBlocks;
+  const pageCount = Math.min(SCAN_MAX_PAGES, Math.ceil(totalBlocksInRange / SCAN_PAGE_SIZE));
+
   let total = 0;
-  let pageNumber = 1;
-  let truncated = false;
   let errored = false;
   const harvesterAddresses = new Set();
 
-  while (pageNumber <= SCAN_MAX_PAGES) {
+  if (pageCount <= 0) {
+    return { total, truncated: false, errored, harvesterAddresses };
+  }
+
+  async function fetchPage(pageNumber) {
     const params = new URLSearchParams({
       fromHeight: String(fromHeight),
       toHeight: String(toHeight),
@@ -206,30 +215,48 @@ async function summarizeBlocks(fromHeight, toHeight) {
       pageSize: String(SCAN_PAGE_SIZE),
     });
 
-    let res;
     try {
-      res = await fetch(`${appState.NODE}/blocks?${params}`);
+      const res = await fetch(`${appState.NODE}/blocks?${params}`);
+      if (!res.ok) return { error: true, items: [] };
+      const json = await res.json();
+      return { error: false, items: json.data ?? [] };
     } catch (e) {
-      console.warn("summarizeBlocks: 通信に失敗しました:", e);
-      errored = true;
-      break;
+      console.warn("summarizeBlocks: ページ取得に失敗しました:", e);
+      return { error: true, items: [] };
     }
+  }
 
-    if (!res.ok) {
-      const bodyText = await res.text().catch(() => "");
-      console.warn(`summarizeBlocks: 取得に失敗しました (HTTP ${res.status}):`, bodyText);
-      errored = true;
-      break;
+  // 必要なページ番号をあらかじめ確定させ、並列数を抑えつつまとめて取得する
+  // (multisendRecipientCheck.js / exchangeFlow.jsの並列取得と同じパターン)
+  const pageNumbers = Array.from({ length: pageCount }, (_, i) => i + 1);
+  const pageResults = new Array(pageNumbers.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < pageNumbers.length) {
+      const i = cursor++;
+      pageResults[i] = await fetchPage(pageNumbers[i]);
     }
+  }
 
-    const json = await res.json();
-    const items = json.data ?? [];
-    if (items.length === 0) break;
+  const workers = Array.from({ length: Math.min(BLOCK_FETCH_CONCURRENCY, pageNumbers.length) }, worker);
+  await Promise.all(workers);
 
-    for (const item of items) {
-      total += Number(item.block.totalTransactionsCount ?? item.block.transactionsCount ?? 0);
+  for (const pageResult of pageResults) {
+    if (pageResult.error) {
+      errored = true;
+      continue;
+    }
+    for (const item of pageResult.items) {
+      const height = Number(item.block?.height ?? item.meta?.height);
+      if (Number.isFinite(height) && (height < fromHeight || height > toHeight)) continue; // 範囲外は無視(保険)
 
-      const signerPublicKey = item.block.signerPublicKey;
+      total += Number(
+        item.meta?.totalTransactionsCount ?? item.meta?.transactionsCount ??
+        item.block?.totalTransactionsCount ?? item.block?.transactionsCount ?? 0
+      );
+
+      const signerPublicKey = item.block?.signerPublicKey;
       if (signerPublicKey) {
         try {
           harvesterAddresses.add(publicKeyToAddress(signerPublicKey));
@@ -238,14 +265,7 @@ async function summarizeBlocks(fromHeight, toHeight) {
         }
       }
     }
-
-    // 新しいcatapult-restではpagination.totalPagesが廃止されているため、
-    // 「フルページ未満が返ってきたら最終ページ」という判定で継続/終了を決める
-    if (items.length < SCAN_PAGE_SIZE) break;
-    pageNumber++;
   }
-
-  if (pageNumber > SCAN_MAX_PAGES) truncated = true;
 
   return { total, truncated, errored, harvesterAddresses };
 }
