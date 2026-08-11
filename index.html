@@ -829,6 +829,9 @@
             ブロックを遡って集計するため、少し時間がかかることがあります。
             送金以外のトランザクション種別(モザイク作成・ネームスペース登録等)の
             参加者は「アクティブアカウント数」に含まれない概算値です。
+            「ハーベスト参加XYM合計」は、この期間に実際にブロックを生成した
+            アカウントの現在残高の合計です(ネットワーク全体の委任ハーベスト
+            残高とは異なります)。
           </div>
           <button id="onchain-analysis-run-rolling-btn" class="button-primary" type="button">過去24時間</button>
           <button id="onchain-analysis-run-yesterday-btn" class="button-primary" type="button">昨日(UTC)</button>
@@ -855,6 +858,11 @@
             <div class="data-card-mini">
               <div class="data-card-mini-label">ハーベスター数</div>
               <div id="onchain-harvester-count" class="data-card-mini-value">---</div>
+            </div>
+            <div class="data-card-mini">
+              <div class="data-card-mini-label">ハーベスト参加XYM合計</div>
+              <div id="onchain-harvest-xym-total" class="data-card-mini-value">---</div>
+              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">この期間に実際にブロックを生成したアカウントの現在残高合計</div>
             </div>
             <div id="onchain-whale-count-card" class="data-card-mini" style="cursor:pointer;">
               <div class="data-card-mini-label">大口XYM移動件数(10,000 XYM以上)</div>
