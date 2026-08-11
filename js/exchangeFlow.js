@@ -98,12 +98,15 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
   let inflowCount = 0;
   let outflowCount = 0;
   let truncated = false;
+  let errored = false;
   const transactions = [];
 
   while (pageNumber <= SCAN_MAX_PAGES) {
+    // typeによるサーバー側フィルタはaddressフィルタとの組み合わせでノードによって
+    // 挙動が不安定になることがあるため指定しない。種別判定(送金かどうか)は
+    // 下のループでクライアント側(tx.type)で行う。
     const params = new URLSearchParams({
       address,
-      type: String(TRANSFER_TYPE),
       fromHeight: String(fromHeight),
       toHeight: String(toHeight),
       embedded: "true",
@@ -113,12 +116,21 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
     });
 
     const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`);
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => "");
+      console.warn(`exchangeFlow: ${address} の取得に失敗しました (HTTP ${res.status}):`, bodyText);
+      errored = true;
+      break;
+    }
+
     const json = await res.json();
     const items = json.data ?? [];
     if (items.length === 0) break;
 
     for (const item of items) {
       const tx = item.transaction;
+      if (Number(tx.type) !== TRANSFER_TYPE) continue; // Transfer以外(アグリゲート本体等)は対象外
+
       const mosaics = tx.mosaics || [];
       const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
       if (!xymEntry) continue; // XYMを含まない送金(他モザイクのみ)は対象外
@@ -165,7 +177,7 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
 
   if (pageNumber > SCAN_MAX_PAGES) truncated = true;
 
-  return { inflowAmount, outflowAmount, inflowCount, outflowCount, truncated, transactions };
+  return { inflowAmount, outflowAmount, inflowCount, outflowCount, truncated, errored, transactions };
 }
 
 function netColorOf(net) {
@@ -186,6 +198,16 @@ function amountHighlightColor(amount) {
 }
 
 function rowHtml(ex, result) {
+  if (result.errored) {
+    return `
+      <div class="harvest-history-item exchange-flow-row" data-exchange-id="${ex.id}" style="cursor:pointer;">
+        <div style="font-weight:bold;">${ex.label}</div>
+        <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${ex.address}</div>
+        <div style="color:#f97316;">⚠️ 取得に失敗しました(ノードへの問い合わせエラー)。クリックで詳細画面から再試行の目安を確認できます。</div>
+      </div>
+    `;
+  }
+
   const net = result.inflowAmount - result.outflowAmount;
   const netText = (net > 0n ? "+" : "") + formatMosaicAmount(net, 6) + " XYM";
   const suffix = result.truncated ? " 以上(件数が多いため打ち切り)" : "";
@@ -206,19 +228,23 @@ function renderSummary(results) {
   const el = document.getElementById("exchange-flow-summary");
   if (!el) return;
 
-  const totalInflow = results.reduce((s, r) => s + r.result.inflowAmount, 0n);
-  const totalOutflow = results.reduce((s, r) => s + r.result.outflowAmount, 0n);
+  const okResults = results.filter((r) => !r.result.errored);
+  const erroredExchanges = results.filter((r) => r.result.errored).map((r) => r.ex.label);
+
+  const totalInflow = okResults.reduce((s, r) => s + r.result.inflowAmount, 0n);
+  const totalOutflow = okResults.reduce((s, r) => s + r.result.outflowAmount, 0n);
   const totalNet = totalInflow - totalOutflow;
-  const totalTruncated = results.some((r) => r.result.truncated);
+  const totalTruncated = okResults.some((r) => r.result.truncated);
   const netText = (totalNet > 0n ? "+" : "") + formatMosaicAmount(totalNet, 6) + " XYM";
 
   el.innerHTML = `
     <div class="harvest-history-item">
-      <div style="font-weight:bold;">全取引所合計</div>
+      <div style="font-weight:bold;">全取引所合計${erroredExchanges.length > 0 ? "（取得失敗分を除く）" : ""}</div>
       <div>合計流入: <b style="color:#4ade80;">${formatMosaicAmount(totalInflow, 6)} XYM</b></div>
       <div>合計流出: <b style="color:#f87171;">${formatMosaicAmount(totalOutflow, 6)} XYM</b></div>
       <div>合計純増減: <b style="color:${netColorOf(totalNet)};">${netText}</b></div>
       ${totalTruncated ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">一部のアドレスで件数が多いため集計が打ち切られています</div>` : ""}
+      ${erroredExchanges.length > 0 ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">⚠️ 取得に失敗しました: ${erroredExchanges.join("、")}</div>` : ""}
     </div>
   `;
 }
@@ -265,9 +291,23 @@ async function loadExchangeFlowAnalysis(mode) {
     const results = [];
     for (const ex of EXCHANGES) {
       if (statusEl) statusEl.textContent = `${ex.label} を集計中...`;
-      const result = await scanExchangeAddress(ex.address, fromHeight, toHeight, xymId, (page) => {
-        if (statusEl) statusEl.textContent = `${ex.label} を集計中...(${page}ページ目)`;
-      });
+      let result;
+      try {
+        result = await scanExchangeAddress(ex.address, fromHeight, toHeight, xymId, (page) => {
+          if (statusEl) statusEl.textContent = `${ex.label} を集計中...(${page}ページ目)`;
+        });
+      } catch (e) {
+        console.error(`exchangeFlow: ${ex.label} の集計中にエラーが発生しました:`, e);
+        result = {
+          inflowAmount: 0n,
+          outflowAmount: 0n,
+          inflowCount: 0,
+          outflowCount: 0,
+          truncated: false,
+          errored: true,
+          transactions: [],
+        };
+      }
       results.push({ ex, result });
       lastResultsByExchangeId[ex.id] = { rangeLabel, result };
     }
@@ -343,6 +383,18 @@ function renderExchangeDetail(exId) {
 
   const { rangeLabel, result } = entry;
   if (rangeEl) rangeEl.textContent = rangeLabel;
+
+  if (result.errored) {
+    if (summaryEl) {
+      summaryEl.innerHTML = `
+        <div style="color:#f97316;">⚠️ 取得に失敗しました(ノードへの問い合わせエラー)。「データ」画面に戻って再度集計を実行してください。</div>
+      `;
+    }
+    if (listEl) {
+      listEl.innerHTML = `<div style="color:#94a3b8;">取得に失敗したため、この取引所の履歴は表示できません。</div>`;
+    }
+    return;
+  }
 
   const net = result.inflowAmount - result.outflowAmount;
   const netText = (net > 0n ? "+" : "") + formatMosaicAmount(net, 6) + " XYM";
