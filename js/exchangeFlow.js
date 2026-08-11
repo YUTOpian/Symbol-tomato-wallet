@@ -102,7 +102,17 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
   let truncated = false;
   let errored = false;
   let errorDetail = null;
-  let rawItemCount = 0; // アグリゲート展開前の、APIから返ってきた生の件数(原因切り分け用)
+  let rawItemCount = 0; // APIから返ってきた生の件数(原因切り分け用)
+  // 種別ごとの内訳・除外理由(原因切り分け用)
+  const debug = {
+    transferTopLevelCount: 0, // トップレベルの通常送金
+    aggregateCount: 0, // アグリゲート(展開対象)
+    otherTypeCount: 0, // それ以外の種別
+    aggregateDetailFailCount: 0, // アグリゲート詳細取得に失敗した件数
+    innerTransferCount: 0, // アグリゲート内から見つかった埋め込み送金
+    noXymMosaicCount: 0, // 送金だったがXYMモザイクが見つからず除外された件数
+    firstSampleMosaicIds: [], // 実際に見つかったモザイクIDのサンプル(最大5件、原因切り分け用)
+  };
   const transactions = [];
 
   // 送金(Transfer)1件分を分類して集計に反映する。
@@ -110,7 +120,14 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
   function recordTransfer(tx, hash, height) {
     const mosaics = tx.mosaics || [];
     const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
-    if (!xymEntry) return; // XYMを含まない送金(他モザイクのみ)は対象外
+    if (!xymEntry) {
+      debug.noXymMosaicCount++;
+      if (debug.firstSampleMosaicIds.length < 5) {
+        const ids = mosaics.map((m) => String(m.id).toUpperCase());
+        debug.firstSampleMosaicIds.push(ids.length ? ids.join(",") : "(モザイクなし)");
+      }
+      return; // XYMを含まない送金(他モザイクのみ)は対象外
+    }
 
     const amount = BigInt(xymEntry.amount);
     const recipientAddr = normalizeMaybeHexAddress(tx.recipientAddress);
@@ -185,32 +202,40 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
 
       if (type === TRANSFER_TYPE) {
         // 単純な送金(アグリゲートに包まれていない)
+        debug.transferTopLevelCount++;
         recordTransfer(tx, hash, height);
         continue;
       }
 
       if (type === AGGREGATE_COMPLETE_TYPE || type === AGGREGATE_BONDED_TYPE) {
+        debug.aggregateCount++;
         // 取引所の入出金は複数操作をまとめたアグリゲートで行われることが多いため、
         // 詳細を取得して中の埋め込みトランザクションを展開する
         // (apostille.jsのアポスティーユ検索と同じ手法)
         try {
           const detailRes = await fetch(`${appState.NODE}/transactions/confirmed/${hash}`);
-          if (!detailRes.ok) continue;
+          if (!detailRes.ok) {
+            debug.aggregateDetailFailCount++;
+            continue;
+          }
           const detail = await detailRes.json();
           const innerTxs = detail.transaction?.transactions ?? [];
 
           for (const inner of innerTxs) {
             const innerTx = inner.transaction;
             if (innerTx && Number(innerTx.type) === TRANSFER_TYPE) {
+              debug.innerTransferCount++;
               recordTransfer(innerTx, hash, height);
             }
           }
         } catch (e) {
           console.warn(`exchangeFlow: アグリゲート詳細の取得に失敗しました (${hash}):`, e);
+          debug.aggregateDetailFailCount++;
         }
+        continue;
       }
 
-      // それ以外の種別(モザイク定義・制限設定等)は対象外
+      debug.otherTypeCount++;
     }
 
     onProgress?.(pageNumber);
@@ -232,6 +257,7 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
     errored,
     errorDetail,
     rawItemCount,
+    debug,
     transactions,
   };
 }
@@ -251,6 +277,21 @@ function amountHighlightColor(amount) {
   if (xymValue >= HIGH_AMOUNT_THRESHOLD_XYM) return "#f87171";
   if (xymValue >= MID_AMOUNT_THRESHOLD_XYM) return "#facc15";
   return "#e5e7eb";
+}
+
+function debugHtml(debug) {
+  if (!debug) return "";
+  const sampleText = debug.firstSampleMosaicIds.length > 0
+    ? `<div>モザイクID不一致の例: ${debug.firstSampleMosaicIds.join(" / ")}</div>`
+    : "";
+  return `
+    <div style="font-size:11px;color:#64748b;margin-top:4px;border-top:1px dashed #334155;padding-top:4px;">
+      <div>内訳(デバッグ): 通常送金 ${debug.transferTopLevelCount}件 / アグリゲート ${debug.aggregateCount}件（展開失敗 ${debug.aggregateDetailFailCount}件） / その他種別 ${debug.otherTypeCount}件</div>
+      <div>アグリゲート内から見つかった送金: ${debug.innerTransferCount}件</div>
+      <div>送金だがXYMモザイクなしで除外: ${debug.noXymMosaicCount}件</div>
+      ${sampleText}
+    </div>
+  `;
 }
 
 function rowHtml(ex, result) {
@@ -277,7 +318,8 @@ function rowHtml(ex, result) {
       <div>流出: <b style="color:#f87171;">${formatMosaicAmount(result.outflowAmount, 6)} XYM</b>（${result.outflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
       <div>純増減: <b style="color:${netColorOf(net)};">${netText}</b></div>
       <div style="font-size:11px;color:#64748b;margin-top:4px;">(サーバーからの取得件数: ${result.rawItemCount.toLocaleString("ja-JP")}件)</div>
-      <div style="font-size:11px;color:#60a5fa;margin-top:2px;">クリックで取引履歴を見る →</div>
+      ${debugHtml(result.debug)}
+      <div style="font-size:11px;color:#60a5fa;margin-top:4px;">クリックで取引履歴を見る →</div>
     </div>
   `;
 }
