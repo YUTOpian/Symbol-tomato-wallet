@@ -23,6 +23,8 @@ const {formatMosaicAmount} = W.utils;
 const {computeHeightRange} = W.onchainAnalysis;
 
 const TRANSFER_TYPE = 16724; // Transfer Transaction
+const AGGREGATE_COMPLETE_TYPE = 16705;
+const AGGREGATE_BONDED_TYPE = 16961;
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 200; // 安全のための上限(アドレス1件あたり最大 20,000 件)
 
@@ -100,18 +102,51 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
   let truncated = false;
   let errored = false;
   let errorDetail = null;
-  let rawItemCount = 0; // type/mosaicで絞り込む前の、APIから返ってきた生の件数(原因切り分け用)
+  let rawItemCount = 0; // アグリゲート展開前の、APIから返ってきた生の件数(原因切り分け用)
   const transactions = [];
 
+  // 送金(Transfer)1件分を分類して集計に反映する。
+  // 単純送金(トップレベル)・アグリゲート内の埋め込み送金の両方から呼ばれる。
+  function recordTransfer(tx, hash, height) {
+    const mosaics = tx.mosaics || [];
+    const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
+    if (!xymEntry) return; // XYMを含まない送金(他モザイクのみ)は対象外
+
+    const amount = BigInt(xymEntry.amount);
+    const recipientAddr = normalizeMaybeHexAddress(tx.recipientAddress);
+    const isInflow = recipientAddr === address;
+
+    let counterpartyAddress = null;
+    if (isInflow) {
+      try {
+        counterpartyAddress = tx.signerPublicKey ? publicKeyToAddress(tx.signerPublicKey) : null;
+      } catch {
+        counterpartyAddress = null;
+      }
+    } else {
+      counterpartyAddress = recipientAddr;
+    }
+
+    if (isInflow) {
+      inflowAmount += amount;
+      inflowCount++;
+    } else {
+      outflowAmount += amount;
+      outflowCount++;
+    }
+
+    transactions.push({ direction: isInflow ? "in" : "out", amount, counterpartyAddress, hash, height });
+  }
+
   while (pageNumber <= SCAN_MAX_PAGES) {
-    // typeによるサーバー側フィルタはaddressフィルタとの組み合わせでノードによって
-    // 挙動が不安定になることがあるため指定しない。種別判定(送金かどうか)は
-    // 下のループでクライアント側(tx.type)で行う。
+    // typeによるサーバー側フィルタは指定しない。取引所の入出金はアグリゲート
+    // トランザクション(種別: AggregateComplete/Bonded)経由のことが多く、
+    // typeで絞ると中に埋め込まれた送金ごと丸ごと除外されてしまうため。
+    // 種別判定・アグリゲートの展開はすべてクライアント側で行う。
     const params = new URLSearchParams({
       address,
       fromHeight: String(fromHeight),
       toHeight: String(toHeight),
-      embedded: "true",
       pageSize: String(SCAN_PAGE_SIZE),
       pageNumber: String(pageNumber),
       order: "asc",
@@ -144,42 +179,38 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
 
     for (const item of items) {
       const tx = item.transaction;
-      if (Number(tx.type) !== TRANSFER_TYPE) continue; // Transfer以外(アグリゲート本体等)は対象外
+      const hash = item.meta?.hash;
+      const height = item.meta?.height;
+      const type = Number(tx.type);
 
-      const mosaics = tx.mosaics || [];
-      const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
-      if (!xymEntry) continue; // XYMを含まない送金(他モザイクのみ)は対象外
+      if (type === TRANSFER_TYPE) {
+        // 単純な送金(アグリゲートに包まれていない)
+        recordTransfer(tx, hash, height);
+        continue;
+      }
 
-      const amount = BigInt(xymEntry.amount);
-      const recipientAddr = normalizeMaybeHexAddress(tx.recipientAddress);
-      const isInflow = recipientAddr === address;
-
-      let counterpartyAddress = null;
-      if (isInflow) {
+      if (type === AGGREGATE_COMPLETE_TYPE || type === AGGREGATE_BONDED_TYPE) {
+        // 取引所の入出金は複数操作をまとめたアグリゲートで行われることが多いため、
+        // 詳細を取得して中の埋め込みトランザクションを展開する
+        // (apostille.jsのアポスティーユ検索と同じ手法)
         try {
-          counterpartyAddress = tx.signerPublicKey ? publicKeyToAddress(tx.signerPublicKey) : null;
-        } catch {
-          counterpartyAddress = null;
+          const detailRes = await fetch(`${appState.NODE}/transactions/confirmed/${hash}`);
+          if (!detailRes.ok) continue;
+          const detail = await detailRes.json();
+          const innerTxs = detail.transaction?.transactions ?? [];
+
+          for (const inner of innerTxs) {
+            const innerTx = inner.transaction;
+            if (innerTx && Number(innerTx.type) === TRANSFER_TYPE) {
+              recordTransfer(innerTx, hash, height);
+            }
+          }
+        } catch (e) {
+          console.warn(`exchangeFlow: アグリゲート詳細の取得に失敗しました (${hash}):`, e);
         }
-      } else {
-        counterpartyAddress = recipientAddr;
       }
 
-      if (isInflow) {
-        inflowAmount += amount;
-        inflowCount++;
-      } else {
-        outflowAmount += amount;
-        outflowCount++;
-      }
-
-      transactions.push({
-        direction: isInflow ? "in" : "out",
-        amount,
-        counterpartyAddress,
-        hash: item.meta?.hash,
-        height: item.meta?.height,
-      });
+      // それ以外の種別(モザイク定義・制限設定等)は対象外
     }
 
     onProgress?.(pageNumber);
