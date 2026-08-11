@@ -28,6 +28,14 @@ const AGGREGATE_BONDED_TYPE = 16961;
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 200; // 安全のための上限(アドレス1件あたり最大 20,000 件)
 
+// 送金でモザイクを「symbol.xym」というネームスペース名義で指定した場合、
+// REST APIは解決済みの実モザイクID(6BED913FA20223F8等)ではなく、
+// ネームスペース自体のID(解決前のID)をそのまま返す。取引所はこの
+// ネームスペース経由の指定を使うことが多いため、両方を「XYM」として
+// 認識できるようにしておく。値はSDKで動的計算し、失敗時のみ既知の
+// 定数値(ネットワークに依存しない固定値)にフォールバックする。
+const SYMBOL_XYM_NAMESPACE_ID_HEX_FALLBACK = "E74B99BA41F4AFEE";
+
 // 個別取引の強調表示しきい値(XYM)
 const MID_AMOUNT_THRESHOLD_XYM = 100000; // これ以上は黄色
 const HIGH_AMOUNT_THRESHOLD_XYM = 1000000; // これ以上は赤色
@@ -37,7 +45,7 @@ const DETAIL_MAX_SHOW = 300;
 
 const EXCHANGES = [
   { id: "bitbank", label: "Bitbank", address: "NDURU3U7Y7KKTPC2VVVF6U3VJIU5HDWSHQZCS4Q" },
-  { id: "zaif", label: "Zaif", address: "NBVU44NKAED5MLPEY4Y7Z5OMUAUXLYI7HOIKNSY" },
+  { id: "zaif", label: "Zaif", address: "NA2NFUHQWYIASA5BHFJBM6OBQDEZDI34RUMNDHA" },
   { id: "bitflyer", label: "bitFlyer", address: "NDLSY2ZHQO5BR7SYC6I3YCGAW4WYZCFUCX6PIZY" },
   { id: "mexc", label: "MEXC", address: "NABGDANLKUZ3D2SQOUEKPGYI6OAUFHEDW233FKY" },
   { id: "gateio", label: "Gate.io", address: "NBWKVE7QG7TNNPSHRKUP2BYQWMOGJBHI3DO4OTY" },
@@ -89,6 +97,39 @@ function getExplorerUrl(hash) {
 }
 
 /* ============================================================
+   「symbol.xym」ネームスペースのID(16進)を計算する。
+   モザイクを直接IDでなくネームスペース名義で指定した送金では、
+   REST APIがこのIDを(解決前の)モザイクIDとして返してくるため、
+   XYM判定にはこの値も含める必要がある。
+   (multisend.jsのresolveUnresolvedMosaicIdValueと同じ計算方法)
+============================================================ */
+function computeSymbolXymNamespaceIdHex() {
+  try {
+    const path = appState.sdkSymbol.generateNamespacePath("symbol.xym");
+    const idValue = path[path.length - 1];
+    return idValue.toString(16).toUpperCase().padStart(16, "0");
+  } catch (e) {
+    console.warn("exchangeFlow: symbol.xym 名前空間IDの計算に失敗しました:", e);
+    return null;
+  }
+}
+
+/* ============================================================
+   「これはXYMか」の判定に使う、許容するモザイクID一式を組み立てる。
+   - ネットワークの実モザイクID(6BED913FA20223F8 等)
+   - symbol.xymネームスペースのID(SDKで計算。失敗時は既知の固定値)
+============================================================ */
+function buildXymMosaicIdSet() {
+  const ids = new Set();
+  ids.add(getXymMosaicIdHex());
+
+  const namespaceIdHex = computeSymbolXymNamespaceIdHex();
+  ids.add(namespaceIdHex || SYMBOL_XYM_NAMESPACE_ID_HEX_FALLBACK);
+
+  return ids;
+}
+
+/* ============================================================
    1つの取引所アドレスについて、指定ブロック高範囲のXYM流入/流出を集計する。
    個々の取引(方向・金額・相手アドレス・高さ・ハッシュ)も
    transactions配列にすべて記録し、詳細画面でそのまま表示できるようにする。
@@ -133,7 +174,7 @@ async function fetchAggregateInnerTxsPooled(hashes) {
   return results;
 }
 
-async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex, onProgress) {
+async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, onProgress) {
   let pageNumber = 1;
   let inflowAmount = 0n;
   let outflowAmount = 0n;
@@ -159,7 +200,7 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
   // 単純送金(トップレベル)・アグリゲート内の埋め込み送金の両方から呼ばれる。
   function recordTransfer(tx, hash, height) {
     const mosaics = tx.mosaics || [];
-    const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
+    const xymEntry = mosaics.find((m) => xymMosaicIds.has(String(m.id).toUpperCase()));
     if (!xymEntry) {
       debug.noXymMosaicCount++;
       if (debug.firstSampleMosaicIds.length < 5) {
@@ -422,7 +463,7 @@ async function loadExchangeFlowAnalysis(mode) {
 
   try {
     const { fromHeight, toHeight, fromTimestampMs, toTimestampMs } = await computeHeightRange("rollingHours", hours);
-    const xymId = getXymMosaicIdHex();
+    const xymMosaicIds = buildXymMosaicIdSet();
 
     const fromDate = new Date(fromTimestampMs);
     const toDate = new Date(toTimestampMs);
@@ -435,7 +476,7 @@ async function loadExchangeFlowAnalysis(mode) {
       if (statusEl) statusEl.textContent = `${ex.label} を集計中...`;
       let result;
       try {
-        result = await scanExchangeAddress(ex.address, fromHeight, toHeight, xymId, (page) => {
+        result = await scanExchangeAddress(ex.address, fromHeight, toHeight, xymMosaicIds, (page) => {
           if (statusEl) statusEl.textContent = `${ex.label} を集計中...(${page}ページ目)`;
         });
       } catch (e) {
