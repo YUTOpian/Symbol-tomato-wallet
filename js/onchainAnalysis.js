@@ -33,7 +33,8 @@ const WHALE_MID_THRESHOLD_XYM = 100000; // 一覧内での強調表示: これ�
 const WHALE_HIGH_THRESHOLD_XYM = 1000000; // 一覧内での強調表示: これ以上は赤色
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 200; // 安全のための上限(最大 20,000 件 / 20,000 ブロック)
-const BLOCK_FETCH_CONCURRENCY = 8; // ブロック一覧の並列取得数(exchangeFlow.jsのアグリゲート並列取得と同じ考え方)
+const BLOCK_FETCH_CONCURRENCY = 20; // ブロック個別取得の並列数(/blocksのfromHeight/toHeightが使えないため、高さ1件ずつ取得する。exchangeFlow.jsのアグリゲート並列取得と同じ考え方)
+const HARVESTER_BALANCE_CONCURRENCY = 10; // ハーベスター残高取得の並列数
 
 // 直近の集計結果(大口一覧の詳細画面表示用)
 let lastWhaleResult = null; // { whales, rangeLabel }
@@ -192,71 +193,64 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
    各ページ取得後は、念のためheightがfromHeight〜toHeightの範囲内かを
    クライアント側でも確認する(サーバー側フィルタが効かない場合の保険)。
 ============================================================ */
+/* ============================================================
+   指定した高さ範囲の全トランザクション数(埋め込みトランザクション含む)と、
+   ハーベスター(ブロック生成者)の延べ集合を集計する。
+   ブロックのトランザクション件数は meta.totalTransactionsCount に入っている。
+   ※ 重要: Symbol RESTの /blocks 検索エンドポイントは fromHeight/toHeight を
+   受け付けない(offset/orderのみでのカーソル方式)。以前の実装はこれに気づかず
+   fromHeight/toHeightを渡していたため、サーバー側では無視されて常に古い
+   ブロック(高さ1〜)から取得してしまい、範囲外としてすべて除外されて
+   「0件」になっていた。この関数では確実な /blocks/{height} を高さ1件ずつ
+   (並列取得)で叩くことで、この問題を避けている。
+============================================================ */
 async function summarizeBlocks(fromHeight, toHeight) {
   const totalBlocksInRange = Math.max(0, toHeight - fromHeight + 1);
   const maxScannableBlocks = SCAN_MAX_PAGES * SCAN_PAGE_SIZE;
   const truncated = totalBlocksInRange > maxScannableBlocks;
-  const pageCount = Math.min(SCAN_MAX_PAGES, Math.ceil(totalBlocksInRange / SCAN_PAGE_SIZE));
+
+  // 打ち切りが発生する場合は、直近側(toHeightに近い方、通常は現在時刻に近い方)を優先する
+  const scanFromHeight = truncated ? toHeight - maxScannableBlocks + 1 : fromHeight;
 
   let total = 0;
   let errored = false;
   const harvesterAddresses = new Set();
 
-  if (pageCount <= 0) {
+  if (totalBlocksInRange <= 0) {
     return { total, truncated: false, errored, harvesterAddresses };
   }
 
-  async function fetchPage(pageNumber) {
-    const params = new URLSearchParams({
-      fromHeight: String(fromHeight),
-      toHeight: String(toHeight),
-      order: "asc",
-      pageNumber: String(pageNumber),
-      pageSize: String(SCAN_PAGE_SIZE),
-    });
+  const heights = [];
+  for (let h = scanFromHeight; h <= toHeight; h++) heights.push(h);
 
+  async function fetchOne(height) {
     try {
-      const res = await fetch(`${appState.NODE}/blocks?${params}`);
-      if (!res.ok) return { error: true, items: [] };
+      const res = await fetch(new URL("/blocks/" + height, appState.NODE));
+      if (!res.ok) return { error: true };
       const json = await res.json();
-      return { error: false, items: json.data ?? [] };
+      return { error: false, block: json.block, meta: json.meta };
     } catch (e) {
-      console.warn("summarizeBlocks: ページ取得に失敗しました:", e);
-      return { error: true, items: [] };
+      console.warn("summarizeBlocks: ブロック取得に失敗しました:", height, e);
+      return { error: true };
     }
   }
 
-  // 必要なページ番号をあらかじめ確定させ、並列数を抑えつつまとめて取得する
-  // (multisendRecipientCheck.js / exchangeFlow.jsの並列取得と同じパターン)
-  const pageNumbers = Array.from({ length: pageCount }, (_, i) => i + 1);
-  const pageResults = new Array(pageNumbers.length);
   let cursor = 0;
-
   async function worker() {
-    while (cursor < pageNumbers.length) {
+    while (cursor < heights.length) {
       const i = cursor++;
-      pageResults[i] = await fetchPage(pageNumbers[i]);
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(BLOCK_FETCH_CONCURRENCY, pageNumbers.length) }, worker);
-  await Promise.all(workers);
-
-  for (const pageResult of pageResults) {
-    if (pageResult.error) {
-      errored = true;
-      continue;
-    }
-    for (const item of pageResult.items) {
-      const height = Number(item.block?.height ?? item.meta?.height);
-      if (Number.isFinite(height) && (height < fromHeight || height > toHeight)) continue; // 範囲外は無視(保険)
+      const r = await fetchOne(heights[i]);
+      if (r.error) {
+        errored = true;
+        continue;
+      }
 
       total += Number(
-        item.meta?.totalTransactionsCount ?? item.meta?.transactionsCount ??
-        item.block?.totalTransactionsCount ?? item.block?.transactionsCount ?? 0
+        r.meta?.totalTransactionsCount ?? r.meta?.transactionsCount ??
+        r.block?.totalTransactionsCount ?? r.block?.transactionsCount ?? 0
       );
 
-      const signerPublicKey = item.block?.signerPublicKey;
+      const signerPublicKey = r.block?.signerPublicKey;
       if (signerPublicKey) {
         try {
           harvesterAddresses.add(publicKeyToAddress(signerPublicKey));
@@ -267,7 +261,59 @@ async function summarizeBlocks(fromHeight, toHeight) {
     }
   }
 
+  const workers = Array.from({ length: Math.min(BLOCK_FETCH_CONCURRENCY, heights.length) }, worker);
+  await Promise.all(workers);
+
   return { total, truncated, errored, harvesterAddresses };
+}
+
+/* ============================================================
+   ハーベスター(この期間に実際にブロックを生成したアカウント)の
+   現在のXYM残高合計を集計する(「ハーベスト参加XYM合計」表示用)。
+   ※ これは「ネットワーク全体で委任ハーベストに参加中の残高合計」
+   (symbol-tools.com 等が各ノードの委任状況を独自に収集・集計している値)
+   とは算出方法が異なる。このアプリはノード運営者ではなく利用者側の
+   REST接続のみで完結する構成のため、各ノードの委任ハーベスター一覧を
+   直接取得することはできない。代わりに、この期間中に実際にブロックを
+   生成した(=ハーベストに成功した)アカウントの「現在の」XYM残高を
+   合計することで、実測ベースの近い指標として表示する。
+============================================================ */
+async function fetchHarvesterXymTotal(harvesterAddresses, xymMosaicIdHex) {
+  const addresses = [...harvesterAddresses].filter((a) => typeof a === "string" && a.length === 39);
+
+  let total = 0n;
+  let failCount = 0;
+
+  async function fetchOneBalance(address) {
+    try {
+      const res = await fetch(new URL("/accounts/" + address, appState.NODE));
+      if (res.status === 404) return; // 取引履歴のない(=残高0の)アドレス
+      if (!res.ok) {
+        failCount++;
+        return;
+      }
+      const json = await res.json();
+      const mosaics = json.account?.mosaics || [];
+      const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
+      if (xymEntry) total += BigInt(xymEntry.amount);
+    } catch (e) {
+      console.warn("fetchHarvesterXymTotal: 残高取得に失敗しました:", address, e);
+      failCount++;
+    }
+  }
+
+  let cursor = 0;
+  async function worker() {
+    while (cursor < addresses.length) {
+      const i = cursor++;
+      await fetchOneBalance(addresses[i]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(HARVESTER_BALANCE_CONCURRENCY, addresses.length) }, worker);
+  await Promise.all(workers);
+
+  return { total, failCount, skippedNonAddressCount: harvesterAddresses.size - addresses.length };
 }
 
 /* ============================================================
@@ -443,9 +489,12 @@ async function loadOnchainAnalysis(mode) {
     // 全件フェッチするより大幅に軽量)
     if (statusEl) statusEl.textContent = "トランザクション総数・ハーベスター数を集計中...";
     const blocksSummary = await summarizeBlocks(fromHeight, toHeight);
+    const xymId = getXymMosaicIdHex();
+
     if (blocksSummary.errored) {
       setText("onchain-tx-count", "取得失敗");
       setText("onchain-harvester-count", "取得失敗");
+      setText("onchain-harvest-xym-total", "取得失敗");
     } else {
       setText(
         "onchain-tx-count",
@@ -455,9 +504,20 @@ async function loadOnchainAnalysis(mode) {
         "onchain-harvester-count",
         blocksSummary.harvesterAddresses.size.toLocaleString("ja-JP") + " アドレス" + (blocksSummary.truncated ? " 以上(打ち切り)" : "")
       );
-    }
 
-    const xymId = getXymMosaicIdHex();
+      if (blocksSummary.harvesterAddresses.size === 0) {
+        setText("onchain-harvest-xym-total", "0 XYM");
+      } else {
+        if (statusEl) statusEl.textContent = "ハーベスト参加XYM合計を集計中...";
+        const harvestXymResult = await fetchHarvesterXymTotal(blocksSummary.harvesterAddresses, xymId);
+        setText(
+          "onchain-harvest-xym-total",
+          formatMosaicAmount(harvestXymResult.total, 6) + " XYM" +
+          (blocksSummary.truncated ? " 以上(打ち切り)" : "") +
+          (harvestXymResult.failCount > 0 ? `（${harvestXymResult.failCount}件取得失敗）` : "")
+        );
+      }
+    }
 
     if (statusEl) statusEl.textContent = "XYM送金トランザクションを集計中...";
     const result = await scanXymTransfers(fromHeight, toHeight, xymId, (page) => {
