@@ -93,6 +93,46 @@ function getExplorerUrl(hash) {
    個々の取引(方向・金額・相手アドレス・高さ・ハッシュ)も
    transactions配列にすべて記録し、詳細画面でそのまま表示できるようにする。
 ============================================================ */
+// アグリゲート詳細取得の並列数(multisendRecipientCheck.jsのCONCURRENCYと同じ考え方。
+// ノードへの負荷と速度のバランスを見てこの値にしている)
+const AGGREGATE_DETAIL_CONCURRENCY = 8;
+
+/* ============================================================
+   アグリゲートトランザクションの詳細を取得し、中の埋め込みトランザクション
+   一覧を返す(取得失敗時は error:true)
+============================================================ */
+async function fetchAggregateInnerTxs(hash) {
+  try {
+    const res = await fetch(`${appState.NODE}/transactions/confirmed/${hash}`);
+    if (!res.ok) return { hash, error: true, innerTxs: [] };
+    const detail = await res.json();
+    return { hash, error: false, innerTxs: detail.transaction?.transactions ?? [] };
+  } catch (e) {
+    console.warn(`exchangeFlow: アグリゲート詳細の取得に失敗しました (${hash}):`, e);
+    return { hash, error: true, innerTxs: [] };
+  }
+}
+
+/* ============================================================
+   複数のアグリゲート詳細を、並列数を抑えつつまとめて取得する
+   (multisendRecipientCheck.jsのcheckAddressesPooledと同じパターン)
+============================================================ */
+async function fetchAggregateInnerTxsPooled(hashes) {
+  const results = new Array(hashes.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < hashes.length) {
+      const i = cursor++;
+      results[i] = await fetchAggregateInnerTxs(hashes[i]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(AGGREGATE_DETAIL_CONCURRENCY, hashes.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
+
 async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex, onProgress) {
   let pageNumber = 1;
   let inflowAmount = 0n;
@@ -194,6 +234,8 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
 
     rawItemCount += items.length;
 
+    const aggregateItems = []; // { hash, height } のリスト(このページ分)
+
     for (const item of items) {
       const tx = item.transaction;
       const hash = item.meta?.hash;
@@ -209,33 +251,33 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
 
       if (type === AGGREGATE_COMPLETE_TYPE || type === AGGREGATE_BONDED_TYPE) {
         debug.aggregateCount++;
-        // 取引所の入出金は複数操作をまとめたアグリゲートで行われることが多いため、
-        // 詳細を取得して中の埋め込みトランザクションを展開する
-        // (apostille.jsのアポスティーユ検索と同じ手法)
-        try {
-          const detailRes = await fetch(`${appState.NODE}/transactions/confirmed/${hash}`);
-          if (!detailRes.ok) {
-            debug.aggregateDetailFailCount++;
-            continue;
-          }
-          const detail = await detailRes.json();
-          const innerTxs = detail.transaction?.transactions ?? [];
-
-          for (const inner of innerTxs) {
-            const innerTx = inner.transaction;
-            if (innerTx && Number(innerTx.type) === TRANSFER_TYPE) {
-              debug.innerTransferCount++;
-              recordTransfer(innerTx, hash, height);
-            }
-          }
-        } catch (e) {
-          console.warn(`exchangeFlow: アグリゲート詳細の取得に失敗しました (${hash}):`, e);
-          debug.aggregateDetailFailCount++;
-        }
+        aggregateItems.push({ hash, height });
         continue;
       }
 
       debug.otherTypeCount++;
+    }
+
+    // 取引所の入出金は複数操作をまとめたアグリゲートで行われることが多いため、
+    // このページ分のアグリゲートをまとめて並列取得し、中の埋め込み送金を展開する
+    // (apostille.jsのアポスティーユ検索と同じ考え方。詳細取得だけ並列化して高速化している)
+    if (aggregateItems.length > 0) {
+      const detailResults = await fetchAggregateInnerTxsPooled(aggregateItems.map((a) => a.hash));
+
+      detailResults.forEach((detailResult, i) => {
+        if (detailResult.error) {
+          debug.aggregateDetailFailCount++;
+          return;
+        }
+        const { height } = aggregateItems[i];
+        for (const inner of detailResult.innerTxs) {
+          const innerTx = inner.transaction;
+          if (innerTx && Number(innerTx.type) === TRANSFER_TYPE) {
+            debug.innerTransferCount++;
+            recordTransfer(innerTx, detailResult.hash, height);
+          }
+        }
+      });
     }
 
     onProgress?.(pageNumber);
