@@ -43,13 +43,31 @@ const HIGH_AMOUNT_THRESHOLD_XYM = 1000000; // これ以上は赤色
 // 詳細画面に表示する取引の最大件数(新しい順)
 const DETAIL_MAX_SHOW = 300;
 
+// 各取引所は1つ以上のアドレスをグループとして持つ(例: 入金用/出金用が
+// 分かれている取引所)。同じグループ内アドレス同士のXYM移動(社内での
+// 資金移動)は、外部との流入・流出としてはカウントしない(scanExchangeGroup参照)。
 const EXCHANGES = [
-  { id: "bitbank", label: "Bitbank", address: "NDURU3U7Y7KKTPC2VVVF6U3VJIU5HDWSHQZCS4Q" },
-  { id: "zaif", label: "Zaif", address: "NA2NFUHQWYIASA5BHFJBM6OBQDEZDI34RUMNDHA" },
-  { id: "bitflyer", label: "bitFlyer", address: "NDLSY2ZHQO5BR7SYC6I3YCGAW4WYZCFUCX6PIZY" },
-  { id: "mexc", label: "MEXC", address: "NABGDANLKUZ3D2SQOUEKPGYI6OAUFHEDW233FKY" },
-  { id: "gateio", label: "Gate.io", address: "NBWKVE7QG7TNNPSHRKUP2BYQWMOGJBHI3DO4OTY" },
+  {
+    id: "bitbank",
+    label: "Bitbank",
+    addresses: [
+      { label: "入金用 (deposits)", address: "NDURU3U7Y7KKTPC2VVVF6U3VJIU5HDWSHQZCS4Q" },
+      { label: "出金用 (withdrawals)", address: "NAIJUACP6BKCMFV7C7IDSZSAD7UNBMAE3TM7JKY" },
+    ],
+  },
+  {
+    id: "zaif",
+    label: "Zaif",
+    addresses: [
+      { label: "出金用 (withdrawals)", address: "NA2NFUHQWYIASA5BHFJBM6OBQDEZDI34RUMNDHA" },
+      { label: "入金用 (deposits)", address: "NBVU44NKAED5MLPEY4Y7Z5OMUAUXLYI7HOIKNSY" },
+    ],
+  },
+  { id: "bitflyer", label: "bitFlyer", addresses: [{ label: null, address: "NDLSY2ZHQO5BR7SYC6I3YCGAW4WYZCFUCX6PIZY" }] },
+  { id: "mexc", label: "MEXC", addresses: [{ label: null, address: "NABGDANLKUZ3D2SQOUEKPGYI6OAUFHEDW233FKY" }] },
+  { id: "gateio", label: "Gate.io", addresses: [{ label: null, address: "NBWKVE7QG7TNNPSHRKUP2BYQWMOGJBHI3DO4OTY" }] },
 ];
+
 
 const RANGE_LABELS = {
   "24h": "過去24時間",
@@ -174,7 +192,7 @@ async function fetchAggregateInnerTxsPooled(hashes) {
   return results;
 }
 
-async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, onProgress) {
+async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, ownAddressSet, onProgress) {
   let pageNumber = 1;
   let inflowAmount = 0n;
   let outflowAmount = 0n;
@@ -192,6 +210,7 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, 
     aggregateDetailFailCount: 0, // アグリゲート詳細取得に失敗した件数
     innerTransferCount: 0, // アグリゲート内から見つかった埋め込み送金
     noXymMosaicCount: 0, // 送金だったがXYMモザイクが見つからず除外された件数
+    internalGroupCount: 0, // 同じ取引所グループ内アドレス同士の移動として除外した件数
     firstSampleMosaicIds: [], // 実際に見つかったモザイクIDのサンプル(最大5件、原因切り分け用)
   };
   const transactions = [];
@@ -223,6 +242,14 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, 
       }
     } else {
       counterpartyAddress = recipientAddr;
+    }
+
+    // 相手が同じ取引所グループ内の別アドレス(例: 入金用⇔出金用)の場合、
+    // それは取引所内部での資金移動であり、外部との流入・流出ではないため
+    // カウントしない(件数・金額どちらも対象外)。
+    if (counterpartyAddress && ownAddressSet.has(counterpartyAddress)) {
+      debug.internalGroupCount++;
+      return;
     }
 
     if (isInflow) {
@@ -345,6 +372,74 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, 
   };
 }
 
+/* ============================================================
+   取引所グループ(1つ以上のアドレス)をまとめてスキャンし、結果を合算する。
+   グループ内アドレス同士(例: 入金用⇔出金用)の移動は、各アドレスの
+   scanExchangeAddress側で自動的に除外されるため、ここでは単純に
+   各アドレスの結果を足し合わせるだけでよい。
+============================================================ */
+async function scanExchangeGroup(addressEntries, fromHeight, toHeight, xymMosaicIds, onProgress) {
+  const ownAddressSet = new Set(addressEntries.map((a) => a.address.toUpperCase()));
+
+  let inflowAmount = 0n;
+  let outflowAmount = 0n;
+  let inflowCount = 0;
+  let outflowCount = 0;
+  let truncated = false;
+  let errored = false;
+  const errorDetails = [];
+  let rawItemCount = 0;
+  const transactions = [];
+  const debug = {
+    transferTopLevelCount: 0,
+    aggregateCount: 0,
+    otherTypeCount: 0,
+    aggregateDetailFailCount: 0,
+    innerTransferCount: 0,
+    noXymMosaicCount: 0,
+    internalGroupCount: 0,
+    firstSampleMosaicIds: [],
+  };
+
+  for (const entry of addressEntries) {
+    const r = await scanExchangeAddress(entry.address.toUpperCase(), fromHeight, toHeight, xymMosaicIds, ownAddressSet, onProgress);
+
+    inflowAmount += r.inflowAmount;
+    outflowAmount += r.outflowAmount;
+    inflowCount += r.inflowCount;
+    outflowCount += r.outflowCount;
+    truncated = truncated || r.truncated;
+    rawItemCount += r.rawItemCount;
+    transactions.push(...r.transactions);
+
+    if (r.errored) {
+      errored = true;
+      errorDetails.push(`${entry.label ? entry.label + ": " : ""}${r.errorDetail ?? "不明なエラー"}`);
+    }
+
+    for (const key of Object.keys(debug)) {
+      if (key === "firstSampleMosaicIds") continue;
+      debug[key] += r.debug[key] ?? 0;
+    }
+    if (debug.firstSampleMosaicIds.length < 5) {
+      debug.firstSampleMosaicIds.push(...r.debug.firstSampleMosaicIds.slice(0, 5 - debug.firstSampleMosaicIds.length));
+    }
+  }
+
+  return {
+    inflowAmount,
+    outflowAmount,
+    inflowCount,
+    outflowCount,
+    truncated,
+    errored,
+    errorDetail: errorDetails.length > 0 ? errorDetails.join(" / ") : null,
+    rawItemCount,
+    debug,
+    transactions,
+  };
+}
+
 function netColorOf(net) {
   if (net > 0n) return "#4ade80";
   if (net < 0n) return "#f87171";
@@ -372,9 +467,16 @@ function debugHtml(debug) {
       <div>内訳(デバッグ): 通常送金 ${debug.transferTopLevelCount}件 / アグリゲート ${debug.aggregateCount}件（展開失敗 ${debug.aggregateDetailFailCount}件） / その他種別 ${debug.otherTypeCount}件</div>
       <div>アグリゲート内から見つかった送金: ${debug.innerTransferCount}件</div>
       <div>送金だがXYMモザイクなしで除外: ${debug.noXymMosaicCount}件</div>
+      <div>同一取引所グループ内の移動として除外: ${debug.internalGroupCount}件</div>
       ${sampleText}
     </div>
   `;
+}
+
+function addressListHtml(ex) {
+  return ex.addresses
+    .map((a) => `<div>${a.label ? `${a.label}: ` : ""}${a.address}</div>`)
+    .join("");
 }
 
 function rowHtml(ex, result) {
@@ -382,7 +484,7 @@ function rowHtml(ex, result) {
     return `
       <div class="harvest-history-item exchange-flow-row" data-exchange-id="${ex.id}" style="cursor:pointer;">
         <div style="font-weight:bold;">${ex.label}</div>
-        <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${ex.address}</div>
+        <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${addressListHtml(ex)}</div>
         <div style="color:#f97316;">⚠️ 取得に失敗しました(ノードへの問い合わせエラー)</div>
         ${result.errorDetail ? `<div style="font-size:11px;color:#fbbf24;word-break:break-all;">詳細: ${result.errorDetail}</div>` : ""}
       </div>
@@ -396,7 +498,7 @@ function rowHtml(ex, result) {
   return `
     <div class="harvest-history-item exchange-flow-row" data-exchange-id="${ex.id}" style="cursor:pointer;">
       <div style="font-weight:bold;">${ex.label}</div>
-      <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${ex.address}</div>
+      <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${addressListHtml(ex)}</div>
       <div>流入: <b style="color:#4ade80;">${formatMosaicAmount(result.inflowAmount, 6)} XYM</b>（${result.inflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
       <div>流出: <b style="color:#f87171;">${formatMosaicAmount(result.outflowAmount, 6)} XYM</b>（${result.outflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
       <div>純増減: <b style="color:${netColorOf(net)};">${netText}</b></div>
@@ -474,7 +576,7 @@ async function loadExchangeFlowAnalysis(mode) {
       if (statusEl) statusEl.textContent = `${ex.label} を集計中...`;
       let result;
       try {
-        result = await scanExchangeAddress(ex.address, fromHeight, toHeight, xymMosaicIds, (page) => {
+        result = await scanExchangeGroup(ex.addresses, fromHeight, toHeight, xymMosaicIds, (page) => {
           if (statusEl) statusEl.textContent = `${ex.label} を集計中...(${page}ページ目)`;
         });
       } catch (e) {
@@ -551,7 +653,7 @@ function renderExchangeDetail(exId) {
   if (!ex) return;
 
   if (titleEl) titleEl.textContent = `${ex.label} の流入・流出履歴`;
-  if (addressEl) addressEl.textContent = ex.address;
+  if (addressEl) addressEl.innerHTML = addressListHtml(ex);
 
   const entry = lastResultsByExchangeId[exId];
 
