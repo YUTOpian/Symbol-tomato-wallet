@@ -23,14 +23,19 @@
 // fromHeight/toHeight を指定して取得する。件数はpagination.totalEntriesを
 // 使うことで、全件取得せずに済む部分は極力軽量に済ませている。
 
-const {appState} = W.config;
+const {appState, NetworkType} = W.config;
 const {getXymMosaicIdHex} = W.config;
 const {formatMosaicAmount} = W.utils;
 
 const TRANSFER_TYPE = 16724; // Transfer Transaction
-const WHALE_THRESHOLD_XYM = 10000; // 大口送金とみなす閾値
+const WHALE_THRESHOLD_XYM = 10000; // 大口送金とみなす閾値(この金額以上を一覧に含める)
+const WHALE_MID_THRESHOLD_XYM = 100000; // 一覧内での強調表示: これ以上は黄色
+const WHALE_HIGH_THRESHOLD_XYM = 1000000; // 一覧内での強調表示: これ以上は赤色
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 200; // 安全のための上限(最大 20,000 件 / 20,000 ブロック)
+
+// 直近の集計結果(大口一覧の詳細画面表示用)
+let lastWhaleResult = null; // { whales, rangeLabel }
 
 /* ============================================================
    REST APIのアドレス表現(16進 or base32)を統一する
@@ -55,6 +60,12 @@ function publicKeyToAddress(publicKeyHex) {
   const pub = new appState.sdkCore.PublicKey(publicKeyHex);
   const account = appState.facade.createPublicAccount(pub);
   return account.address.toString();
+}
+
+function getExplorerUrl(hash) {
+  return appState.networkType === NetworkType.TESTNET
+    ? `https://testnet.symbol.fyi/transactions/${hash}`
+    : `https://symbol.fyi/transactions/${hash}`;
 }
 
 /* ============================================================
@@ -167,18 +178,22 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
 }
 
 /* ============================================================
-   指定した高さ範囲の全トランザクション数(埋め込みトランザクション含む)を、
-   個々のトランザクションではなくブロック一覧から集計する。
-   ブロックには totalTransactionsCount(埋め込み含む合計)が入っているため、
-   /transactions/confirmed を全件ページングするより大幅に少ないリクエスト数で済む。
+   指定した高さ範囲の全トランザクション数(埋め込みトランザクション含む)と、
+   ハーベスター(ブロック生成者)の延べ集合を、個々のトランザクションではなく
+   ブロック一覧から集計する。
+   ブロックには totalTransactionsCount(埋め込み含む合計)と
+   signerPublicKey(そのブロックを生成したハーベスターの公開鍵)が
+   入っているため、/transactions/confirmed を全件ページングするより
+   大幅に少ないリクエスト数で済む。
    /blocks は offset(=直前に見た高さ)を使ったカーソル方式でページングする。
 ============================================================ */
-async function sumTransactionCountFromBlocks(fromHeight, toHeight) {
+async function summarizeBlocks(fromHeight, toHeight) {
   let total = 0;
   let cursor = fromHeight - 1;
   let pageNumber = 1;
   let truncated = false;
   let reachedEnd = false;
+  const harvesterAddresses = new Set();
 
   while (pageNumber <= SCAN_MAX_PAGES) {
     const params = new URLSearchParams({
@@ -199,6 +214,16 @@ async function sumTransactionCountFromBlocks(fromHeight, toHeight) {
         break;
       }
       total += Number(item.block.totalTransactionsCount ?? item.block.transactionsCount ?? 0);
+
+      const signerPublicKey = item.block.signerPublicKey;
+      if (signerPublicKey) {
+        try {
+          harvesterAddresses.add(publicKeyToAddress(signerPublicKey));
+        } catch {
+          harvesterAddresses.add(signerPublicKey); // 変換に失敗した場合は公開鍵のまま(延べ数としては数える)
+        }
+      }
+
       cursor = height;
     }
 
@@ -209,45 +234,102 @@ async function sumTransactionCountFromBlocks(fromHeight, toHeight) {
 
   if (!reachedEnd && pageNumber > SCAN_MAX_PAGES) truncated = true;
 
-  return { total, truncated };
+  return { total, truncated, harvesterAddresses };
 }
 
-function renderWhaleList(whales) {
-  const el = document.getElementById("onchain-whale-list");
-  if (!el) return;
+/* ============================================================
+   大口移動1件分の金額に応じた強調色
+   100万XYM以上: 赤 / 10万XYM以上: 黄 / それ未満(10,000以上): 通常色
+============================================================ */
+function whaleAmountColor(amount) {
+  const xymValue = Number(amount) / 1_000_000;
+  if (xymValue >= WHALE_HIGH_THRESHOLD_XYM) return "#f87171";
+  if (xymValue >= WHALE_MID_THRESHOLD_XYM) return "#facc15";
+  return "#e5e7eb";
+}
 
-  if (whales.length === 0) {
-    el.innerHTML = `<div style="color:#94a3b8;">該当する大口送金はありませんでした</div>`;
+function whaleRowHtml(w) {
+  let senderAddr = "---";
+  try {
+    senderAddr = w.senderPublicKey ? publicKeyToAddress(w.senderPublicKey) : "---";
+  } catch {
+    senderAddr = "---";
+  }
+  const color = whaleAmountColor(w.amount);
+  const explorerLink = w.hash
+    ? `<a href="${getExplorerUrl(w.hash)}" target="_blank" rel="noopener" style="font-size:12px;color:#93c5fd;">Explorerで見る ↗</a>`
+    : "";
+
+  return `
+    <div class="harvest-history-item">
+      <div><b style="color:${color};">${formatMosaicAmount(w.amount, 6)} XYM</b></div>
+      <div style="font-size:12px;color:#94a3b8;word-break:break-all;">送信元: ${senderAddr}</div>
+      <div style="font-size:12px;color:#94a3b8;word-break:break-all;">送信先: ${w.recipientAddress ?? "---"}</div>
+      <div style="font-size:12px;color:#94a3b8;">高さ: ${w.height}</div>
+      ${explorerLink}
+    </div>
+  `;
+}
+
+/* ============================================================
+   大口XYM移動 詳細画面(onchain-whale-detail-page)を描画する
+============================================================ */
+function renderWhaleDetail() {
+  const rangeEl = document.getElementById("onchain-whale-detail-range");
+  const summaryEl = document.getElementById("onchain-whale-detail-summary");
+  const listEl = document.getElementById("onchain-whale-detail-list");
+
+  if (!lastWhaleResult) {
+    if (rangeEl) rangeEl.textContent = "";
+    if (summaryEl) summaryEl.innerHTML = "";
+    if (listEl) {
+      listEl.innerHTML = `<div style="color:#94a3b8;">先に「データ」画面の「オンチェーン分析」で集計を実行してください</div>`;
+    }
     return;
   }
 
-  const sorted = [...whales].sort((a, b) => Number(b.height) - Number(a.height));
-  const MAX_SHOW = 30;
-  const visible = sorted.slice(0, MAX_SHOW);
+  const { whales, rangeLabel, truncated } = lastWhaleResult;
+  if (rangeEl) rangeEl.textContent = rangeLabel;
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div>大口XYM移動件数(${WHALE_THRESHOLD_XYM.toLocaleString("ja-JP")} XYM以上): <b>${whales.length.toLocaleString("ja-JP")} 件</b></div>
+      ${truncated ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">件数が多いため集計が打ち切られています</div>` : ""}
+    `;
+  }
 
-  el.innerHTML = visible
-    .map((w) => {
-      let senderAddr = "---";
-      try {
-        senderAddr = w.senderPublicKey ? publicKeyToAddress(w.senderPublicKey) : "---";
-      } catch {
-        senderAddr = "---";
-      }
-      return `
-        <div class="harvest-history-item">
-          <div><b>${formatMosaicAmount(w.amount, 6)} XYM</b></div>
-          <div style="font-size:12px;color:#94a3b8;">送信元: ${senderAddr}</div>
-          <div style="font-size:12px;color:#94a3b8;">送信先: ${w.recipientAddress ?? "---"}</div>
-          <div style="font-size:12px;color:#94a3b8;">高さ: ${w.height}</div>
-        </div>
-      `;
-    })
-    .join("");
-
-  if (sorted.length > MAX_SHOW) {
-    el.innerHTML += `<div style="color:#94a3b8;font-size:12px;margin-top:6px;">他 ${sorted.length - MAX_SHOW} 件</div>`;
+  if (listEl) {
+    if (whales.length === 0) {
+      listEl.innerHTML = `<div style="color:#94a3b8;">該当する大口移動はありませんでした</div>`;
+      return;
+    }
+    const sorted = [...whales].sort((a, b) => Number(b.height) - Number(a.height));
+    listEl.innerHTML = sorted.map(whaleRowHtml).join("");
   }
 }
+
+/* ============================================================
+   画面切り替え(index.jsのshowPageと同じロジックをここでも使う。
+   このモジュール単体でページ遷移を完結させるため)
+============================================================ */
+function showPageEl(pageEl) {
+  if (!pageEl) return;
+  document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
+  pageEl.classList.add("active");
+}
+
+function showWhaleDetail() {
+  renderWhaleDetail();
+  showPageEl(document.getElementById("onchain-whale-detail-page"));
+}
+
+function initOnchainAnalysisInteractions() {
+  document.getElementById("onchain-whale-count-card")?.addEventListener("click", showWhaleDetail);
+  document.getElementById("back-onchain-whale-detail")?.addEventListener("click", () => {
+    showPageEl(document.getElementById("data-page"));
+  });
+}
+
+initOnchainAnalysisInteractions();
 
 /* ============================================================
    集計対象のブロック高範囲を決定する
@@ -310,9 +392,6 @@ async function loadOnchainAnalysis(mode) {
       (mode === "yesterday" ? "昨日(UTC)の" : "過去24時間の") + "集計対象のブロック範囲を特定しています...";
   }
 
-  const whaleListEl = document.getElementById("onchain-whale-list");
-  if (whaleListEl) whaleListEl.innerHTML = `<div style="color:#94a3b8;">読み込み中...</div>`;
-
   const titleEl = document.getElementById("onchain-analysis-range-title");
   if (titleEl) {
     titleEl.textContent = mode === "yesterday" ? "昨日(UTC 0:00〜24:00)" : "過去24時間(現在時刻基準)";
@@ -326,14 +405,18 @@ async function loadOnchainAnalysis(mode) {
     const avgBlockIntervalSec = blockCount > 0 ? (toTimestampMs - fromTimestampMs) / 1000 / blockCount : null;
     setText("onchain-avg-block-time", avgBlockIntervalSec != null ? `${avgBlockIntervalSec.toFixed(1)} 秒` : "---");
 
-    // トランザクション数(全種別。埋め込みトランザクションも含む)
-    // ブロック一覧のtotalTransactionsCountを合算する(トランザクション自体を
+    // トランザクション数(全種別。埋め込みトランザクションも含む) と
+    // ハーベスター数を、ブロック一覧からまとめて集計する(トランザクション自体を
     // 全件フェッチするより大幅に軽量)
-    if (statusEl) statusEl.textContent = "トランザクション総数を集計中...";
-    const txCountResult = await sumTransactionCountFromBlocks(fromHeight, toHeight);
+    if (statusEl) statusEl.textContent = "トランザクション総数・ハーベスター数を集計中...";
+    const blocksSummary = await summarizeBlocks(fromHeight, toHeight);
     setText(
       "onchain-tx-count",
-      txCountResult.total.toLocaleString("ja-JP") + " 件" + (txCountResult.truncated ? " 以上(打ち切り)" : "")
+      blocksSummary.total.toLocaleString("ja-JP") + " 件" + (blocksSummary.truncated ? " 以上(打ち切り)" : "")
+    );
+    setText(
+      "onchain-harvester-count",
+      blocksSummary.harvesterAddresses.size.toLocaleString("ja-JP") + " アドレス" + (blocksSummary.truncated ? " 以上(打ち切り)" : "")
     );
 
     const xymId = getXymMosaicIdHex();
@@ -362,7 +445,7 @@ async function loadOnchainAnalysis(mode) {
     const activeAccounts = new Set([...senderAddresses, ...result.recipientAddresses]);
     setText("onchain-active-accounts", activeAccounts.size.toLocaleString("ja-JP") + " アドレス(送金ベースの概算)" + suffix);
 
-    renderWhaleList(result.whales);
+    setText("onchain-whale-count", result.whales.length.toLocaleString("ja-JP") + " 件" + suffix);
 
     const fromDate = new Date(fromTimestampMs);
     const toDate = new Date(toTimestampMs);
@@ -370,6 +453,10 @@ async function loadOnchainAnalysis(mode) {
       mode === "yesterday"
         ? `${fromDate.toISOString().replace("T", " ").slice(0, 19)} 〜 ${toDate.toISOString().replace("T", " ").slice(0, 19)} UTC`
         : `${fromDate.toISOString().replace("T", " ").slice(0, 19)} UTC 〜 現在`;
+
+    // 大口XYM移動 詳細画面用に保存(クリックされたときに再取得せず表示するため)
+    lastWhaleResult = { whales: result.whales, rangeLabel, truncated: result.truncated };
+
     if (statusEl) {
       statusEl.textContent = `集計範囲: 高さ ${fromHeight.toLocaleString("ja-JP")} 〜 ${toHeight.toLocaleString("ja-JP")}（${rangeLabel}）`;
     }
