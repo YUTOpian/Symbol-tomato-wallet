@@ -99,6 +99,8 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
   let outflowCount = 0;
   let truncated = false;
   let errored = false;
+  let errorDetail = null;
+  let rawItemCount = 0; // type/mosaicで絞り込む前の、APIから返ってきた生の件数(原因切り分け用)
   const transactions = [];
 
   while (pageNumber <= SCAN_MAX_PAGES) {
@@ -115,17 +117,30 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
       order: "asc",
     });
 
-    const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`);
+    const url = `${appState.NODE}/transactions/confirmed?${params}`;
+    let res;
+    try {
+      res = await fetch(url);
+    } catch (e) {
+      console.warn(`exchangeFlow: ${address} への通信に失敗しました:`, e);
+      errored = true;
+      errorDetail = `通信エラー: ${e.message || e}`;
+      break;
+    }
+
     if (!res.ok) {
       const bodyText = await res.text().catch(() => "");
       console.warn(`exchangeFlow: ${address} の取得に失敗しました (HTTP ${res.status}):`, bodyText);
       errored = true;
+      errorDetail = `HTTP ${res.status}${bodyText ? `: ${bodyText.slice(0, 200)}` : ""}`;
       break;
     }
 
     const json = await res.json();
     const items = json.data ?? [];
     if (items.length === 0) break;
+
+    rawItemCount += items.length;
 
     for (const item of items) {
       const tx = item.transaction;
@@ -177,7 +192,17 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIdHex
 
   if (pageNumber > SCAN_MAX_PAGES) truncated = true;
 
-  return { inflowAmount, outflowAmount, inflowCount, outflowCount, truncated, errored, transactions };
+  return {
+    inflowAmount,
+    outflowAmount,
+    inflowCount,
+    outflowCount,
+    truncated,
+    errored,
+    errorDetail,
+    rawItemCount,
+    transactions,
+  };
 }
 
 function netColorOf(net) {
@@ -203,7 +228,8 @@ function rowHtml(ex, result) {
       <div class="harvest-history-item exchange-flow-row" data-exchange-id="${ex.id}" style="cursor:pointer;">
         <div style="font-weight:bold;">${ex.label}</div>
         <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${ex.address}</div>
-        <div style="color:#f97316;">⚠️ 取得に失敗しました(ノードへの問い合わせエラー)。クリックで詳細画面から再試行の目安を確認できます。</div>
+        <div style="color:#f97316;">⚠️ 取得に失敗しました(ノードへの問い合わせエラー)</div>
+        ${result.errorDetail ? `<div style="font-size:11px;color:#fbbf24;word-break:break-all;">詳細: ${result.errorDetail}</div>` : ""}
       </div>
     `;
   }
@@ -219,7 +245,8 @@ function rowHtml(ex, result) {
       <div>流入: <b style="color:#4ade80;">${formatMosaicAmount(result.inflowAmount, 6)} XYM</b>（${result.inflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
       <div>流出: <b style="color:#f87171;">${formatMosaicAmount(result.outflowAmount, 6)} XYM</b>（${result.outflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
       <div>純増減: <b style="color:${netColorOf(net)};">${netText}</b></div>
-      <div style="font-size:11px;color:#60a5fa;margin-top:4px;">クリックで取引履歴を見る →</div>
+      <div style="font-size:11px;color:#64748b;margin-top:4px;">(サーバーからの取得件数: ${result.rawItemCount.toLocaleString("ja-JP")}件)</div>
+      <div style="font-size:11px;color:#60a5fa;margin-top:2px;">クリックで取引履歴を見る →</div>
     </div>
   `;
 }
@@ -305,6 +332,8 @@ async function loadExchangeFlowAnalysis(mode) {
           outflowCount: 0,
           truncated: false,
           errored: true,
+          errorDetail: `例外: ${e.message || e}`,
+          rawItemCount: 0,
           transactions: [],
         };
       }
@@ -388,6 +417,7 @@ function renderExchangeDetail(exId) {
     if (summaryEl) {
       summaryEl.innerHTML = `
         <div style="color:#f97316;">⚠️ 取得に失敗しました(ノードへの問い合わせエラー)。「データ」画面に戻って再度集計を実行してください。</div>
+        ${result.errorDetail ? `<div style="font-size:12px;color:#fbbf24;word-break:break-all;margin-top:4px;">詳細: ${result.errorDetail}</div>` : ""}
       `;
     }
     if (listEl) {
@@ -404,6 +434,7 @@ function renderExchangeDetail(exId) {
       <div>流入合計: <b style="color:#4ade80;">${formatMosaicAmount(result.inflowAmount, 6)} XYM</b>（${result.inflowCount.toLocaleString("ja-JP")}件）</div>
       <div>流出合計: <b style="color:#f87171;">${formatMosaicAmount(result.outflowAmount, 6)} XYM</b>（${result.outflowCount.toLocaleString("ja-JP")}件）</div>
       <div>純増減: <b style="color:${netColorOf(net)};">${netText}</b></div>
+      <div style="font-size:11px;color:#64748b;margin-top:4px;">(サーバーからの取得件数: ${result.rawItemCount.toLocaleString("ja-JP")}件)</div>
       ${result.truncated ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">件数が多いため集計が打ち切られています</div>` : ""}
     `;
   }
