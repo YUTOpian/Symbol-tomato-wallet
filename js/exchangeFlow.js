@@ -400,8 +400,6 @@ function rowHtml(ex, result) {
       <div>流入: <b style="color:#4ade80;">${formatMosaicAmount(result.inflowAmount, 6)} XYM</b>（${result.inflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
       <div>流出: <b style="color:#f87171;">${formatMosaicAmount(result.outflowAmount, 6)} XYM</b>（${result.outflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
       <div>純増減: <b style="color:${netColorOf(net)};">${netText}</b></div>
-      <div style="font-size:11px;color:#64748b;margin-top:4px;">(サーバーからの取得件数: ${result.rawItemCount.toLocaleString("ja-JP")}件)</div>
-      ${debugHtml(result.debug)}
       <div style="font-size:11px;color:#60a5fa;margin-top:4px;">クリックで取引履歴を見る →</div>
     </div>
   `;
@@ -590,7 +588,6 @@ function renderExchangeDetail(exId) {
       <div>流入合計: <b style="color:#4ade80;">${formatMosaicAmount(result.inflowAmount, 6)} XYM</b>（${result.inflowCount.toLocaleString("ja-JP")}件）</div>
       <div>流出合計: <b style="color:#f87171;">${formatMosaicAmount(result.outflowAmount, 6)} XYM</b>（${result.outflowCount.toLocaleString("ja-JP")}件）</div>
       <div>純増減: <b style="color:${netColorOf(net)};">${netText}</b></div>
-      <div style="font-size:11px;color:#64748b;margin-top:4px;">(サーバーからの取得件数: ${result.rawItemCount.toLocaleString("ja-JP")}件)</div>
       ${result.truncated ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">件数が多いため集計が打ち切られています</div>` : ""}
     `;
   }
