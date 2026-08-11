@@ -185,34 +185,48 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
    signerPublicKey(そのブロックを生成したハーベスターの公開鍵)が
    入っているため、/transactions/confirmed を全件ページングするより
    大幅に少ないリクエスト数で済む。
-   /blocks は offset(=直前に見た高さ)を使ったカーソル方式でページングする。
+   ページングは fromHeight/toHeight(範囲指定)+ pageNumber を使う
+   (scanXymTransfersや取引所フロー分析と同じ、動作実績のある方式。
+    offsetカーソル方式はノードによってブロック高と一致しないことがあり、
+    その場合1ページ目から0件になってしまうため使わない)
 ============================================================ */
 async function summarizeBlocks(fromHeight, toHeight) {
   let total = 0;
-  let cursor = fromHeight - 1;
   let pageNumber = 1;
   let truncated = false;
-  let reachedEnd = false;
+  let errored = false;
   const harvesterAddresses = new Set();
 
   while (pageNumber <= SCAN_MAX_PAGES) {
     const params = new URLSearchParams({
-      offset: String(cursor),
+      fromHeight: String(fromHeight),
+      toHeight: String(toHeight),
       order: "asc",
+      pageNumber: String(pageNumber),
       pageSize: String(SCAN_PAGE_SIZE),
     });
 
-    const res = await fetch(`${appState.NODE}/blocks?${params}`);
+    let res;
+    try {
+      res = await fetch(`${appState.NODE}/blocks?${params}`);
+    } catch (e) {
+      console.warn("summarizeBlocks: 通信に失敗しました:", e);
+      errored = true;
+      break;
+    }
+
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => "");
+      console.warn(`summarizeBlocks: 取得に失敗しました (HTTP ${res.status}):`, bodyText);
+      errored = true;
+      break;
+    }
+
     const json = await res.json();
     const items = json.data ?? [];
     if (items.length === 0) break;
 
     for (const item of items) {
-      const height = Number(item.block.height);
-      if (height > toHeight) {
-        reachedEnd = true;
-        break;
-      }
       total += Number(item.block.totalTransactionsCount ?? item.block.transactionsCount ?? 0);
 
       const signerPublicKey = item.block.signerPublicKey;
@@ -223,18 +237,17 @@ async function summarizeBlocks(fromHeight, toHeight) {
           harvesterAddresses.add(signerPublicKey); // 変換に失敗した場合は公開鍵のまま(延べ数としては数える)
         }
       }
-
-      cursor = height;
     }
 
-    if (reachedEnd) break;
+    // 新しいcatapult-restではpagination.totalPagesが廃止されているため、
+    // 「フルページ未満が返ってきたら最終ページ」という判定で継続/終了を決める
     if (items.length < SCAN_PAGE_SIZE) break;
     pageNumber++;
   }
 
-  if (!reachedEnd && pageNumber > SCAN_MAX_PAGES) truncated = true;
+  if (pageNumber > SCAN_MAX_PAGES) truncated = true;
 
-  return { total, truncated, harvesterAddresses };
+  return { total, truncated, errored, harvesterAddresses };
 }
 
 /* ============================================================
@@ -410,14 +423,19 @@ async function loadOnchainAnalysis(mode) {
     // 全件フェッチするより大幅に軽量)
     if (statusEl) statusEl.textContent = "トランザクション総数・ハーベスター数を集計中...";
     const blocksSummary = await summarizeBlocks(fromHeight, toHeight);
-    setText(
-      "onchain-tx-count",
-      blocksSummary.total.toLocaleString("ja-JP") + " 件" + (blocksSummary.truncated ? " 以上(打ち切り)" : "")
-    );
-    setText(
-      "onchain-harvester-count",
-      blocksSummary.harvesterAddresses.size.toLocaleString("ja-JP") + " アドレス" + (blocksSummary.truncated ? " 以上(打ち切り)" : "")
-    );
+    if (blocksSummary.errored) {
+      setText("onchain-tx-count", "取得失敗");
+      setText("onchain-harvester-count", "取得失敗");
+    } else {
+      setText(
+        "onchain-tx-count",
+        blocksSummary.total.toLocaleString("ja-JP") + " 件" + (blocksSummary.truncated ? " 以上(打ち切り)" : "")
+      );
+      setText(
+        "onchain-harvester-count",
+        blocksSummary.harvesterAddresses.size.toLocaleString("ja-JP") + " アドレス" + (blocksSummary.truncated ? " 以上(打ち切り)" : "")
+      );
+    }
 
     const xymId = getXymMosaicIdHex();
 
