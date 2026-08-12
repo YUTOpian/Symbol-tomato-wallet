@@ -421,6 +421,23 @@ function initOnchainAnalysisInteractions() {
 initOnchainAnalysisInteractions();
 
 /* ============================================================
+   ジェネシスブロック(高さ1)のタイムスタンプをキャッシュ付きで取得する。
+   ノードを切り替えない限り値は変わらないため、一度取得したら使い回す。
+============================================================ */
+let cachedGenesisTimestampMs = null;
+let cachedGenesisNodeUrl = null;
+
+async function getGenesisTimestampMs() {
+  if (cachedGenesisTimestampMs != null && cachedGenesisNodeUrl === appState.NODE) {
+    return cachedGenesisTimestampMs;
+  }
+  const ts = await fetchBlockTimestampMs(1);
+  cachedGenesisTimestampMs = ts;
+  cachedGenesisNodeUrl = appState.NODE;
+  return ts;
+}
+
+/* ============================================================
    「特定の日付」用: <input type="date"> の "YYYY-MM-DD" 文字列を、
    指定した基準タイムゾーン(UTC/JST)でのその日 0:00 のUnix時刻(ms)に変換する。
    JSTはUTC+9固定(夏時間なし)のため、9時間分オフセットするだけでよい。
@@ -439,8 +456,12 @@ function parseDateInputToMs(dateStr, timezone) {
    「特定の日付」の入力値を検証する。
    指定日の 0:00〜24:00(選択した基準タイムゾーン基準)を集計対象とする。
    timezone: "UTC" | "JST"
+
+   あわせて、ジェネシスブロック生成前の日付、およびまだ訪れていない
+   (現在時刻より未来の)日付が指定された場合はエラーとする。
+   これらのチェックにはノードへの問い合わせが必要なため非同期関数にしている。
 ============================================================ */
-function validateSpecificDate(dateStr, timezone) {
+async function validateSpecificDate(dateStr, timezone) {
   const tz = timezone === "JST" ? "JST" : "UTC";
   const fromMs = parseDateInputToMs(dateStr, tz);
 
@@ -449,6 +470,40 @@ function validateSpecificDate(dateStr, timezone) {
   }
 
   const toMs = fromMs + 24 * 60 * 60 * 1000;
+
+  if (!appState.NODE || !appState.epochAdjustment) {
+    return { ok: false, error: "ノードへの接続完了後にご利用いただけます。" };
+  }
+
+  let genesisTimestampMs, currentHeight, currentTimestampMs;
+  try {
+    const [genesisTs, chainInfo] = await Promise.all([
+      getGenesisTimestampMs(),
+      fetch(new URL("/chain/info", appState.NODE)).then((r) => r.json()),
+    ]);
+    genesisTimestampMs = genesisTs;
+    currentHeight = Number(chainInfo.height);
+    currentTimestampMs = await fetchBlockTimestampMs(currentHeight);
+  } catch (e) {
+    console.warn("validateSpecificDate: 日付の妥当性確認に失敗しました:", e);
+    return { ok: false, error: "日付の確認中に通信エラーが発生しました。時間をおいて再度お試しください。" };
+  }
+
+  if (toMs <= genesisTimestampMs) {
+    const genesisText = formatUtcJstFromMs(genesisTimestampMs);
+    return {
+      ok: false,
+      error: `指定した日付はジェネシスブロック生成より前です。ジェネシスブロックの生成日時（${genesisText}）以降の日付を指定してください。`,
+    };
+  }
+
+  if (fromMs > currentTimestampMs) {
+    const nowText = formatUtcJstFromMs(currentTimestampMs);
+    return {
+      ok: false,
+      error: `指定した日付はまだ訪れていません(現在時刻: ${nowText})。`,
+    };
+  }
 
   return { ok: true, fromMs, toMs, timezone: tz };
 }
@@ -526,12 +581,17 @@ async function loadOnchainAnalysis(mode, customRange) {
   }
 
   // 「特定の日付」の場合は、通信を始める前に入力値を検証する
+  // (ジェネシスブロック生成前/未来日でないかの確認にノードへの問い合わせが必要なため非同期)
   let customMs = null;
   if (mode === "custom") {
-    const validation = validateSpecificDate(customRange?.dateStr, customRange?.timezone);
+    runBtns.forEach((b) => { if (b) b.disabled = true; });
+    if (statusEl) statusEl.textContent = "日付を確認しています...";
+
+    const validation = await validateSpecificDate(customRange?.dateStr, customRange?.timezone);
     if (!validation.ok) {
+      runBtns.forEach((b) => { if (b) b.disabled = false; });
       if (customErrorEl) customErrorEl.textContent = validation.error;
-      else if (statusEl) statusEl.textContent = validation.error;
+      if (statusEl) statusEl.textContent = "";
       return;
     }
     customMs = { fromMs: validation.fromMs, toMs: validation.toMs };
