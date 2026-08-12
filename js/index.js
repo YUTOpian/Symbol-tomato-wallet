@@ -828,9 +828,9 @@ window.addEventListener("load", async () => {
   });
 
   document.getElementById("onchain-analysis-run-custom-btn")?.addEventListener("click", () => {
-    const fromDateStr = document.getElementById("onchain-custom-from-date")?.value;
-    const toDateStr = document.getElementById("onchain-custom-to-date")?.value;
-    W.onchainAnalysis?.loadOnchainAnalysis("custom", { fromDateStr, toDateStr });
+    const dateStr = document.getElementById("onchain-custom-date")?.value;
+    const timezone = document.getElementById("onchain-custom-timezone")?.value;
+    W.onchainAnalysis?.loadOnchainAnalysis("custom", { dateStr, timezone });
   });
 
   document.getElementById("exchange-flow-run-24h-btn")?.addEventListener("click", () => {

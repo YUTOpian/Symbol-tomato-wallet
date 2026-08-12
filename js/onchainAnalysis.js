@@ -36,7 +36,6 @@ const WHALE_HIGH_THRESHOLD_XYM = 1000000; // 一覧内での強調表示: これ
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 200; // 安全のための上限(最大 20,000 件 / 20,000 ブロック)
 const NEW_ADDRESS_CHECK_CONCURRENCY = 10; // 新規アドレス判定(初回トランザクション確認)の並列数
-const MAX_CUSTOM_RANGE_DAYS = 90; // 「指定範囲」で集計できる最大日数
 
 // 直近の集計結果(大口一覧の詳細画面表示用)
 let lastWhaleResult = null; // { whales, rangeLabel }
@@ -422,44 +421,36 @@ function initOnchainAnalysisInteractions() {
 initOnchainAnalysisInteractions();
 
 /* ============================================================
-   「指定範囲」用: <input type="date"> の "YYYY-MM-DD" 文字列を
-   UTC 0:00基準のUnix時刻(ms)に変換する
+   「特定の日付」用: <input type="date"> の "YYYY-MM-DD" 文字列を、
+   指定した基準タイムゾーン(UTC/JST)でのその日 0:00 のUnix時刻(ms)に変換する。
+   JSTはUTC+9固定(夏時間なし)のため、9時間分オフセットするだけでよい。
 ============================================================ */
-function parseDateInputToUtcMs(dateStr) {
+function parseDateInputToMs(dateStr, timezone) {
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
   const [y, m, d] = dateStr.split("-").map(Number);
-  const ms = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
-  return Number.isNaN(ms) ? null : ms;
+  const utcMidnightMs = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
+  if (Number.isNaN(utcMidnightMs)) return null;
+
+  const offsetMs = timezone === "JST" ? -9 * 60 * 60 * 1000 : 0;
+  return utcMidnightMs + offsetMs;
 }
 
 /* ============================================================
-   「指定範囲」の入力値を検証する。
-   終了日は「その日の24:00(=翌日0:00)まで」を含める。
-   最大 MAX_CUSTOM_RANGE_DAYS 日間まで指定可能。
+   「特定の日付」の入力値を検証する。
+   指定日の 0:00〜24:00(選択した基準タイムゾーン基準)を集計対象とする。
+   timezone: "UTC" | "JST"
 ============================================================ */
-function validateCustomDateRange(fromDateStr, toDateStr) {
-  const fromMs = parseDateInputToUtcMs(fromDateStr);
-  const toDayStartMs = parseDateInputToUtcMs(toDateStr);
+function validateSpecificDate(dateStr, timezone) {
+  const tz = timezone === "JST" ? "JST" : "UTC";
+  const fromMs = parseDateInputToMs(dateStr, tz);
 
-  if (fromMs == null || toDayStartMs == null) {
-    return { ok: false, error: "開始日・終了日を正しく指定してください。" };
+  if (fromMs == null) {
+    return { ok: false, error: "日付を正しく指定してください。" };
   }
 
-  const toMs = toDayStartMs + 24 * 60 * 60 * 1000;
+  const toMs = fromMs + 24 * 60 * 60 * 1000;
 
-  if (fromMs >= toMs) {
-    return { ok: false, error: "開始日は終了日より前の日付を指定してください。" };
-  }
-
-  const rangeDays = Math.round((toMs - fromMs) / (24 * 60 * 60 * 1000));
-  if (rangeDays > MAX_CUSTOM_RANGE_DAYS) {
-    return {
-      ok: false,
-      error: `指定できる範囲は最大${MAX_CUSTOM_RANGE_DAYS}日間までです(現在の指定: ${rangeDays}日間)。`,
-    };
-  }
-
-  return { ok: true, fromMs, toMs, rangeDays };
+  return { ok: true, fromMs, toMs, timezone: tz };
 }
 
 /* ============================================================
@@ -467,7 +458,7 @@ function validateCustomDateRange(fromDateStr, toDateStr) {
    mode: "rolling24h"(現在時刻から過去24時間) | "yesterday"(UTC昨日 0:00〜24:00)
          | "rollingHours"(現在時刻から過去 hours 時間。exchangeFlow.js等の
             他モジュールから任意の期間で呼び出すために用意)
-         | "custom"(指定した日付範囲。customRangeに{fromMs, toMs}を渡す)
+         | "custom"(指定した1日。customRangeに{fromMs, toMs}を渡す)
 ============================================================ */
 async function computeHeightRange(mode, hours, customRange) {
   const chainInfo = await fetch(new URL("/chain/info", appState.NODE)).then((r) => r.json());
@@ -510,8 +501,9 @@ async function computeHeightRange(mode, hours, customRange) {
 /* ============================================================
    分析本体。「データ」画面の「オンチェーン分析」カードから呼ばれる。
    mode: "rolling24h" | "yesterday" | "custom"
-   customRange: mode==="custom" の場合のみ { fromDateStr, toDateStr }
-                (<input type="date"> の "YYYY-MM-DD" 文字列) を渡す
+   customRange: mode==="custom" の場合のみ { dateStr, timezone }
+                (dateStr: <input type="date"> の "YYYY-MM-DD" 文字列、
+                 timezone: "UTC" | "JST" ) を渡す
 ============================================================ */
 async function loadOnchainAnalysis(mode, customRange) {
   const setText = (id, text) => {
@@ -533,22 +525,23 @@ async function loadOnchainAnalysis(mode, customRange) {
     return;
   }
 
-  // 「指定範囲」の場合は、通信を始める前に入力値を検証する
+  // 「特定の日付」の場合は、通信を始める前に入力値を検証する
   let customMs = null;
   if (mode === "custom") {
-    const validation = validateCustomDateRange(customRange?.fromDateStr, customRange?.toDateStr);
+    const validation = validateSpecificDate(customRange?.dateStr, customRange?.timezone);
     if (!validation.ok) {
       if (customErrorEl) customErrorEl.textContent = validation.error;
       else if (statusEl) statusEl.textContent = validation.error;
       return;
     }
     customMs = { fromMs: validation.fromMs, toMs: validation.toMs };
+    customRange = { ...customRange, timezone: validation.timezone };
   }
 
   runBtns.forEach((b) => { if (b) b.disabled = true; });
   if (statusEl) {
     statusEl.textContent =
-      (mode === "yesterday" ? "昨日(UTC)の" : mode === "custom" ? "指定範囲の" : "過去24時間の") +
+      (mode === "yesterday" ? "昨日(UTC)の" : mode === "custom" ? "指定日の" : "過去24時間の") +
       "集計対象のブロック範囲を特定しています...";
   }
 
@@ -558,7 +551,7 @@ async function loadOnchainAnalysis(mode, customRange) {
       mode === "yesterday"
         ? "昨日(UTC 0:00〜24:00)"
         : mode === "custom"
-        ? `指定範囲（${customRange.fromDateStr} 〜 ${customRange.toDateStr}, UTC基準）`
+        ? `指定日（${customRange.dateStr}, ${customRange.timezone}基準 0:00〜24:00）`
         : "過去24時間(現在時刻基準)";
   }
 
@@ -632,7 +625,6 @@ window.W.onchainAnalysis = {
   loadOnchainAnalysis,
   computeHeightRange,
   fetchBlockTimestampMs,
-  MAX_CUSTOM_RANGE_DAYS,
 };
 
 })();
