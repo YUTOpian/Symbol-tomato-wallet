@@ -619,15 +619,26 @@ async function loadOnchainAnalysis(mode, customRange) {
     const { fromHeight, toHeight, fromTimestampMs, toTimestampMs, toIsNow } =
       mode === "custom" ? await computeHeightRange(mode, undefined, customMs) : await computeHeightRange(mode);
 
-    // 平均ブロック生成間隔
+    // 平均ブロック生成間隔(カレンダー上の日付境界に忠実な値として、
+    // ジェネシスブロックを除外する前のfromHeightをそのまま使う)
     const blockCount = toHeight - fromHeight;
     const avgBlockIntervalSec = blockCount > 0 ? (toTimestampMs - fromTimestampMs) / 1000 / blockCount : null;
     setText("onchain-avg-block-time", avgBlockIntervalSec != null ? `${avgBlockIntervalSec.toFixed(1)} 秒` : "---");
 
+    // 高さ1(ジェネシス/ネメシスブロック)は、Symbolネットワーク開始時点の
+    // 初期配布(NEMからのオプトイン移行分の残高付与など)を1つのブロックに
+    // まとめて記録しているため、通常の1日分とは桁違いに大量の埋め込み
+    // トランザクションを含む(数万件規模)。これをそのまま集計対象に含めると、
+    // 「その日の通常の取引量」ではなく「初期配布イベント」の数値になってしまい、
+    // 件数の急増・打ち切り・処理の長時間化を招く。そのため、集計対象の範囲に
+    // 高さ1が含まれる場合は、実際のスキャン対象からは高さ1を除外する。
+    const includesGenesisBlock = fromHeight <= 1;
+    const scanFromHeight = includesGenesisBlock ? 2 : fromHeight;
+
     const xymId = getXymMosaicIdHex();
 
     if (statusEl) statusEl.textContent = "XYM送金トランザクションを集計中...";
-    const result = await scanXymTransfers(fromHeight, toHeight, xymId, (page) => {
+    const result = await scanXymTransfers(scanFromHeight, toHeight, xymId, (page) => {
       if (statusEl) statusEl.textContent = `XYM送金トランザクションを集計中...(${page}ページ目)`;
     });
 
@@ -640,7 +651,7 @@ async function loadOnchainAnalysis(mode, customRange) {
 
     // アクティブアドレス数(全トランザクション種別・埋め込み含む、送信元ベース)
     if (statusEl) statusEl.textContent = "アクティブアドレスを集計中...";
-    const activeResult = await scanActiveAddresses(fromHeight, toHeight, (page) => {
+    const activeResult = await scanActiveAddresses(scanFromHeight, toHeight, (page) => {
       if (statusEl) statusEl.textContent = `アクティブアドレスを集計中...(${page}ページ目)`;
     });
     const activeSuffix = activeResult.truncated ? " 以上(件数が多いため打ち切り)" : "";
@@ -653,7 +664,7 @@ async function loadOnchainAnalysis(mode, customRange) {
     if (activeResult.signerPublicKeys.size === 0) {
       setText("onchain-new-address-count", "0 アドレス");
     } else {
-      const newAddrResult = await countNewAddresses(activeResult.signerPublicKeys, fromHeight, (done, total) => {
+      const newAddrResult = await countNewAddresses(activeResult.signerPublicKeys, scanFromHeight, (done, total) => {
         if (statusEl) statusEl.textContent = `新規アドレスを確認中...(${done.toLocaleString("ja-JP")} / ${total.toLocaleString("ja-JP")} アドレス)`;
       });
       setText(
@@ -670,8 +681,14 @@ async function loadOnchainAnalysis(mode, customRange) {
     // 大口XYM移動 詳細画面用に保存(クリックされたときに再取得せず表示するため)
     lastWhaleResult = { whales: result.whales, rangeLabel, truncated: result.truncated };
 
+    const genesisNote = includesGenesisBlock
+      ? "\n※ 高さ1(ジェネシスブロック)はSymbolネットワーク開始時の初期配布による大量データを含むため、集計対象から除外しています。"
+      : "";
+
     if (statusEl) {
-      statusEl.textContent = `集計範囲: 高さ ${fromHeight.toLocaleString("ja-JP")} 〜 ${toHeight.toLocaleString("ja-JP")}（${rangeLabel}）`;
+      statusEl.textContent =
+        `集計範囲: 高さ ${scanFromHeight.toLocaleString("ja-JP")} 〜 ${toHeight.toLocaleString("ja-JP")}` +
+        `（${rangeLabel}）` + genesisNote;
     }
   } catch (e) {
     console.error("loadOnchainAnalysis error:", e);
