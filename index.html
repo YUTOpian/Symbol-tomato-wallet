@@ -835,6 +835,25 @@
           </div>
           <button id="onchain-analysis-run-rolling-btn" class="button-primary" type="button">過去24時間</button>
           <button id="onchain-analysis-run-yesterday-btn" class="button-primary" type="button">昨日(UTC)</button>
+
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid #374151;">
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;">
+              指定した日付範囲で集計(UTC基準・最大90日間)
+            </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+              <label style="font-size:12px;color:#94a3b8;">
+                開始日
+                <input type="date" id="onchain-custom-from-date" style="width:auto;display:inline-block;margin-left:4px;">
+              </label>
+              <label style="font-size:12px;color:#94a3b8;">
+                終了日
+                <input type="date" id="onchain-custom-to-date" style="width:auto;display:inline-block;margin-left:4px;">
+              </label>
+              <button id="onchain-analysis-run-custom-btn" class="button-primary" type="button" style="margin-top:0;">指定範囲で集計</button>
+            </div>
+            <div id="onchain-custom-range-error" style="font-size:12px;color:#f87171;margin-top:4px;"></div>
+          </div>
+
           <div id="onchain-analysis-range-title" style="font-size:13px;font-weight:bold;margin-top:8px;color:#e5e7eb;"></div>
           <div id="onchain-analysis-status" style="font-size:12px;color:#94a3b8;margin-top:6px;"></div>
 
