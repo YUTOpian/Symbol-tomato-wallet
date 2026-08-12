@@ -12,11 +12,13 @@
 //   - 昨日(yesterday): UTCでの昨日 0:00〜24:00 の固定1日分
 //
 // 集計対象:
-//   - トランザクション数(全トランザクション種別)
-//   - アクティブアカウント数(期間中、XYMの送受信をしたアドレスの延べ数。※送金以外の
-//     操作(モザイク作成等)のみを行ったアカウントは含まない概算値)
+//   - アクティブアドレス数(期間中、何らかのトランザクション(全種別・埋め込み含む)を
+//     「送信元」として出したアドレスの延べ数)
+//   - 新規アドレス作成数(上記のうち、REST APIで遡れる範囲でこの期間より前に
+//     一度もトランザクションを出した履歴がないアドレスの数。近似値)
 //   - 平均ブロック生成間隔(期間中の実測値)
-//   - XYM移動量(総移動量・送金件数・送金元/送金先アドレス数)
+//   - XYM移動量(総移動量・XYM送金件数・送金元/送金先アドレス数)
+//   - モザイク送信件数(XYMを含む、何らかのモザイクを伴う送金の件数)
 //   - 大口送金一覧(閾値以上のXYM送金)
 //
 // 集計はブロック高の範囲を二分探索で特定したうえで、/transactions/confirmed に
@@ -33,6 +35,7 @@ const WHALE_MID_THRESHOLD_XYM = 100000; // 一覧内での強調表示: これ�
 const WHALE_HIGH_THRESHOLD_XYM = 1000000; // 一覧内での強調表示: これ以上は赤色
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 200; // 安全のための上限(最大 20,000 件 / 20,000 ブロック)
+const NEW_ADDRESS_CHECK_CONCURRENCY = 10; // 新規アドレス判定(初回トランザクション確認)の並列数
 
 // 直近の集計結果(大口一覧の詳細画面表示用)
 let lastWhaleResult = null; // { whales, rangeLabel }
@@ -110,7 +113,10 @@ async function findHeightForTimestamp(targetMs, currentHeight, currentTimestampM
 
 /* ============================================================
    指定した高さ範囲内のXYM送金トランザクションを走査し、
-   総移動量・送金元/先アドレス集合・大口送金一覧を集計する
+   総移動量・送金元/先アドレス集合・大口送金一覧を集計する。
+   あわせて、XYMに限らずモザイクを1つ以上含む送金(モザイク送信)の
+   件数もここで集計する(いずれもTransferTransactionが対象のため、
+   同じスキャンで済ませられる)。
 ============================================================ */
 async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress) {
   const whaleThresholdAtomic = BigInt(WHALE_THRESHOLD_XYM) * 1_000_000n;
@@ -118,6 +124,7 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
   let pageNumber = 1;
   let totalAmount = 0n;
   let transferCount = 0;
+  let mosaicTransferCount = 0;
   const senderPublicKeys = new Set();
   const recipientAddresses = new Set();
   const whales = [];
@@ -142,6 +149,10 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
     for (const item of items) {
       const tx = item.transaction;
       const mosaics = tx.mosaics || [];
+
+      // モザイク送信件数(XYM含む。何らかのモザイクを1つ以上含む送金)
+      if (mosaics.length > 0) mosaicTransferCount++;
+
       const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
       if (!xymEntry) continue; // XYMを含まない送金(他モザイクのみ)は対象外
 
@@ -174,7 +185,105 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
 
   if (pageNumber > SCAN_MAX_PAGES) truncated = true;
 
-  return { totalAmount, transferCount, senderPublicKeys, recipientAddresses, whales, truncated };
+  return { totalAmount, transferCount, mosaicTransferCount, senderPublicKeys, recipientAddresses, whales, truncated };
+}
+
+/* ============================================================
+   指定した高さ範囲内の、全トランザクション種別(埋め込み含む)を対象に、
+   「送信元」となったアドレスの延べ集合を集計する(アクティブアドレス数用)。
+   /transactions/confirmed は type を指定しなければ全種別が対象になり、
+   fromHeight/toHeightで絞り込めるため、/blocksを高さ1件ずつ取得するより
+   大幅に軽量に済む。
+============================================================ */
+async function scanActiveAddresses(fromHeight, toHeight, onProgress) {
+  let pageNumber = 1;
+  const signerPublicKeys = new Set();
+  let truncated = false;
+
+  while (pageNumber <= SCAN_MAX_PAGES) {
+    const params = new URLSearchParams({
+      fromHeight: String(fromHeight),
+      toHeight: String(toHeight),
+      embedded: "true",
+      pageSize: String(SCAN_PAGE_SIZE),
+      pageNumber: String(pageNumber),
+      order: "asc",
+    });
+
+    const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`);
+    const json = await res.json();
+    const items = json.data ?? [];
+    if (items.length === 0) break;
+
+    for (const item of items) {
+      const signerPublicKey = item.transaction?.signerPublicKey;
+      if (signerPublicKey) signerPublicKeys.add(signerPublicKey);
+    }
+
+    onProgress?.(pageNumber);
+
+    if (items.length < SCAN_PAGE_SIZE) break;
+    pageNumber++;
+  }
+
+  if (pageNumber > SCAN_MAX_PAGES) truncated = true;
+
+  return { signerPublicKeys, truncated };
+}
+
+/* ============================================================
+   アクティブアドレス(期間中に何らかのトランザクションを出したアドレス)
+   のうち、「新規アドレス」(この期間より前にトランザクションを出した
+   履歴がない=初めてトランザクションを出した)の数を数える。
+   各アドレス(公開鍵)ごとに、そのアドレスが署名したトランザクションを
+   古い順に1件だけ取得し、その高さがfromHeight以降であれば
+   「この期間が初回」とみなす。
+   件数に上限は設けず、対象アドレス全件を確認する(並列数のみ制限)。
+============================================================ */
+async function countNewAddresses(signerPublicKeys, fromHeight, onProgress) {
+  const targets = [...signerPublicKeys];
+
+  let newCount = 0;
+  let failCount = 0;
+  let doneCount = 0;
+
+  async function checkOne(publicKeyHex) {
+    try {
+      const params = new URLSearchParams({
+        signerPublicKey: publicKeyHex,
+        order: "asc",
+        pageSize: "1",
+      });
+      const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`);
+      if (!res.ok) {
+        failCount++;
+        return;
+      }
+      const json = await res.json();
+      const first = (json.data ?? [])[0];
+      const firstHeight = Number(first?.meta?.height ?? 0);
+      if (firstHeight >= fromHeight) newCount++;
+    } catch (e) {
+      console.warn("countNewAddresses: 初回トランザクション確認に失敗しました:", publicKeyHex, e);
+      failCount++;
+    } finally {
+      doneCount++;
+      onProgress?.(doneCount, targets.length);
+    }
+  }
+
+  let cursor = 0;
+  async function worker() {
+    while (cursor < targets.length) {
+      const i = cursor++;
+      await checkOne(targets[i]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(NEW_ADDRESS_CHECK_CONCURRENCY, targets.length) }, worker);
+  await Promise.all(workers);
+
+  return { newCount, failCount, checkedCount: targets.length };
 }
 
 /* ============================================================
@@ -356,22 +465,33 @@ async function loadOnchainAnalysis(mode) {
 
     setText("onchain-transfer-count", result.transferCount.toLocaleString("ja-JP") + " 件" + suffix);
     setText("onchain-xym-volume", formatMosaicAmount(result.totalAmount, 6) + " XYM" + suffix);
-
-    let senderAddresses;
-    try {
-      senderAddresses = new Set([...result.senderPublicKeys].map(publicKeyToAddress));
-    } catch (e) {
-      console.warn("送金元アドレス変換に失敗しました:", e);
-      senderAddresses = result.senderPublicKeys;
-    }
-
-    setText("onchain-sender-count", senderAddresses.size.toLocaleString("ja-JP") + " アドレス" + suffix);
-    setText("onchain-recipient-count", result.recipientAddresses.size.toLocaleString("ja-JP") + " アドレス" + suffix);
-
-    const activeAccounts = new Set([...senderAddresses, ...result.recipientAddresses]);
-    setText("onchain-active-accounts", activeAccounts.size.toLocaleString("ja-JP") + " アドレス(送金ベースの概算)" + suffix);
-
+    setText("onchain-mosaic-transfer-count", result.mosaicTransferCount.toLocaleString("ja-JP") + " 件" + suffix);
     setText("onchain-whale-count", result.whales.length.toLocaleString("ja-JP") + " 件" + suffix);
+
+    // アクティブアドレス数(全トランザクション種別・埋め込み含む、送信元ベース)
+    if (statusEl) statusEl.textContent = "アクティブアドレスを集計中...";
+    const activeResult = await scanActiveAddresses(fromHeight, toHeight, (page) => {
+      if (statusEl) statusEl.textContent = `アクティブアドレスを集計中...(${page}ページ目)`;
+    });
+    const activeSuffix = activeResult.truncated ? " 以上(件数が多いため打ち切り)" : "";
+    setText(
+      "onchain-active-address-count",
+      activeResult.signerPublicKeys.size.toLocaleString("ja-JP") + " アドレス" + activeSuffix
+    );
+
+    // 新規アドレス作成数(アクティブアドレスのうち、この期間が初回のもの)
+    if (activeResult.signerPublicKeys.size === 0) {
+      setText("onchain-new-address-count", "0 アドレス");
+    } else {
+      const newAddrResult = await countNewAddresses(activeResult.signerPublicKeys, fromHeight, (done, total) => {
+        if (statusEl) statusEl.textContent = `新規アドレスを確認中...(${done.toLocaleString("ja-JP")} / ${total.toLocaleString("ja-JP")} アドレス)`;
+      });
+      setText(
+        "onchain-new-address-count",
+        newAddrResult.newCount.toLocaleString("ja-JP") + " アドレス" + activeSuffix +
+        (newAddrResult.failCount > 0 ? `（${newAddrResult.failCount}件確認失敗）` : "")
+      );
+    }
 
     const fromDate = new Date(fromTimestampMs);
     const toDate = new Date(toTimestampMs);
