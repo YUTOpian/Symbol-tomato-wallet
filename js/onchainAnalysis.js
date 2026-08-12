@@ -702,6 +702,7 @@ window.W.onchainAnalysis = {
   loadOnchainAnalysis,
   computeHeightRange,
   fetchBlockTimestampMs,
+  formatUtcJstFromMs,
 };
 
 })();

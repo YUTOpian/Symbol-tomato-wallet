@@ -20,7 +20,7 @@
 
 const {appState, getXymMosaicIdHex, NetworkType} = W.config;
 const {formatMosaicAmount} = W.utils;
-const {computeHeightRange} = W.onchainAnalysis;
+const {computeHeightRange, formatUtcJstFromMs} = W.onchainAnalysis;
 
 const TRANSFER_TYPE = 16724; // Transfer Transaction
 const AGGREGATE_COMPLETE_TYPE = 16705;
@@ -217,7 +217,7 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, 
 
   // 送金(Transfer)1件分を分類して集計に反映する。
   // 単純送金(トップレベル)・アグリゲート内の埋め込み送金の両方から呼ばれる。
-  function recordTransfer(tx, hash, height) {
+  function recordTransfer(tx, hash, height, timestampRaw) {
     const mosaics = tx.mosaics || [];
     const xymEntry = mosaics.find((m) => xymMosaicIds.has(String(m.id).toUpperCase()));
     if (!xymEntry) {
@@ -260,7 +260,7 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, 
       outflowCount++;
     }
 
-    transactions.push({ direction: isInflow ? "in" : "out", amount, counterpartyAddress, hash, height });
+    transactions.push({ direction: isInflow ? "in" : "out", amount, counterpartyAddress, hash, height, timestampRaw });
   }
 
   while (pageNumber <= SCAN_MAX_PAGES) {
@@ -308,18 +308,19 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, 
       const tx = item.transaction;
       const hash = item.meta?.hash;
       const height = item.meta?.height;
+      const timestampRaw = item.meta?.timestamp;
       const type = Number(tx.type);
 
       if (type === TRANSFER_TYPE) {
         // 単純な送金(アグリゲートに包まれていない)
         debug.transferTopLevelCount++;
-        recordTransfer(tx, hash, height);
+        recordTransfer(tx, hash, height, timestampRaw);
         continue;
       }
 
       if (type === AGGREGATE_COMPLETE_TYPE || type === AGGREGATE_BONDED_TYPE) {
         debug.aggregateCount++;
-        aggregateItems.push({ hash, height });
+        aggregateItems.push({ hash, height, timestampRaw });
         continue;
       }
 
@@ -337,12 +338,12 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, 
           debug.aggregateDetailFailCount++;
           return;
         }
-        const { height } = aggregateItems[i];
+        const { height, timestampRaw } = aggregateItems[i];
         for (const inner of detailResult.innerTxs) {
           const innerTx = inner.transaction;
           if (innerTx && Number(innerTx.type) === TRANSFER_TYPE) {
             debug.innerTransferCount++;
-            recordTransfer(innerTx, detailResult.hash, height);
+            recordTransfer(innerTx, detailResult.hash, height, timestampRaw);
           }
         }
       });
@@ -565,11 +566,9 @@ async function loadExchangeFlowAnalysis(mode) {
     const { fromHeight, toHeight, fromTimestampMs, toTimestampMs } = await computeHeightRange("rollingHours", hours);
     const xymMosaicIds = buildXymMosaicIdSet();
 
-    const fromDate = new Date(fromTimestampMs);
-    const toDate = new Date(toTimestampMs);
-    const rangeLabel =
-      `${rangeLabelBase}（${fromDate.toISOString().replace("T", " ").slice(0, 19)} 〜 ` +
-      `${toDate.toISOString().replace("T", " ").slice(0, 19)} UTC）`;
+    const fromText = formatUtcJstFromMs(fromTimestampMs);
+    const toText = formatUtcJstFromMs(toTimestampMs);
+    const rangeLabel = `${rangeLabelBase}（${fromText} 〜 ${toText}）`;
 
     const results = [];
     for (const ex of EXCHANGES) {
@@ -622,6 +621,10 @@ function txRowHtml(tx) {
   const dirLabel = tx.direction === "in" ? "↙ 流入" : "↗ 流出";
   const dirColor = tx.direction === "in" ? "#4ade80" : "#f87171";
   const counterpartyLabel = tx.direction === "in" ? "送信元" : "送信先";
+  const timeText =
+    tx.timestampRaw != null && appState.epochAdjustment
+      ? formatUtcJstFromMs(Number(appState.epochAdjustment) * 1000 + Number(tx.timestampRaw))
+      : null;
   const explorerLink = tx.hash
     ? `<a href="${getExplorerUrl(tx.hash)}" target="_blank" rel="noopener" style="font-size:12px;color:#93c5fd;">Explorerで見る ↗</a>`
     : "";
@@ -634,6 +637,7 @@ function txRowHtml(tx) {
       </div>
       <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${counterpartyLabel}: ${tx.counterpartyAddress ?? "---"}</div>
       <div style="font-size:12px;color:#94a3b8;">高さ: ${tx.height ?? "---"}</div>
+      ${timeText ? `<div style="font-size:12px;color:#94a3b8;">日付: ${timeText}</div>` : ""}
       ${explorerLink}
     </div>
   `;
