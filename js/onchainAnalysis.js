@@ -36,6 +36,7 @@ const WHALE_HIGH_THRESHOLD_XYM = 1000000; // 一覧内での強調表示: これ
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 200; // 安全のための上限(最大 20,000 件 / 20,000 ブロック)
 const NEW_ADDRESS_CHECK_CONCURRENCY = 10; // 新規アドレス判定(初回トランザクション確認)の並列数
+const MAX_CUSTOM_RANGE_DAYS = 90; // 「指定範囲」で集計できる最大日数
 
 // 直近の集計結果(大口一覧の詳細画面表示用)
 let lastWhaleResult = null; // { whales, rangeLabel }
@@ -302,13 +303,10 @@ function whaleAmountColor(amount) {
 }
 
 /* ============================================================
-   Symbol Timestamp(epochAdjustment基準の生の数値)を、
-   UTC・JST(日本標準時)併記の文字列にする
+   Unix時刻(ms)を、UTC・JST(日本標準時)併記の文字列にする
 ============================================================ */
-function formatWhaleTime(timestampRaw) {
-  if (timestampRaw == null || !appState.epochAdjustment) return null;
-
-  const unixMs = Number(appState.epochAdjustment) * 1000 + Number(timestampRaw);
+function formatUtcJstFromMs(unixMs) {
+  if (unixMs == null || Number.isNaN(unixMs)) return null;
   const date = new Date(unixMs);
   if (Number.isNaN(date.getTime())) return null;
 
@@ -326,6 +324,16 @@ function formatWhaleTime(timestampRaw) {
     }).replace(/\//g, "-") + " JST";
 
   return `${utcText} ／ ${jstText}`;
+}
+
+/* ============================================================
+   Symbol Timestamp(epochAdjustment基準の生の数値)を、
+   UTC・JST(日本標準時)併記の文字列にする
+============================================================ */
+function formatWhaleTime(timestampRaw) {
+  if (timestampRaw == null || !appState.epochAdjustment) return null;
+  const unixMs = Number(appState.epochAdjustment) * 1000 + Number(timestampRaw);
+  return formatUtcJstFromMs(unixMs);
 }
 
 function whaleRowHtml(w) {
@@ -414,12 +422,54 @@ function initOnchainAnalysisInteractions() {
 initOnchainAnalysisInteractions();
 
 /* ============================================================
+   「指定範囲」用: <input type="date"> の "YYYY-MM-DD" 文字列を
+   UTC 0:00基準のUnix時刻(ms)に変換する
+============================================================ */
+function parseDateInputToUtcMs(dateStr) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const ms = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/* ============================================================
+   「指定範囲」の入力値を検証する。
+   終了日は「その日の24:00(=翌日0:00)まで」を含める。
+   最大 MAX_CUSTOM_RANGE_DAYS 日間まで指定可能。
+============================================================ */
+function validateCustomDateRange(fromDateStr, toDateStr) {
+  const fromMs = parseDateInputToUtcMs(fromDateStr);
+  const toDayStartMs = parseDateInputToUtcMs(toDateStr);
+
+  if (fromMs == null || toDayStartMs == null) {
+    return { ok: false, error: "開始日・終了日を正しく指定してください。" };
+  }
+
+  const toMs = toDayStartMs + 24 * 60 * 60 * 1000;
+
+  if (fromMs >= toMs) {
+    return { ok: false, error: "開始日は終了日より前の日付を指定してください。" };
+  }
+
+  const rangeDays = Math.round((toMs - fromMs) / (24 * 60 * 60 * 1000));
+  if (rangeDays > MAX_CUSTOM_RANGE_DAYS) {
+    return {
+      ok: false,
+      error: `指定できる範囲は最大${MAX_CUSTOM_RANGE_DAYS}日間までです(現在の指定: ${rangeDays}日間)。`,
+    };
+  }
+
+  return { ok: true, fromMs, toMs, rangeDays };
+}
+
+/* ============================================================
    集計対象のブロック高範囲を決定する
    mode: "rolling24h"(現在時刻から過去24時間) | "yesterday"(UTC昨日 0:00〜24:00)
          | "rollingHours"(現在時刻から過去 hours 時間。exchangeFlow.js等の
             他モジュールから任意の期間で呼び出すために用意)
+         | "custom"(指定した日付範囲。customRangeに{fromMs, toMs}を渡す)
 ============================================================ */
-async function computeHeightRange(mode, hours) {
+async function computeHeightRange(mode, hours, customRange) {
   const chainInfo = await fetch(new URL("/chain/info", appState.NODE)).then((r) => r.json());
   const currentHeight = Number(chainInfo.height);
   const currentTimestampMs = await fetchBlockTimestampMs(currentHeight);
@@ -429,7 +479,16 @@ async function computeHeightRange(mode, hours) {
 
   let fromMs, toHeight;
 
-  if (mode === "yesterday") {
+  if (mode === "custom") {
+    fromMs = customRange.fromMs;
+    if (customRange.toMs >= currentTimestampMs) {
+      // 終了日が今日以降(=現在)を含む場合は、そのまま現在の高さまでを対象にする
+      toHeight = currentHeight;
+    } else {
+      const boundaryHeight = await findHeightForTimestamp(customRange.toMs, currentHeight, currentTimestampMs);
+      toHeight = Math.max(1, boundaryHeight - 1); // 指定終了時刻より前の最後の高さまで
+    }
+  } else if (mode === "yesterday") {
     fromMs = todayMidnightMs - 24 * 60 * 60 * 1000;
     const boundaryHeight = await findHeightForTimestamp(todayMidnightMs, currentHeight, currentTimestampMs);
     toHeight = Math.max(1, boundaryHeight - 1); // 今日0:00より前の最後の高さまでを「昨日」とする
@@ -445,42 +504,67 @@ async function computeHeightRange(mode, hours) {
   const fromTimestampMs = await fetchBlockTimestampMs(fromHeight);
   const toTimestampMs = toHeight === currentHeight ? currentTimestampMs : await fetchBlockTimestampMs(toHeight);
 
-  return { fromHeight, toHeight, fromTimestampMs, toTimestampMs };
+  return { fromHeight, toHeight, fromTimestampMs, toTimestampMs, toIsNow: toHeight === currentHeight };
 }
 
 /* ============================================================
    分析本体。「データ」画面の「オンチェーン分析」カードから呼ばれる。
-   mode: "rolling24h" | "yesterday"
+   mode: "rolling24h" | "yesterday" | "custom"
+   customRange: mode==="custom" の場合のみ { fromDateStr, toDateStr }
+                (<input type="date"> の "YYYY-MM-DD" 文字列) を渡す
 ============================================================ */
-async function loadOnchainAnalysis(mode) {
+async function loadOnchainAnalysis(mode, customRange) {
   const setText = (id, text) => {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
   };
   const statusEl = document.getElementById("onchain-analysis-status");
+  const customErrorEl = document.getElementById("onchain-custom-range-error");
   const runBtns = [
     document.getElementById("onchain-analysis-run-rolling-btn"),
     document.getElementById("onchain-analysis-run-yesterday-btn"),
+    document.getElementById("onchain-analysis-run-custom-btn"),
   ];
+
+  if (customErrorEl) customErrorEl.textContent = "";
 
   if (!appState.NODE || !appState.epochAdjustment || !appState.facade) {
     if (statusEl) statusEl.textContent = "接続完了後にご利用いただけます。";
     return;
   }
 
+  // 「指定範囲」の場合は、通信を始める前に入力値を検証する
+  let customMs = null;
+  if (mode === "custom") {
+    const validation = validateCustomDateRange(customRange?.fromDateStr, customRange?.toDateStr);
+    if (!validation.ok) {
+      if (customErrorEl) customErrorEl.textContent = validation.error;
+      else if (statusEl) statusEl.textContent = validation.error;
+      return;
+    }
+    customMs = { fromMs: validation.fromMs, toMs: validation.toMs };
+  }
+
   runBtns.forEach((b) => { if (b) b.disabled = true; });
   if (statusEl) {
     statusEl.textContent =
-      (mode === "yesterday" ? "昨日(UTC)の" : "過去24時間の") + "集計対象のブロック範囲を特定しています...";
+      (mode === "yesterday" ? "昨日(UTC)の" : mode === "custom" ? "指定範囲の" : "過去24時間の") +
+      "集計対象のブロック範囲を特定しています...";
   }
 
   const titleEl = document.getElementById("onchain-analysis-range-title");
   if (titleEl) {
-    titleEl.textContent = mode === "yesterday" ? "昨日(UTC 0:00〜24:00)" : "過去24時間(現在時刻基準)";
+    titleEl.textContent =
+      mode === "yesterday"
+        ? "昨日(UTC 0:00〜24:00)"
+        : mode === "custom"
+        ? `指定範囲（${customRange.fromDateStr} 〜 ${customRange.toDateStr}, UTC基準）`
+        : "過去24時間(現在時刻基準)";
   }
 
   try {
-    const { fromHeight, toHeight, fromTimestampMs, toTimestampMs } = await computeHeightRange(mode);
+    const { fromHeight, toHeight, fromTimestampMs, toTimestampMs, toIsNow } =
+      mode === "custom" ? await computeHeightRange(mode, undefined, customMs) : await computeHeightRange(mode);
 
     // 平均ブロック生成間隔
     const blockCount = toHeight - fromHeight;
@@ -526,12 +610,9 @@ async function loadOnchainAnalysis(mode) {
       );
     }
 
-    const fromDate = new Date(fromTimestampMs);
-    const toDate = new Date(toTimestampMs);
-    const rangeLabel =
-      mode === "yesterday"
-        ? `${fromDate.toISOString().replace("T", " ").slice(0, 19)} 〜 ${toDate.toISOString().replace("T", " ").slice(0, 19)} UTC`
-        : `${fromDate.toISOString().replace("T", " ").slice(0, 19)} UTC 〜 現在`;
+    const fromText = formatUtcJstFromMs(fromTimestampMs);
+    const toText = formatUtcJstFromMs(toTimestampMs);
+    const rangeLabel = toIsNow ? `${fromText} 〜 現在` : `${fromText} 〜 ${toText}`;
 
     // 大口XYM移動 詳細画面用に保存(クリックされたときに再取得せず表示するため)
     lastWhaleResult = { whales: result.whales, rangeLabel, truncated: result.truncated };
@@ -551,6 +632,7 @@ window.W.onchainAnalysis = {
   loadOnchainAnalysis,
   computeHeightRange,
   fetchBlockTimestampMs,
+  MAX_CUSTOM_RANGE_DAYS,
 };
 
 })();
