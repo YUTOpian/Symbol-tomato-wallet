@@ -12,11 +12,13 @@
 //   - 昨日(yesterday): UTCでの昨日 0:00〜24:00 の固定1日分
 //
 // 集計対象:
-//   - トランザクション数(全トランザクション種別)
-//   - アクティブアカウント数(期間中、XYMの送受信をしたアドレスの延べ数。※送金以外の
-//     操作(モザイク作成等)のみを行ったアカウントは含まない概算値)
+//   - アクティブアドレス数(期間中、何らかのトランザクション(全種別・埋め込み含む)を
+//     「送信元」として出したアドレスの延べ数)
+//   - 新規アドレス作成数(上記のうち、REST APIで遡れる範囲でこの期間より前に
+//     一度もトランザクションを出した履歴がないアドレスの数。近似値)
 //   - 平均ブロック生成間隔(期間中の実測値)
-//   - XYM移動量(総移動量・送金件数・送金元/送金先アドレス数)
+//   - XYM移動量(総移動量・XYM送金件数・送金元/送金先アドレス数)
+//   - モザイク送信件数(XYMを含む、何らかのモザイクを伴う送金の件数)
 //   - 大口送金一覧(閾値以上のXYM送金)
 //
 // 集計はブロック高の範囲を二分探索で特定したうえで、/transactions/confirmed に
@@ -33,8 +35,7 @@ const WHALE_MID_THRESHOLD_XYM = 100000; // 一覧内での強調表示: これ�
 const WHALE_HIGH_THRESHOLD_XYM = 1000000; // 一覧内での強調表示: これ以上は赤色
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 200; // 安全のための上限(最大 20,000 件 / 20,000 ブロック)
-const BLOCK_FETCH_CONCURRENCY = 20; // ブロック個別取得の並列数(/blocksのfromHeight/toHeightが使えないため、高さ1件ずつ取得する。exchangeFlow.jsのアグリゲート並列取得と同じ考え方)
-const HARVESTER_BALANCE_CONCURRENCY = 10; // ハーベスター残高取得の並列数
+const NEW_ADDRESS_CHECK_CONCURRENCY = 10; // 新規アドレス判定(初回トランザクション確認)の並列数
 
 // 直近の集計結果(大口一覧の詳細画面表示用)
 let lastWhaleResult = null; // { whales, rangeLabel }
@@ -80,56 +81,6 @@ async function fetchBlockTimestampMs(height) {
 }
 
 /* ============================================================
-   大口移動一覧に表示する時刻の取得。
-   同じ高さの大口移動が複数件あることも多いため、重複する高さは
-   1回だけ取得して使い回す(並列取得で高速化)。
-============================================================ */
-async function attachWhaleTimestamps(whales) {
-  const uniqueHeights = [...new Set(whales.map((w) => Number(w.height)).filter((h) => Number.isFinite(h)))];
-  const timestampByHeight = new Map();
-
-  let cursor = 0;
-  async function worker() {
-    while (cursor < uniqueHeights.length) {
-      const i = cursor++;
-      const height = uniqueHeights[i];
-      try {
-        timestampByHeight.set(height, await fetchBlockTimestampMs(height));
-      } catch (e) {
-        console.warn("大口移動一覧: ブロック時刻の取得に失敗しました:", height, e);
-      }
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(BLOCK_FETCH_CONCURRENCY, uniqueHeights.length) }, worker);
-  await Promise.all(workers);
-
-  for (const w of whales) {
-    w.timestampMs = timestampByHeight.get(Number(w.height)) ?? null;
-  }
-}
-
-/* ============================================================
-   UnixMsをUTC/JST両方の表示テキストに変換する(大口移動一覧用)
-============================================================ */
-function formatUtcAndJst(timestampMs) {
-  if (!Number.isFinite(timestampMs)) return { utcText: "---", jstText: "---" };
-  const date = new Date(timestampMs);
-  const fmt = (timeZone) =>
-    date.toLocaleString("ja-JP", {
-      timeZone,
-      hour12: false,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  return { utcText: `${fmt("UTC")} UTC`, jstText: `${fmt("Asia/Tokyo")} JST` };
-}
-
-/* ============================================================
    指定したUnix時刻(ms)以降で最初のブロック高を二分探索で特定する
 ============================================================ */
 async function findHeightForTimestamp(targetMs, currentHeight, currentTimestampMs) {
@@ -162,7 +113,10 @@ async function findHeightForTimestamp(targetMs, currentHeight, currentTimestampM
 
 /* ============================================================
    指定した高さ範囲内のXYM送金トランザクションを走査し、
-   総移動量・送金元/先アドレス集合・大口送金一覧を集計する
+   総移動量・送金元/先アドレス集合・大口送金一覧を集計する。
+   あわせて、XYMに限らずモザイクを1つ以上含む送金(モザイク送信)の
+   件数もここで集計する(いずれもTransferTransactionが対象のため、
+   同じスキャンで済ませられる)。
 ============================================================ */
 async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress) {
   const whaleThresholdAtomic = BigInt(WHALE_THRESHOLD_XYM) * 1_000_000n;
@@ -170,6 +124,7 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
   let pageNumber = 1;
   let totalAmount = 0n;
   let transferCount = 0;
+  let mosaicTransferCount = 0;
   const senderPublicKeys = new Set();
   const recipientAddresses = new Set();
   const whales = [];
@@ -194,6 +149,10 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
     for (const item of items) {
       const tx = item.transaction;
       const mosaics = tx.mosaics || [];
+
+      // モザイク送信件数(XYM含む。何らかのモザイクを1つ以上含む送金)
+      if (mosaics.length > 0) mosaicTransferCount++;
+
       const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
       if (!xymEntry) continue; // XYMを含まない送金(他モザイクのみ)は対象外
 
@@ -206,15 +165,16 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
       if (recipientAddr) recipientAddresses.add(recipientAddr);
 
       if (amount >= whaleThresholdAtomic) {
-        // 埋め込みトランザクション(アグリゲート内の送金)は、そのTx自身のハッシュでは
-        // Explorer上で参照できない(アグリゲート自体のハッシュでないと見つからない)ため、
-        // meta.aggregateHashがあればそちらを優先する。
         whales.push({
           senderPublicKey: tx.signerPublicKey,
           recipientAddress: recipientAddr,
           amount,
-          hash: item.meta?.aggregateHash || item.meta?.hash,
+          // 埋め込みトランザクション(アグリゲート内のTransfer)はmeta.hashを持たず、
+          // Explorerで開けるのは親アグリゲートのハッシュ(meta.aggregateHash)のため、
+          // そちらを優先する(transactions.jsの一覧表示と同じ考え方)
+          hash: item.meta?.aggregateHash ?? item.meta?.hash,
           height: item.meta?.height,
+          timestampRaw: item.meta?.timestamp,
         });
       }
     }
@@ -229,210 +189,105 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
 
   if (pageNumber > SCAN_MAX_PAGES) truncated = true;
 
-  return { totalAmount, transferCount, senderPublicKeys, recipientAddresses, whales, truncated };
+  return { totalAmount, transferCount, mosaicTransferCount, senderPublicKeys, recipientAddresses, whales, truncated };
 }
 
 /* ============================================================
-   指定した高さ範囲の全トランザクション数(埋め込みトランザクション含む)と、
-   ハーベスター(ブロック生成者)の延べ集合を、個々のトランザクションではなく
-   ブロック一覧から集計する。
-   ブロックのトランザクション件数は item.meta.totalTransactionsCount に
-   入っている(item.blockはブロック本体のヘッダー情報のみで、集計値は
-   metaに入る)。
-   高さ範囲(fromHeight〜toHeight)はこちらで既知のため、必要なページ数を
-   先に計算し、サーバーからの「次のページがあるか」の応答を待たずに
-   まとめて並列取得する。これにより、ノードによっては toHeight が
-   正しく効かず際限なく取得し続けてしまう問題を避けつつ、速度も改善する。
-   各ページ取得後は、念のためheightがfromHeight〜toHeightの範囲内かを
-   クライアント側でも確認する(サーバー側フィルタが効かない場合の保険)。
+   指定した高さ範囲内の、全トランザクション種別(埋め込み含む)を対象に、
+   「送信元」となったアドレスの延べ集合を集計する(アクティブアドレス数用)。
+   /transactions/confirmed は type を指定しなければ全種別が対象になり、
+   fromHeight/toHeightで絞り込めるため、/blocksを高さ1件ずつ取得するより
+   大幅に軽量に済む。
 ============================================================ */
-/* ============================================================
-   指定した高さ範囲の全トランザクション数(埋め込みトランザクション含む)と、
-   ハーベスター(ブロック生成者)の延べ集合を集計する。
-   ブロックのトランザクション件数は meta.totalTransactionsCount に入っている。
-   ※ 重要: Symbol RESTの /blocks 検索エンドポイントは fromHeight/toHeight を
-   受け付けない(offset/orderのみでのカーソル方式)。以前の実装はこれに気づかず
-   fromHeight/toHeightを渡していたため、サーバー側では無視されて常に古い
-   ブロック(高さ1〜)から取得してしまい、範囲外としてすべて除外されて
-   「0件」になっていた。この関数では確実な /blocks/{height} を高さ1件ずつ
-   (並列取得)で叩くことで、この問題を避けている。
-============================================================ */
-async function summarizeBlocks(fromHeight, toHeight) {
-  const totalBlocksInRange = Math.max(0, toHeight - fromHeight + 1);
-  const maxScannableBlocks = SCAN_MAX_PAGES * SCAN_PAGE_SIZE;
-  const truncated = totalBlocksInRange > maxScannableBlocks;
+async function scanActiveAddresses(fromHeight, toHeight, onProgress) {
+  let pageNumber = 1;
+  const signerPublicKeys = new Set();
+  let truncated = false;
 
-  // 打ち切りが発生する場合は、直近側(toHeightに近い方、通常は現在時刻に近い方)を優先する
-  const scanFromHeight = truncated ? toHeight - maxScannableBlocks + 1 : fromHeight;
+  while (pageNumber <= SCAN_MAX_PAGES) {
+    const params = new URLSearchParams({
+      fromHeight: String(fromHeight),
+      toHeight: String(toHeight),
+      embedded: "true",
+      pageSize: String(SCAN_PAGE_SIZE),
+      pageNumber: String(pageNumber),
+      order: "asc",
+    });
 
-  let total = 0;
-  let errored = false;
-  const harvesterAddresses = new Set();
-
-  if (totalBlocksInRange <= 0) {
-    return { total, truncated: false, errored, harvesterAddresses };
-  }
-
-  const heights = [];
-  for (let h = scanFromHeight; h <= toHeight; h++) heights.push(h);
-
-  async function fetchOne(height) {
-    try {
-      const res = await fetch(new URL("/blocks/" + height, appState.NODE));
-      if (!res.ok) return { error: true };
-      const json = await res.json();
-      return { error: false, block: json.block, meta: json.meta };
-    } catch (e) {
-      console.warn("summarizeBlocks: ブロック取得に失敗しました:", height, e);
-      return { error: true };
-    }
-  }
-
-  let cursor = 0;
-  async function worker() {
-    while (cursor < heights.length) {
-      const i = cursor++;
-      const r = await fetchOne(heights[i]);
-      if (r.error) {
-        errored = true;
-        continue;
-      }
-
-      total += Number(
-        r.meta?.totalTransactionsCount ?? r.meta?.transactionsCount ??
-        r.block?.totalTransactionsCount ?? r.block?.transactionsCount ?? 0
-      );
-
-      const signerPublicKey = r.block?.signerPublicKey;
-      if (signerPublicKey) {
-        try {
-          harvesterAddresses.add(publicKeyToAddress(signerPublicKey));
-        } catch {
-          harvesterAddresses.add(signerPublicKey); // 変換に失敗した場合は公開鍵のまま(延べ数としては数える)
-        }
-      }
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(BLOCK_FETCH_CONCURRENCY, heights.length) }, worker);
-  await Promise.all(workers);
-
-  return { total, truncated, errored, harvesterAddresses };
-}
-
-/* ============================================================
-   ハーベスター(この期間に実際にブロックを生成したアカウント)の
-   現在のXYM残高合計を集計する(「ハーベスト参加XYM合計」表示用)。
-   ※ これは「ネットワーク全体で委任ハーベストに参加中の残高合計」
-   (symbol-tools.com 等が各ノードの委任状況を独自に収集・集計している値)
-   とは算出方法が異なる。このアプリはノード運営者ではなく利用者側の
-   REST接続のみで完結する構成のため、各ノードの委任ハーベスター一覧を
-   直接取得することはできない。代わりに、この期間中に実際にブロックを
-   生成した(=ハーベストに成功した)アカウントの「現在の」XYM残高を
-   合計することで、実測ベースの近い指標として表示する。
-============================================================ */
-/* ============================================================
-   ハーベスター(この期間に実際にブロックを生成したアカウント)の
-   現在のXYM残高合計を集計する(「ハーベスト参加XYM合計」表示用)。
-   ※ これは「ネットワーク全体で委任ハーベストに参加中の残高合計」
-   (symbol-tools.com / symbolnodes.org 等が各ノードの委任状況を独自に
-   収集・集計している値)とは算出方法が異なる。このアプリはノード
-   運営者ではなく利用者側のREST接続のみで完結する構成のため、各ノードの
-   委任ハーベスター一覧を直接取得することはできない。代わりに、この
-   期間中に実際にブロックを生成した(=ハーベストに成功した)アカウントの
-   「現在の」XYM残高を合計することで、実測ベースの近い指標として表示する。
-   ※ 重要: 委任ハーベスティング(remote harvesting)を使っている場合、
-   ブロックの署名者(block.signerPublicKey)は「リモートアカウント」であり、
-   これは仕組み上必ず残高0になる(秘密鍵をノードに預けるための使い捨て
-   アカウントのため)。実際にXYMを保有しているのは、そのリモートアカウントに
-   AccountKeyLinkTransactionでリンクされている「メインアカウント」の方。
-   そのため、まず署名者アカウントの accountType を確認し、リモート
-   アカウント(2)またはリンク未確定(0/3)であれば supplementalPublicKeys.linked
-   からメインアカウントの公開鍵を辿り、そちらの残高を合計する
-   (accountType===1のメインアカウントで直接署名している場合はそのまま)。
-============================================================ */
-async function fetchHarvesterXymTotal(harvesterAddresses, xymMosaicIdHex) {
-  const addresses = [...harvesterAddresses].filter((a) => typeof a === "string" && a.length === 39);
-
-  let total = 0n;
-  let failCount = 0;
-  // 複数のリモートアカウントが同じメインアカウントにリンクしている場合の
-  // 二重計上を防ぐための、実際に加算済みのアドレス集合
-  const countedAddresses = new Set();
-
-  function extractXymAmount(account) {
-    const mosaics = account?.mosaics || [];
-    const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
-    return xymEntry ? BigInt(xymEntry.amount) : 0n;
-  }
-
-  async function fetchAccount(address) {
-    const res = await fetch(new URL("/accounts/" + address, appState.NODE));
-    if (res.status === 404) return { notFound: true };
-    if (!res.ok) return { error: true };
+    const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`);
     const json = await res.json();
-    return { account: json.account };
+    const items = json.data ?? [];
+    if (items.length === 0) break;
+
+    for (const item of items) {
+      const signerPublicKey = item.transaction?.signerPublicKey;
+      if (signerPublicKey) signerPublicKeys.add(signerPublicKey);
+    }
+
+    onProgress?.(pageNumber);
+
+    if (items.length < SCAN_PAGE_SIZE) break;
+    pageNumber++;
   }
 
-  async function fetchOneBalance(address) {
-    let r;
+  if (pageNumber > SCAN_MAX_PAGES) truncated = true;
+
+  return { signerPublicKeys, truncated };
+}
+
+/* ============================================================
+   アクティブアドレス(期間中に何らかのトランザクションを出したアドレス)
+   のうち、「新規アドレス」(この期間より前にトランザクションを出した
+   履歴がない=初めてトランザクションを出した)の数を数える。
+   各アドレス(公開鍵)ごとに、そのアドレスが署名したトランザクションを
+   古い順に1件だけ取得し、その高さがfromHeight以降であれば
+   「この期間が初回」とみなす。
+   件数に上限は設けず、対象アドレス全件を確認する(並列数のみ制限)。
+============================================================ */
+async function countNewAddresses(signerPublicKeys, fromHeight, onProgress) {
+  const targets = [...signerPublicKeys];
+
+  let newCount = 0;
+  let failCount = 0;
+  let doneCount = 0;
+
+  async function checkOne(publicKeyHex) {
     try {
-      r = await fetchAccount(address);
-    } catch (e) {
-      console.warn("fetchHarvesterXymTotal: 残高取得に失敗しました:", address, e);
-      failCount++;
-      return;
-    }
-
-    if (r.notFound) return; // 取引履歴のない(=残高0の)アドレス
-    if (r.error) {
-      failCount++;
-      return;
-    }
-
-    const account = r.account;
-    const accountType = account?.accountType;
-    const linkedPubKey = account?.supplementalPublicKeys?.linked?.publicKey;
-
-    // accountType: 0=Unlinked, 1=Main(残高保有), 2=Remote(常に残高0), 3=Remote_Unlinked
-    // Mainアカウント自身(1)以外でリンク先が分かる場合は、そちらの残高を見に行く
-    if (linkedPubKey && accountType !== 1) {
-      try {
-        const mainAddress = publicKeyToAddress(linkedPubKey);
-        if (!countedAddresses.has(mainAddress)) {
-          countedAddresses.add(mainAddress);
-          const mr = await fetchAccount(mainAddress);
-          if (mr.account) {
-            total += extractXymAmount(mr.account);
-          } else if (mr.error) {
-            failCount++;
-          }
-        }
+      const params = new URLSearchParams({
+        signerPublicKey: publicKeyHex,
+        order: "asc",
+        pageSize: "1",
+      });
+      const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`);
+      if (!res.ok) {
+        failCount++;
         return;
-      } catch (e) {
-        console.warn("fetchHarvesterXymTotal: メインアカウントの解決に失敗しました:", address, e);
-        // 解決できなかった場合は、次善としてこのアカウント自身の残高(通常0)を使う
       }
-    }
-
-    if (!countedAddresses.has(address)) {
-      countedAddresses.add(address);
-      total += extractXymAmount(account);
+      const json = await res.json();
+      const first = (json.data ?? [])[0];
+      const firstHeight = Number(first?.meta?.height ?? 0);
+      if (firstHeight >= fromHeight) newCount++;
+    } catch (e) {
+      console.warn("countNewAddresses: 初回トランザクション確認に失敗しました:", publicKeyHex, e);
+      failCount++;
+    } finally {
+      doneCount++;
+      onProgress?.(doneCount, targets.length);
     }
   }
 
   let cursor = 0;
   async function worker() {
-    while (cursor < addresses.length) {
+    while (cursor < targets.length) {
       const i = cursor++;
-      await fetchOneBalance(addresses[i]);
+      await checkOne(targets[i]);
     }
   }
 
-  const workers = Array.from({ length: Math.min(HARVESTER_BALANCE_CONCURRENCY, addresses.length) }, worker);
+  const workers = Array.from({ length: Math.min(NEW_ADDRESS_CHECK_CONCURRENCY, targets.length) }, worker);
   await Promise.all(workers);
 
-  return { total, failCount, skippedNonAddressCount: harvesterAddresses.size - addresses.length };
+  return { newCount, failCount, checkedCount: targets.length };
 }
 
 /* ============================================================
@@ -446,6 +301,33 @@ function whaleAmountColor(amount) {
   return "#e5e7eb";
 }
 
+/* ============================================================
+   Symbol Timestamp(epochAdjustment基準の生の数値)を、
+   UTC・JST(日本標準時)併記の文字列にする
+============================================================ */
+function formatWhaleTime(timestampRaw) {
+  if (timestampRaw == null || !appState.epochAdjustment) return null;
+
+  const unixMs = Number(appState.epochAdjustment) * 1000 + Number(timestampRaw);
+  const date = new Date(unixMs);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const utcText = date.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+  const jstText =
+    date.toLocaleString("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).replace(/\//g, "-") + " JST";
+
+  return `${utcText} ／ ${jstText}`;
+}
+
 function whaleRowHtml(w) {
   let senderAddr = "---";
   try {
@@ -454,10 +336,10 @@ function whaleRowHtml(w) {
     senderAddr = "---";
   }
   const color = whaleAmountColor(w.amount);
-  const { utcText, jstText } = formatUtcAndJst(w.timestampMs);
+  const timeText = formatWhaleTime(w.timestampRaw);
   const explorerLink = w.hash
     ? `<a href="${getExplorerUrl(w.hash)}" target="_blank" rel="noopener" style="font-size:12px;color:#93c5fd;">Explorerで見る ↗</a>`
-    : `<span style="font-size:12px;color:#94a3b8;">Explorerで確認できませんでした</span>`;
+    : "";
 
   return `
     <div class="harvest-history-item">
@@ -465,7 +347,7 @@ function whaleRowHtml(w) {
       <div style="font-size:12px;color:#94a3b8;word-break:break-all;">送信元: ${senderAddr}</div>
       <div style="font-size:12px;color:#94a3b8;word-break:break-all;">送信先: ${w.recipientAddress ?? "---"}</div>
       <div style="font-size:12px;color:#94a3b8;">高さ: ${w.height}</div>
-      <div style="font-size:12px;color:#94a3b8;">時刻: ${utcText} ／ ${jstText}</div>
+      ${timeText ? `<div style="font-size:12px;color:#94a3b8;">時刻: ${timeText}</div>` : ""}
       ${explorerLink}
     </div>
   `;
@@ -605,40 +487,7 @@ async function loadOnchainAnalysis(mode) {
     const avgBlockIntervalSec = blockCount > 0 ? (toTimestampMs - fromTimestampMs) / 1000 / blockCount : null;
     setText("onchain-avg-block-time", avgBlockIntervalSec != null ? `${avgBlockIntervalSec.toFixed(1)} 秒` : "---");
 
-    // トランザクション数(全種別。埋め込みトランザクションも含む) と
-    // ハーベスター数を、ブロック一覧からまとめて集計する(トランザクション自体を
-    // 全件フェッチするより大幅に軽量)
-    if (statusEl) statusEl.textContent = "トランザクション総数・ハーベスター数を集計中...";
-    const blocksSummary = await summarizeBlocks(fromHeight, toHeight);
     const xymId = getXymMosaicIdHex();
-
-    if (blocksSummary.errored) {
-      setText("onchain-tx-count", "取得失敗");
-      setText("onchain-harvester-count", "取得失敗");
-      setText("onchain-harvest-xym-total", "取得失敗");
-    } else {
-      setText(
-        "onchain-tx-count",
-        blocksSummary.total.toLocaleString("ja-JP") + " 件" + (blocksSummary.truncated ? " 以上(打ち切り)" : "")
-      );
-      setText(
-        "onchain-harvester-count",
-        blocksSummary.harvesterAddresses.size.toLocaleString("ja-JP") + " アドレス" + (blocksSummary.truncated ? " 以上(打ち切り)" : "")
-      );
-
-      if (blocksSummary.harvesterAddresses.size === 0) {
-        setText("onchain-harvest-xym-total", "0 XYM");
-      } else {
-        if (statusEl) statusEl.textContent = "ハーベスト参加XYM合計を集計中...";
-        const harvestXymResult = await fetchHarvesterXymTotal(blocksSummary.harvesterAddresses, xymId);
-        setText(
-          "onchain-harvest-xym-total",
-          formatMosaicAmount(harvestXymResult.total, 6) + " XYM" +
-          (blocksSummary.truncated ? " 以上(打ち切り)" : "") +
-          (harvestXymResult.failCount > 0 ? `（${harvestXymResult.failCount}件取得失敗）` : "")
-        );
-      }
-    }
 
     if (statusEl) statusEl.textContent = "XYM送金トランザクションを集計中...";
     const result = await scanXymTransfers(fromHeight, toHeight, xymId, (page) => {
@@ -649,26 +498,32 @@ async function loadOnchainAnalysis(mode) {
 
     setText("onchain-transfer-count", result.transferCount.toLocaleString("ja-JP") + " 件" + suffix);
     setText("onchain-xym-volume", formatMosaicAmount(result.totalAmount, 6) + " XYM" + suffix);
-
-    let senderAddresses;
-    try {
-      senderAddresses = new Set([...result.senderPublicKeys].map(publicKeyToAddress));
-    } catch (e) {
-      console.warn("送金元アドレス変換に失敗しました:", e);
-      senderAddresses = result.senderPublicKeys;
-    }
-
-    setText("onchain-sender-count", senderAddresses.size.toLocaleString("ja-JP") + " アドレス" + suffix);
-    setText("onchain-recipient-count", result.recipientAddresses.size.toLocaleString("ja-JP") + " アドレス" + suffix);
-
-    const activeAccounts = new Set([...senderAddresses, ...result.recipientAddresses]);
-    setText("onchain-active-accounts", activeAccounts.size.toLocaleString("ja-JP") + " アドレス(送金ベースの概算)" + suffix);
-
+    setText("onchain-mosaic-transfer-count", result.mosaicTransferCount.toLocaleString("ja-JP") + " 件" + suffix);
     setText("onchain-whale-count", result.whales.length.toLocaleString("ja-JP") + " 件" + suffix);
 
-    if (result.whales.length > 0) {
-      if (statusEl) statusEl.textContent = "大口移動の時刻を取得中...";
-      await attachWhaleTimestamps(result.whales);
+    // アクティブアドレス数(全トランザクション種別・埋め込み含む、送信元ベース)
+    if (statusEl) statusEl.textContent = "アクティブアドレスを集計中...";
+    const activeResult = await scanActiveAddresses(fromHeight, toHeight, (page) => {
+      if (statusEl) statusEl.textContent = `アクティブアドレスを集計中...(${page}ページ目)`;
+    });
+    const activeSuffix = activeResult.truncated ? " 以上(件数が多いため打ち切り)" : "";
+    setText(
+      "onchain-active-address-count",
+      activeResult.signerPublicKeys.size.toLocaleString("ja-JP") + " アドレス" + activeSuffix
+    );
+
+    // 新規アドレス作成数(アクティブアドレスのうち、この期間が初回のもの)
+    if (activeResult.signerPublicKeys.size === 0) {
+      setText("onchain-new-address-count", "0 アドレス");
+    } else {
+      const newAddrResult = await countNewAddresses(activeResult.signerPublicKeys, fromHeight, (done, total) => {
+        if (statusEl) statusEl.textContent = `新規アドレスを確認中...(${done.toLocaleString("ja-JP")} / ${total.toLocaleString("ja-JP")} アドレス)`;
+      });
+      setText(
+        "onchain-new-address-count",
+        newAddrResult.newCount.toLocaleString("ja-JP") + " アドレス" + activeSuffix +
+        (newAddrResult.failCount > 0 ? `（${newAddrResult.failCount}件確認失敗）` : "")
+      );
     }
 
     const fromDate = new Date(fromTimestampMs);
