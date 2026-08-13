@@ -59,6 +59,15 @@
         オフラインで署名済みのトランザクションファイルをお持ちの場合は、こちらから読み込んでブロードキャストできます（ログイン不要）。
       </p>
       <button id="welcome-offline-broadcast-btn" class="button-primary">📥 オフライン署名データを読み込む</button>
+
+      <hr>
+
+      <p style="font-size:13px;color:#94a3b8;">
+        新規作成時などにダウンロードした「QRコードでログイン」用の画像とパスワードをお持ちの場合は、こちらからログインできます。
+      </p>
+      <button id="welcome-qr-login-camera-btn" class="button-primary">📷 QRコードを読み取ってログイン</button>
+      <button id="welcome-qr-login-file-btn" class="account-hide-btn" type="button">🖼 QRコード画像ファイルを選択してログイン</button>
+      <input type="file" id="welcome-qr-login-file-input" accept="image/*" style="display:none;">
     </div>
   </div>
 
@@ -214,6 +223,34 @@
   </div>
 
   <!-- ============================================================
+       QRコードでログイン用バックアップ(パスワード設定直後に表示)
+       ここで設定したパスワードで秘密鍵を暗号化したQRコードを生成する。
+       別の端末でこのQRコード+パスワードがあればログインできる。
+  ============================================================ -->
+  <div id="qr-backup-page" class="page">
+    <div class="card">
+      <h2>QRコードでログイン(バックアップ)</h2>
+      <p style="font-size:13px;color:#94a3b8;">
+        このQRコードと、今設定したパスワードがあれば、別の端末でもこのアカウントに
+        ログインできます。画像として保存し、ニーモニックと同様に安全な場所に
+        保管してください（第三者に見られない場所へ）。
+      </p>
+      <p style="font-size:12px;color:#f97316;">
+        ⚠️ このQRコードは秘密鍵をパスワードで暗号化したものです。QRコード単体が
+        流出してもパスワードが分からなければ資産は保護されますが、パスワードと
+        セットで管理するとQRコードと同じ強度になります。パスワードを忘れると、
+        このQRコードから秘密鍵を復元することは二度とできません。
+      </p>
+
+      <div id="qr-backup-image" style="text-align:center;margin:12px 0;">生成中...</div>
+
+      <button id="qr-backup-download-btn" class="account-hide-btn" type="button">💾 QRコードをダウンロード</button>
+      <button id="qr-backup-next-btn" class="button-primary">次へ（ホームへ）</button>
+      <div id="qr-backup-status"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        ロック解除画面(保存済みアカウントがある場合)
   ============================================================ -->
   <div id="unlock-page" class="page">
@@ -255,6 +292,17 @@
         オフラインで署名済みのトランザクションファイルをお持ちの場合は、こちらから読み込んでブロードキャストできます（ログイン不要）。
       </p>
       <button id="unlock-offline-broadcast-btn" class="button-primary">📥 オフライン署名データを読み込む</button>
+
+      <hr>
+
+      <p style="font-size:13px;color:#94a3b8;">
+        別のアカウントの「QRコードでログイン」用の画像とパスワードをお持ちの場合は、こちらからログインできます。
+        <b>この端末に保存されている現在のアカウント情報は削除され、置き換わります</b>
+        （ニーモニックや秘密鍵をお持ちであれば、資産自体がなくなることはありません）。
+      </p>
+      <button id="unlock-qr-login-camera-btn" class="button-primary">📷 QRコードを読み取ってログイン</button>
+      <button id="unlock-qr-login-file-btn" class="account-hide-btn" type="button">🖼 QRコード画像ファイルを選択してログイン</button>
+      <input type="file" id="unlock-qr-login-file-input" accept="image/*" style="display:none;">
     </div>
   </div>
 
@@ -889,7 +937,7 @@
             <div class="data-card-mini">
               <div class="data-card-mini-label">新規アドレス作成数</div>
               <div id="onchain-new-address-count" class="data-card-mini-value">---</div>
-              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">ネットワークで初めて認知されたアドレス数(近似値)</div>
+              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">「受け取って初」＋「送って初」の合算(近似値)</div>
             </div>
             <div id="onchain-whale-count-card" class="data-card-mini" style="cursor:pointer;">
               <div class="data-card-mini-label">大口XYM移動件数(10,000 XYM以上)</div>
@@ -1735,6 +1783,28 @@
   </div>
 </dialog>
 
+<!-- ============================================================
+     QRコードログイン: パスワード入力ダイアログ
+     カメラ/画像ファイルどちらの読み取り経路からも共通で使う。
+============================================================ -->
+<dialog id="qr-login-password-dialog">
+  <div class="card">
+    <h2>QRコードのパスワード</h2>
+    <p id="qr-login-password-address" style="font-size:12px;color:#94a3b8;word-break:break-all;"></p>
+    <p style="font-size:13px;color:#94a3b8;">
+      このQRコードを作成したときに設定したパスワードを入力してください。
+    </p>
+
+    <input id="qr-login-password-input" class="input-box" type="password" placeholder="パスワード">
+    <div id="qr-login-password-status"></div>
+
+    <div class="confirm-tx-actions">
+      <button id="qr-login-password-ok-btn" class="button-primary" type="button">ログイン</button>
+      <button id="qr-login-password-cancel-btn" class="account-hide-btn" type="button">キャンセル</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="tx-confirm-dialog">
   <div class="card">
     <h2>トランザクション確認</h2>
@@ -1803,6 +1873,7 @@
 <script src="js/sss.js"></script>
 <script src="js/transfer.js"></script>
 <script src="js/qrScanner.js"></script>
+<script src="js/qrLogin.js"></script>
 <script src="js/index.js"></script>
 
 </body>
