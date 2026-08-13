@@ -829,9 +829,13 @@
             ブロックを遡って集計するため、少し時間がかかることがあります。
             「アクティブアドレス数」はSymbolの全トランザクション種別(埋め込み含む)を対象に、
             送信元となったアドレスの延べ数を集計しています。
-            「新規アドレス作成数」は、そのうちREST APIで遡れる範囲でこの期間より前に
-            トランザクション履歴がない(=初めてトランザクションを出した)アドレスの数で、近似値です。
-            アドレス1件ごとに個別確認するため、アクティブアドレス数が多い期間ほど時間がかかります。
+            「新規アドレス作成数」は、この期間より前に送信・受信いずれの履歴もない
+            アドレスが、この期間中に初めて何らかのトランザクションの関係先(送金の
+            受取先・モザイクやネームスペースの操作対象・ハーベスト委任先など、XYM
+            送金に限らず全トランザクション種別が対象)になった数と、初めて
+            トランザクションを「送った」数の合算です(REST APIで遡れる範囲での
+            近似値。両方に該当するアドレスは2件としてカウントされます)。
+            アドレス1件ごとに個別確認するため、対象アドレスが多い期間ほど時間がかかります。
           </div>
           <button id="onchain-analysis-run-rolling-btn" class="button-primary" type="button">過去24時間</button>
           <button id="onchain-analysis-run-yesterday-btn" class="button-primary" type="button">昨日(UTC)</button>
@@ -885,7 +889,7 @@
             <div class="data-card-mini">
               <div class="data-card-mini-label">新規アドレス作成数</div>
               <div id="onchain-new-address-count" class="data-card-mini-value">---</div>
-              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">この期間に初めてトランザクションを出したアドレス数(近似値)</div>
+              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">「受け取って初」＋「送って初」の合算(近似値)</div>
             </div>
             <div id="onchain-whale-count-card" class="data-card-mini" style="cursor:pointer;">
               <div class="data-card-mini-label">大口XYM移動件数(10,000 XYM以上)</div>
