@@ -20,16 +20,7 @@
 
 const {appState, getXymMosaicIdHex, NetworkType} = W.config;
 const {formatMosaicAmount} = W.utils;
-const {
-  computeHeightRange,
-  formatUtcJstFromMs,
-  formatJpyValue,
-  formatUsdValue,
-  buildHistoricalRateMap,
-  utcDateKeyFromMs,
-  fiatTextFromRates,
-} = W.onchainAnalysis;
-const {getXymJpyRate, getXymUsdRate} = W.priceRates;
+const {computeHeightRange, formatUtcJstFromMs} = W.onchainAnalysis;
 
 const TRANSFER_TYPE = 16724; // Transfer Transaction
 const AGGREGATE_COMPLETE_TYPE = 16705;
@@ -457,20 +448,6 @@ function netColorOf(net) {
 }
 
 /* ============================================================
-   現在のXYM/JPY・XYM/USDレートを使った円・ドル換算表示。
-   合計流入・合計流出・純増減など、特定の1時刻に紐づかない集計値
-   (期間全体の合計)に使う。金額が負の場合(純減)は符号を保つ。
-============================================================ */
-function currentFiatText(xymAmountAtomic, jpyRate, usdResult) {
-  const xymValue = Number(xymAmountAtomic) / 1_000_000;
-  const sign = xymValue < 0 ? "-" : "";
-  const absValue = Math.abs(xymValue);
-  const jpyText = jpyRate != null ? sign + formatJpyValue(absValue * jpyRate) : "円: 取得失敗";
-  const usdText = usdResult?.rate != null ? sign + formatUsdValue(absValue * usdResult.rate) : "ドル: 取得失敗";
-  return `(${jpyText} / ${usdText})`;
-}
-
-/* ============================================================
    個別取引の金額に応じた強調色
    100万XYM以上: 赤 / 10万XYM以上: 黄 / それ未満: 通常色
 ============================================================ */
@@ -503,7 +480,7 @@ function addressListHtml(ex) {
     .join("");
 }
 
-function rowHtml(ex, result, currentRates) {
+function rowHtml(ex, result) {
   if (result.errored) {
     return `
       <div class="harvest-history-item exchange-flow-row" data-exchange-id="${ex.id}" style="cursor:pointer;">
@@ -518,23 +495,20 @@ function rowHtml(ex, result, currentRates) {
   const net = result.inflowAmount - result.outflowAmount;
   const netText = (net > 0n ? "+" : "") + formatMosaicAmount(net, 6) + " XYM";
   const suffix = result.truncated ? " 以上(件数が多いため打ち切り)" : "";
-  const inflowFiat = currentFiatText(result.inflowAmount, currentRates?.jpyRate, currentRates?.usdResult);
-  const outflowFiat = currentFiatText(result.outflowAmount, currentRates?.jpyRate, currentRates?.usdResult);
-  const netFiat = currentFiatText(net, currentRates?.jpyRate, currentRates?.usdResult);
 
   return `
     <div class="harvest-history-item exchange-flow-row" data-exchange-id="${ex.id}" style="cursor:pointer;">
       <div style="font-weight:bold;">${ex.label}</div>
       <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${addressListHtml(ex)}</div>
-      <div>流入: <b style="color:#4ade80;">${formatMosaicAmount(result.inflowAmount, 6)} XYM ${inflowFiat}</b>（${result.inflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
-      <div>流出: <b style="color:#f87171;">${formatMosaicAmount(result.outflowAmount, 6)} XYM ${outflowFiat}</b>（${result.outflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
-      <div>純増減: <b style="color:${netColorOf(net)};">${netText} ${netFiat}</b></div>
+      <div>流入: <b style="color:#4ade80;">${formatMosaicAmount(result.inflowAmount, 6)} XYM</b>（${result.inflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
+      <div>流出: <b style="color:#f87171;">${formatMosaicAmount(result.outflowAmount, 6)} XYM</b>（${result.outflowCount.toLocaleString("ja-JP")}件）${suffix}</div>
+      <div>純増減: <b style="color:${netColorOf(net)};">${netText}</b></div>
       <div style="font-size:11px;color:#60a5fa;margin-top:4px;">クリックで取引履歴を見る →</div>
     </div>
   `;
 }
 
-function renderSummary(results, currentRates) {
+function renderSummary(results) {
   const el = document.getElementById("exchange-flow-summary");
   if (!el) return;
 
@@ -546,21 +520,15 @@ function renderSummary(results, currentRates) {
   const totalNet = totalInflow - totalOutflow;
   const totalTruncated = okResults.some((r) => r.result.truncated);
   const netText = (totalNet > 0n ? "+" : "") + formatMosaicAmount(totalNet, 6) + " XYM";
-  const inflowFiat = currentFiatText(totalInflow, currentRates?.jpyRate, currentRates?.usdResult);
-  const outflowFiat = currentFiatText(totalOutflow, currentRates?.jpyRate, currentRates?.usdResult);
-  const netFiat = currentFiatText(totalNet, currentRates?.jpyRate, currentRates?.usdResult);
 
   el.innerHTML = `
     <div class="harvest-history-item">
       <div style="font-weight:bold;">全取引所合計${erroredExchanges.length > 0 ? "（取得失敗分を除く）" : ""}</div>
-      <div>合計流入: <b style="color:#4ade80;">${formatMosaicAmount(totalInflow, 6)} XYM ${inflowFiat}</b></div>
-      <div>合計流出: <b style="color:#f87171;">${formatMosaicAmount(totalOutflow, 6)} XYM ${outflowFiat}</b></div>
-      <div>合計純増減: <b style="color:${netColorOf(totalNet)};">${netText} ${netFiat}</b></div>
+      <div>合計流入: <b style="color:#4ade80;">${formatMosaicAmount(totalInflow, 6)} XYM</b></div>
+      <div>合計流出: <b style="color:#f87171;">${formatMosaicAmount(totalOutflow, 6)} XYM</b></div>
+      <div>合計純増減: <b style="color:${netColorOf(totalNet)};">${netText}</b></div>
       ${totalTruncated ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">一部のアドレスで件数が多いため集計が打ち切られています</div>` : ""}
       ${erroredExchanges.length > 0 ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">⚠️ 取得に失敗しました: ${erroredExchanges.join("、")}</div>` : ""}
-      <div style="font-size:11px;color:#64748b;margin-top:6px;">円・ドル換算は現在のレートで計算しています(現在レート:${
-        currentRates?.jpyRate != null ? ` ${formatJpyValue(currentRates.jpyRate)}/XYM` : " 取得失敗"
-      }${currentRates?.usdResult?.rate != null ? ` ／ ${formatUsdValue(currentRates.usdResult.rate)}/XYM` : " ／ 取得失敗"})</div>
     </div>
   `;
 }
@@ -595,13 +563,7 @@ async function loadExchangeFlowAnalysis(mode) {
   if (statusEl) statusEl.textContent = "集計対象のブロック範囲を特定しています...";
 
   try {
-    const [{ fromHeight, toHeight, fromTimestampMs, toTimestampMs }, currentJpyRate, currentUsdResult] =
-      await Promise.all([
-        computeHeightRange("rollingHours", hours),
-        getXymJpyRate(),
-        getXymUsdRate(),
-      ]);
-    const currentRates = { jpyRate: currentJpyRate, usdResult: currentUsdResult };
+    const { fromHeight, toHeight, fromTimestampMs, toTimestampMs } = await computeHeightRange("rollingHours", hours);
     const xymMosaicIds = buildXymMosaicIdSet();
 
     const fromText = formatUtcJstFromMs(fromTimestampMs);
@@ -635,9 +597,9 @@ async function loadExchangeFlowAnalysis(mode) {
     }
 
     if (listEl) {
-      listEl.innerHTML = results.map(({ ex, result }) => rowHtml(ex, result, currentRates)).join("");
+      listEl.innerHTML = results.map(({ ex, result }) => rowHtml(ex, result)).join("");
     }
-    renderSummary(results, currentRates);
+    renderSummary(results);
 
     if (statusEl) {
       statusEl.textContent =
@@ -654,7 +616,7 @@ async function loadExchangeFlowAnalysis(mode) {
 /* ============================================================
    取引履歴1件分のHTML(詳細画面用)
 ============================================================ */
-function txRowHtml(tx, rateMap) {
+function txRowHtml(tx) {
   const color = amountHighlightColor(tx.amount);
   const dirLabel = tx.direction === "in" ? "↙ 流入" : "↗ 流出";
   const dirColor = tx.direction === "in" ? "#4ade80" : "#f87171";
@@ -667,18 +629,11 @@ function txRowHtml(tx, rateMap) {
     ? `<a href="${getExplorerUrl(tx.hash)}" target="_blank" rel="noopener" style="font-size:12px;color:#93c5fd;">Explorerで見る ↗</a>`
     : "";
 
-  let fiatText = "";
-  if (appState.epochAdjustment && tx.timestampRaw != null) {
-    const unixMs = Number(appState.epochAdjustment) * 1000 + Number(tx.timestampRaw);
-    const rates = rateMap?.get(utcDateKeyFromMs(unixMs));
-    fiatText = " " + fiatTextFromRates(tx.amount, rates);
-  }
-
   return `
     <div class="harvest-history-item">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
         <span style="color:${dirColor};font-weight:bold;">${dirLabel}</span>
-        <span style="color:${color};font-weight:bold;">${formatMosaicAmount(tx.amount, 6)} XYM${fiatText}</span>
+        <span style="color:${color};font-weight:bold;">${formatMosaicAmount(tx.amount, 6)} XYM</span>
       </div>
       <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${counterpartyLabel}: ${tx.counterpartyAddress ?? "---"}</div>
       <div style="font-size:12px;color:#94a3b8;">高さ: ${tx.height ?? "---"}</div>
@@ -690,9 +645,8 @@ function txRowHtml(tx, rateMap) {
 
 /* ============================================================
    詳細画面(exchange-flow-detail-page)を描画する
-   円・ドル換算(日足終値ベース)の取得を待つため非同期。
 ============================================================ */
-async function renderExchangeDetail(exId) {
+function renderExchangeDetail(exId) {
   const ex = EXCHANGES.find((e) => e.id === exId);
   const titleEl = document.getElementById("exchange-flow-detail-title");
   const addressEl = document.getElementById("exchange-flow-detail-address");
@@ -753,15 +707,7 @@ async function renderExchangeDetail(exId) {
     }
 
     const visible = sorted.slice(0, DETAIL_MAX_SHOW);
-
-    listEl.innerHTML = `<div style="color:#94a3b8;">価格情報を取得しています...</div>`;
-
-    const unixMsList = visible
-      .filter((tx) => appState.epochAdjustment && tx.timestampRaw != null)
-      .map((tx) => Number(appState.epochAdjustment) * 1000 + Number(tx.timestampRaw));
-    const rateMap = await buildHistoricalRateMap(unixMsList);
-
-    let html = visible.map((tx) => txRowHtml(tx, rateMap)).join("");
+    let html = visible.map((tx) => txRowHtml(tx)).join("");
     if (sorted.length > DETAIL_MAX_SHOW) {
       html += `<div style="color:#94a3b8;font-size:12px;margin-top:6px;">他 ${sorted.length - DETAIL_MAX_SHOW} 件（新しい順に${DETAIL_MAX_SHOW}件のみ表示）</div>`;
     }
