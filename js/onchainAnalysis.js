@@ -190,19 +190,91 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
 
   if (pageNumber > SCAN_MAX_PAGES) truncated = true;
 
-  return { totalAmount, transferCount, mosaicTransferCount, senderPublicKeys, recipientAddresses, whales, truncated };
+  return {
+    totalAmount,
+    transferCount,
+    mosaicTransferCount,
+    senderPublicKeys,
+    recipientAddresses,
+    whales,
+    truncated,
+  };
+}
+
+/* ============================================================
+   トランザクション本体(tx)から、署名者(送信者)以外の「関係先アドレス」を
+   できるだけ広く抽出する(受信ベースの新規アドレス判定用)。
+   Symbolの各トランザクション種別は「宛先」の持ち方がバラバラなため、
+   よく使われるフィールド名を横断的に見て、該当するものを拾う:
+     - recipientAddress   : Transfer / SecretLock / SecretProof
+     - targetAddress       : AccountMetadata / MosaicMetadata /
+                              NamespaceMetadata / MosaicAddressRestriction
+     - address              : AddressAlias(ネームスペースにリンクするアドレス)
+     - sourceAddress        : MosaicSupplyRevocation(没収元アドレス)
+     - addressAdditions/
+       addressDeletions     : MultisigAccountModification(連署者の追加/削除)
+     - linkedPublicKey      : AccountKeyLink / VrfKeyLink / NodeKeyLink
+                              (ハーベスト委任設定。公開鍵なのでアドレスに変換する)
+   該当フィールドがないトランザクション種別(NamespaceRegistration・
+   MosaicDefinition・MosaicSupplyChange・HashLock・制限系の一部など)は
+   署名者自身にしか影響しないため、何も抽出されない。
+============================================================ */
+const TARGET_ADDRESS_FIELDS = ["recipientAddress", "targetAddress", "address", "sourceAddress"];
+const TARGET_ADDRESS_ARRAY_FIELDS = ["addressAdditions", "addressDeletions"];
+const LINKED_PUBLIC_KEY_FIELDS = ["linkedPublicKey"]; // ハーベスト委任(鍵リンク)関連
+
+function extractTargetAddresses(tx) {
+  const addrs = [];
+
+  for (const field of TARGET_ADDRESS_FIELDS) {
+    const raw = tx[field];
+    if (typeof raw === "string" && raw) {
+      const a = normalizeMaybeHexAddress(raw);
+      if (a) addrs.push(a);
+    }
+  }
+
+  for (const field of TARGET_ADDRESS_ARRAY_FIELDS) {
+    const arr = tx[field];
+    if (Array.isArray(arr)) {
+      for (const raw of arr) {
+        if (typeof raw !== "string") continue;
+        const a = normalizeMaybeHexAddress(raw);
+        if (a) addrs.push(a);
+      }
+    }
+  }
+
+  for (const field of LINKED_PUBLIC_KEY_FIELDS) {
+    const raw = tx[field];
+    if (typeof raw === "string" && raw && !/^0+$/.test(raw)) {
+      try {
+        addrs.push(publicKeyToAddress(raw));
+      } catch {
+        // 変換できない場合は無視する
+      }
+    }
+  }
+
+  return addrs;
 }
 
 /* ============================================================
    指定した高さ範囲内の、全トランザクション種別(埋め込み含む)を対象に、
-   「送信元」となったアドレスの延べ集合を集計する(アクティブアドレス数用)。
+   (a)「送信元」となったアドレスの延べ集合(アクティブアドレス数用)と、
+   (b)「送信元以外の関係先」となったアドレスの延べ集合
+      (受信・モザイク/ネームスペース操作対象・ハーベスト委任先など。
+       新規アドレス作成数の受信ベース判定用)
+   をまとめて集計する。
    /transactions/confirmed は type を指定しなければ全種別が対象になり、
    fromHeight/toHeightで絞り込めるため、/blocksを高さ1件ずつ取得するより
-   大幅に軽量に済む。
+   大幅に軽量に済む。(a)(b)とも同じスキャンから得られるため、追加の
+   通信は発生しない。
 ============================================================ */
 async function scanActiveAddresses(fromHeight, toHeight, onProgress) {
   let pageNumber = 1;
   const signerPublicKeys = new Set();
+  const targetAddresses = new Set();
   let truncated = false;
 
   while (pageNumber <= SCAN_MAX_PAGES) {
@@ -221,8 +293,15 @@ async function scanActiveAddresses(fromHeight, toHeight, onProgress) {
     if (items.length === 0) break;
 
     for (const item of items) {
-      const signerPublicKey = item.transaction?.signerPublicKey;
+      const tx = item.transaction;
+      if (!tx) continue;
+
+      const signerPublicKey = tx.signerPublicKey;
       if (signerPublicKey) signerPublicKeys.add(signerPublicKey);
+
+      for (const addr of extractTargetAddresses(tx)) {
+        targetAddresses.add(addr);
+      }
     }
 
     onProgress?.(pageNumber);
@@ -233,29 +312,30 @@ async function scanActiveAddresses(fromHeight, toHeight, onProgress) {
 
   if (pageNumber > SCAN_MAX_PAGES) truncated = true;
 
-  return { signerPublicKeys, truncated };
+  return { signerPublicKeys, targetAddresses, truncated };
 }
 
 /* ============================================================
-   アクティブアドレス(期間中に何らかのトランザクションを出したアドレス)
-   のうち、「新規アドレス」(この期間より前にトランザクションを出した
-   履歴がない=初めてトランザクションを出した)の数を数える。
-   各アドレス(公開鍵)ごとに、そのアドレスが署名したトランザクションを
-   古い順に1件だけ取得し、その高さがfromHeight以降であれば
-   「この期間が初回」とみなす。
+   「新規アドレス」の判定: 指定したアドレスについて、この期間より前に
+   送信・受信いずれのトランザクション履歴も一切ない(=このアドレスが
+   関与する最初のトランザクションがこの期間内で発生した)かどうかを確認する。
+   REST APIの address パラメータは、そのアドレスが送信者・受信者・
+   連署者など、いずれかの役割で関与するトランザクションをすべて返すため、
+   これを古い順に1件だけ取得し、その高さがfromHeight以降であれば
+   「この期間より前の関与が一切ない」=新規アドレスとみなす。
    件数に上限は設けず、対象アドレス全件を確認する(並列数のみ制限)。
 ============================================================ */
-async function countNewAddresses(signerPublicKeys, fromHeight, onProgress) {
-  const targets = [...signerPublicKeys];
+async function countNewAddressesByAddress(addresses, fromHeight, onProgress) {
+  const targets = [...addresses];
 
   let newCount = 0;
   let failCount = 0;
   let doneCount = 0;
 
-  async function checkOne(publicKeyHex) {
+  async function checkOne(address) {
     try {
       const params = new URLSearchParams({
-        signerPublicKey: publicKeyHex,
+        address,
         order: "asc",
         pageSize: "1",
       });
@@ -269,7 +349,7 @@ async function countNewAddresses(signerPublicKeys, fromHeight, onProgress) {
       const firstHeight = Number(first?.meta?.height ?? 0);
       if (firstHeight >= fromHeight) newCount++;
     } catch (e) {
-      console.warn("countNewAddresses: 初回トランザクション確認に失敗しました:", publicKeyHex, e);
+      console.warn("countNewAddressesByAddress: 初回関与トランザクション確認に失敗しました:", address, e);
       failCount++;
     } finally {
       doneCount++;
@@ -736,19 +816,47 @@ async function loadOnchainAnalysis(mode, customRange) {
       activeResult.signerPublicKeys.size.toLocaleString("ja-JP") + " アドレス" + activeSuffix
     );
 
-    // 新規アドレス作成数(アクティブアドレスのうち、この期間が初回のもの)
-    if (activeResult.signerPublicKeys.size === 0) {
-      setText("onchain-new-address-count", "0 アドレス");
-    } else {
-      const newAddrResult = await countNewAddresses(activeResult.signerPublicKeys, scanFromHeight, (done, total) => {
-        if (statusEl) statusEl.textContent = `新規アドレスを確認中...(${done.toLocaleString("ja-JP")} / ${total.toLocaleString("ja-JP")} アドレス)`;
-      });
-      setText(
-        "onchain-new-address-count",
-        newAddrResult.newCount.toLocaleString("ja-JP") + " アドレス" + activeSuffix +
-        (newAddrResult.failCount > 0 ? `（${newAddrResult.failCount}件確認失敗）` : "")
-      );
+    // 新規アドレス作成数:
+    //   (a) この期間より前に送信・受信いずれの履歴もないアドレスが、
+    //       この期間中に初めて何らかのトランザクションの関係先(受取・
+    //       モザイク/ネームスペース操作対象・ハーベスト委任先など)に
+    //       なった数(XYM送金に限らず、全トランザクション種別が対象)
+    //   (b) この期間より前に送信・受信いずれの履歴もないアドレスが、
+    //       この期間中に初めてトランザクションを「送った」数
+    //   の合算(同一アドレスが両方に該当する場合は両方でカウントする)
+    const recipientCandidates = activeResult.targetAddresses;
+    const senderCandidateAddresses = new Set();
+    for (const pubKey of activeResult.signerPublicKeys) {
+      try {
+        senderCandidateAddresses.add(publicKeyToAddress(pubKey));
+      } catch {
+        // 変換に失敗した場合は新規アドレス判定の対象から除外する
+      }
     }
+
+    let recipientNewResult = { newCount: 0, failCount: 0, checkedCount: 0 };
+    if (recipientCandidates.size > 0) {
+      recipientNewResult = await countNewAddressesByAddress(recipientCandidates, scanFromHeight, (done, total) => {
+        if (statusEl) statusEl.textContent = `新規アドレスを確認中(受信ベース)...(${done.toLocaleString("ja-JP")} / ${total.toLocaleString("ja-JP")} アドレス)`;
+      });
+    }
+
+    let senderNewResult = { newCount: 0, failCount: 0, checkedCount: 0 };
+    if (senderCandidateAddresses.size > 0) {
+      senderNewResult = await countNewAddressesByAddress(senderCandidateAddresses, scanFromHeight, (done, total) => {
+        if (statusEl) statusEl.textContent = `新規アドレスを確認中(送信ベース)...(${done.toLocaleString("ja-JP")} / ${total.toLocaleString("ja-JP")} アドレス)`;
+      });
+    }
+
+    const newAddressTotal = recipientNewResult.newCount + senderNewResult.newCount;
+    const newAddressFailCount = recipientNewResult.failCount + senderNewResult.failCount;
+    const newAddressSuffix = activeResult.truncated ? " 以上(件数が多いため打ち切り)" : "";
+    setText(
+      "onchain-new-address-count",
+      newAddressTotal.toLocaleString("ja-JP") + " アドレス" + newAddressSuffix +
+      ` (受信で初: ${recipientNewResult.newCount.toLocaleString("ja-JP")} ／ 送信で初: ${senderNewResult.newCount.toLocaleString("ja-JP")})` +
+      (newAddressFailCount > 0 ? `（${newAddressFailCount}件確認失敗）` : "")
+    );
 
     const fromText = formatUtcJstFromMs(fromTimestampMs);
     const toText = formatUtcJstFromMs(toTimestampMs);
