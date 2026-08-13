@@ -28,6 +28,7 @@
 const {appState, NetworkType} = W.config;
 const {getXymMosaicIdHex} = W.config;
 const {formatMosaicAmount} = W.utils;
+const {getHistoricalXymJpyRate, getHistoricalXymUsdRate} = W.priceRates;
 
 const TRANSFER_TYPE = 16724; // Transfer Transaction
 const WHALE_THRESHOLD_XYM = 10000; // 大口送金とみなす閾値(この金額以上を一覧に含める)
@@ -335,7 +336,66 @@ function formatWhaleTime(timestampRaw) {
   return formatUtcJstFromMs(unixMs);
 }
 
-function whaleRowHtml(w) {
+/* ============================================================
+   円・ドル金額の表示フォーマット
+============================================================ */
+function formatJpyValue(value) {
+  return Math.round(value).toLocaleString("ja-JP") + "円";
+}
+function formatUsdValue(value) {
+  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "ドル";
+}
+
+/* ============================================================
+   UTC暦日単位のキー("YYYY-MM-DD")を作る(過去レートの日次キャッシュ用)
+============================================================ */
+function utcDateKeyFromMs(unixMs) {
+  return new Date(unixMs).toISOString().slice(0, 10);
+}
+
+/* ============================================================
+   複数のトランザクション時刻(unixMs)について、それぞれが属するUTC暦日の
+   XYM/JPY・XYM/USDレート(日足終値ベース)をまとめて取得する。
+   同じ日付は1回だけ問い合わせる。
+   戻り値: Map(dateKey → { jpyRate: number|null, usdResult: {rate,source}|null })
+============================================================ */
+async function buildHistoricalRateMap(unixMsList) {
+  const rateMap = new Map();
+  const uniqueDates = new Map(); // dateKey -> 代表のunixMs
+
+  for (const unixMs of unixMsList) {
+    if (unixMs == null) continue;
+    const key = utcDateKeyFromMs(unixMs);
+    if (!uniqueDates.has(key)) uniqueDates.set(key, unixMs);
+  }
+
+  await Promise.all(
+    [...uniqueDates.entries()].map(async ([key, unixMs]) => {
+      const [jpyRate, usdResult] = await Promise.all([
+        getHistoricalXymJpyRate(unixMs),
+        getHistoricalXymUsdRate(unixMs),
+      ]);
+      rateMap.set(key, { jpyRate, usdResult });
+    })
+  );
+
+  return rateMap;
+}
+
+/* ============================================================
+   XYM金額(atomic単位)と、対応するレート情報から
+   「(12,345円 / 82.10ドル)」のような表示文字列を作る。
+   レートが取得できていない場合はその旨を表示する。
+============================================================ */
+function fiatTextFromRates(xymAmountAtomic, rates) {
+  if (!rates) return "(価格取得失敗)";
+  const xymValue = Number(xymAmountAtomic) / 1_000_000;
+  const jpyText = rates.jpyRate != null ? formatJpyValue(xymValue * rates.jpyRate) : "円: 取得失敗";
+  const usdText = rates.usdResult?.rate != null ? formatUsdValue(xymValue * rates.usdResult.rate) : "ドル: 取得失敗";
+  return `(${jpyText} / ${usdText})`;
+}
+
+function whaleRowHtml(w, rateMap) {
   let senderAddr = "---";
   try {
     senderAddr = w.senderPublicKey ? publicKeyToAddress(w.senderPublicKey) : "---";
@@ -348,9 +408,16 @@ function whaleRowHtml(w) {
     ? `<a href="${getExplorerUrl(w.hash)}" target="_blank" rel="noopener" style="font-size:12px;color:#93c5fd;">Explorerで見る ↗</a>`
     : "";
 
+  let fiatText = "";
+  if (appState.epochAdjustment && w.timestampRaw != null) {
+    const unixMs = Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw);
+    const rates = rateMap?.get(utcDateKeyFromMs(unixMs));
+    fiatText = " " + fiatTextFromRates(w.amount, rates);
+  }
+
   return `
     <div class="harvest-history-item">
-      <div><b style="color:${color};">${formatMosaicAmount(w.amount, 6)} XYM</b></div>
+      <div><b style="color:${color};">${formatMosaicAmount(w.amount, 6)} XYM${fiatText}</b></div>
       <div style="font-size:12px;color:#94a3b8;word-break:break-all;">送信元: ${senderAddr}</div>
       <div style="font-size:12px;color:#94a3b8;word-break:break-all;">送信先: ${w.recipientAddress ?? "---"}</div>
       <div style="font-size:12px;color:#94a3b8;">高さ: ${w.height}</div>
@@ -362,8 +429,9 @@ function whaleRowHtml(w) {
 
 /* ============================================================
    大口XYM移動 詳細画面(onchain-whale-detail-page)を描画する
+   円・ドル換算(日足終値ベース)の取得を待つため非同期。
 ============================================================ */
-function renderWhaleDetail() {
+async function renderWhaleDetail() {
   const rangeEl = document.getElementById("onchain-whale-detail-range");
   const summaryEl = document.getElementById("onchain-whale-detail-summary");
   const listEl = document.getElementById("onchain-whale-detail-list");
@@ -391,8 +459,16 @@ function renderWhaleDetail() {
       listEl.innerHTML = `<div style="color:#94a3b8;">該当する大口移動はありませんでした</div>`;
       return;
     }
+    listEl.innerHTML = `<div style="color:#94a3b8;">価格情報を取得しています...</div>`;
+
     const sorted = [...whales].sort((a, b) => Number(b.height) - Number(a.height));
-    listEl.innerHTML = sorted.map(whaleRowHtml).join("");
+
+    const unixMsList = sorted
+      .filter((w) => appState.epochAdjustment && w.timestampRaw != null)
+      .map((w) => Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw));
+    const rateMap = await buildHistoricalRateMap(unixMsList);
+
+    listEl.innerHTML = sorted.map((w) => whaleRowHtml(w, rateMap)).join("");
   }
 }
 
@@ -703,6 +779,11 @@ window.W.onchainAnalysis = {
   computeHeightRange,
   fetchBlockTimestampMs,
   formatUtcJstFromMs,
+  formatJpyValue,
+  formatUsdValue,
+  utcDateKeyFromMs,
+  buildHistoricalRateMap,
+  fiatTextFromRates,
 };
 
 })();
