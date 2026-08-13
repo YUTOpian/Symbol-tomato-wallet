@@ -964,7 +964,12 @@ window.W.auth = {
   announceOfflineTx,
   logout,
   lockSession,
-  cosignTransactionHash
+  cosignTransactionHash,
+  // QRコードログイン(qrLogin.js)から、暗号化ボールトと全く同じ方式
+  // (PBKDF2-SHA256 210,000回 + AES-GCM)で暗号化するために公開する
+  deriveKeyFromPassword,
+  bufToBase64,
+  base64ToBytes
 };
 
 })();

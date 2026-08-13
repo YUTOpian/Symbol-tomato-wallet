@@ -111,6 +111,7 @@ window.addEventListener("load", async () => {
   const mnemonicImportPage = document.getElementById("mnemonic-import-page");
   const privatekeyImportPage = document.getElementById("privatekey-import-page");
   const passwordSetupPage = document.getElementById("password-setup-page");
+  const qrBackupPage = document.getElementById("qr-backup-page");
   const unlockPage = document.getElementById("unlock-page");
   const accountPage = document.getElementById("account-page");
   const sendPage = document.getElementById("send-page");
@@ -534,11 +535,65 @@ window.addEventListener("load", async () => {
       await saveVault(pw);
       document.getElementById("setup-password-input").value = "";
       document.getElementById("setup-password-confirm").value = "";
-      goHome();
+      await showQrBackupPage(pw);
     } catch (e) {
       console.error("saveVault error:", e);
       setStatus("password-setup-status", "保存に失敗しました。", "error");
     }
+  });
+
+  // ============================
+  // QRコードでログイン用バックアップ(パスワード設定直後)
+  // 今設定したパスワードで、現在のアカウントの秘密鍵を暗号化してQRコード化する。
+  // ============================
+  let qrBackupDataUrl = null;
+
+  async function showQrBackupPage(password) {
+    showPage(qrBackupPage);
+    setStatus("qr-backup-status", "", "default");
+    const imgEl = document.getElementById("qr-backup-image");
+    imgEl.textContent = "生成中...";
+    qrBackupDataUrl = null;
+
+    try {
+      const account = appState.accounts.find((a) => a.id === appState.activeAccountId);
+      if (!account) throw new Error("アカウント情報が見つかりません。");
+
+      const privateKeyHex = getPrivateKeyForAccount(account);
+      const address = appState.currentAddress.toString();
+
+      const payload = await W.qrLogin.buildQrLoginPayload(privateKeyHex, address, password);
+      qrBackupDataUrl = await QRCode.toDataURL(JSON.stringify(payload), {
+        width: 260,
+        margin: 1,
+      });
+
+      imgEl.innerHTML = `<img src="${qrBackupDataUrl}" alt="QRコードでログイン">`;
+    } catch (e) {
+      console.error("showQrBackupPage error:", e);
+      imgEl.textContent = "QRコードの生成に失敗しました。";
+      setStatus("qr-backup-status", e.message || "QRコードの生成に失敗しました。", "error");
+    }
+  }
+
+  document.getElementById("qr-backup-download-btn")?.addEventListener("click", () => {
+    if (!qrBackupDataUrl) {
+      setStatus("qr-backup-status", "QRコードがまだ生成されていません。", "error");
+      return;
+    }
+    const address = appState.currentAddress?.toString() || "account";
+    const a = document.createElement("a");
+    a.href = qrBackupDataUrl;
+    a.download = `symbol-qr-login-${address}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showPopup("QRコードをダウンロードしました");
+  });
+
+  document.getElementById("qr-backup-next-btn")?.addEventListener("click", () => {
+    qrBackupDataUrl = null;
+    goHome();
   });
 
   // ============================
@@ -581,6 +636,171 @@ window.addEventListener("load", async () => {
     clearVault();
     showPage(welcomePage);
   });
+
+  // ============================
+  // QRコードでログイン
+  // ・welcome-page / unlock-page どちらからも、カメラ読み取り/画像ファイル
+  //   選択の2経路で使える共通処理。
+  // ・読み取ったQRコードをパスワードで復号し、秘密鍵を取り出してログインする。
+  //   ログインに使ったパスワードは、そのままこの端末の保存パスワードとしても
+  //   再利用する(saveVault)。QRコード+パスワードだけでこの端末上に
+  //   すぐ使えるアカウントが用意できるようにするため。
+  // ============================
+
+  // パスワード入力ダイアログ。Promise<string|null>で解決する(nullはキャンセル)。
+  function requestQrLoginPassword(addressHint) {
+    return new Promise((resolve) => {
+      const dialog = document.getElementById("qr-login-password-dialog");
+      const input = document.getElementById("qr-login-password-input");
+      const addressEl = document.getElementById("qr-login-password-address");
+      const okBtn = document.getElementById("qr-login-password-ok-btn");
+      const cancelBtn = document.getElementById("qr-login-password-cancel-btn");
+
+      if (!dialog || typeof dialog.showModal !== "function") {
+        const pw = prompt("QRコードのパスワードを入力してください");
+        resolve(pw || null);
+        return;
+      }
+
+      if (addressEl) addressEl.textContent = addressHint ? `対象アドレス: ${addressHint}` : "";
+      if (input) input.value = "";
+      setStatus("qr-login-password-status", "", "default");
+
+      const cleanup = (result) => {
+        okBtn.removeEventListener("click", onOk);
+        cancelBtn.removeEventListener("click", onCancel);
+        dialog.removeEventListener("cancel", onDialogCancel);
+        if (dialog.open) dialog.close();
+        resolve(result);
+      };
+
+      const onOk = () => cleanup(input?.value || null);
+      const onCancel = () => cleanup(null);
+      const onDialogCancel = (e) => {
+        e.preventDefault();
+        cleanup(null);
+      };
+
+      okBtn.addEventListener("click", onOk);
+      cancelBtn.addEventListener("click", onCancel);
+      dialog.addEventListener("cancel", onDialogCancel);
+
+      dialog.showModal();
+      input?.focus();
+    });
+  }
+
+  /*
+    読み取ったQRコードの生テキストを検証・復号し、ログインまで行う。
+    origin: "welcome" | "unlock" (unlockの場合は既存の保存データを
+    置き換える前に確認する)
+  */
+  async function handleQrLoginText(text, origin) {
+    const statusId = origin === "unlock" ? "unlock-status" : "welcome-status";
+
+    const payload = W.qrLogin.parseQrLoginPayloadText(text);
+    if (!payload) {
+      setStatus(statusId, "対応形式のQRコードではありません(QRコードでログイン用の画像かご確認ください)。", "error");
+      return;
+    }
+
+    if (origin === "unlock") {
+      if (!confirm(
+        "この端末に保存されている現在のアカウント情報を削除し、QRコードのアカウントに置き換えます。\n" +
+        "（ニーモニックや秘密鍵をお持ちであれば、現在のアカウントの資産自体がなくなることはありません）\n\n" +
+        "続けてよろしいですか？"
+      )) {
+        return;
+      }
+    }
+
+    const password = await requestQrLoginPassword(payload.address);
+    if (password == null) return; // キャンセル
+
+    setStatus(statusId, "QRコードを復号しています...");
+
+    try {
+      const { privateKeyHex, address } = await W.qrLogin.decryptQrLoginPayload(payload, password);
+
+      let networkType;
+      if (address[0] === "N") {
+        networkType = NetworkType.MAINNET;
+      } else if (address[0] === "T") {
+        networkType = NetworkType.TESTNET;
+      } else {
+        throw new Error("QRコードのアドレス形式が正しくありません。");
+      }
+
+      if (origin === "unlock") {
+        clearVault();
+      }
+
+      setStatus(statusId, "ログイン中...");
+      await loginWithPrivateKey(privateKeyHex, networkType, "QRコードログイン");
+
+      // 復号した秘密鍵から実際に導出されるアドレスが、QRコードに記録された
+      // アドレスと一致するか念のため確認する(パスワードは正しく復号できても、
+      // 異なる形式のQRコードを誤って読み込んだ場合の保険)
+      if (appState.currentAddress?.toString() !== address) {
+        console.warn("QRログイン: 復号した秘密鍵から導出されるアドレスがQRコード内のアドレスと一致しません", {
+          expected: address,
+          actual: appState.currentAddress?.toString(),
+        });
+      }
+
+      // 今回入力したパスワードを、そのままこの端末の保存パスワードとしても使う
+      await saveVault(password);
+
+      setStatus(statusId, "", "default");
+      goHome();
+    } catch (e) {
+      console.error("QRログイン error:", e);
+      setStatus(statusId, e.message || "QRコードでのログインに失敗しました。", "error");
+    }
+  }
+
+  function wireQrLoginButtons(origin, cameraBtnId, fileBtnId, fileInputId) {
+    document.getElementById(cameraBtnId)?.addEventListener("click", () => {
+      const statusId = origin === "unlock" ? "unlock-status" : "welcome-status";
+      setStatus(statusId, "", "default");
+      W.qrScanner?.openRawQrScanModal({
+        scanningMessage: "カメラにQRコードでログイン用のコードを映してください...",
+        onText: (text) => {
+          handleQrLoginText(text, origin);
+        },
+        onError: () => {
+          setStatus(statusId, "カメラを起動できませんでした。カメラへのアクセスを許可してください。", "error");
+        },
+      });
+    });
+
+    const fileInput = document.getElementById(fileInputId);
+    document.getElementById(fileBtnId)?.addEventListener("click", () => {
+      fileInput?.click();
+    });
+    fileInput?.addEventListener("change", async () => {
+      const file = fileInput.files?.[0];
+      fileInput.value = "";
+      if (!file) return;
+
+      const statusId = origin === "unlock" ? "unlock-status" : "welcome-status";
+      setStatus(statusId, "画像を解析しています...");
+      try {
+        const text = await W.qrScanner.decodeQrFromImageFile(file);
+        if (!text) {
+          setStatus(statusId, "画像からQRコードを読み取れませんでした。", "error");
+          return;
+        }
+        await handleQrLoginText(text, origin);
+      } catch (e) {
+        console.error("decodeQrFromImageFile error:", e);
+        setStatus(statusId, e.message || "画像の読み込みに失敗しました。", "error");
+      }
+    });
+  }
+
+  wireQrLoginButtons("welcome", "welcome-qr-login-camera-btn", "welcome-qr-login-file-btn", "welcome-qr-login-file-input");
+  wireQrLoginButtons("unlock", "unlock-qr-login-camera-btn", "unlock-qr-login-file-btn", "unlock-qr-login-file-input");
 
   // 送金画面に「保有モザイク一覧」から直接入ったかどうか
   let cameFromMosaicList = false;
