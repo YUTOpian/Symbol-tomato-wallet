@@ -854,7 +854,6 @@ async function loadOnchainAnalysis(mode, customRange) {
     setText(
       "onchain-new-address-count",
       newAddressTotal.toLocaleString("ja-JP") + " アドレス" + newAddressSuffix +
-      ` (受信で初: ${recipientNewResult.newCount.toLocaleString("ja-JP")} ／ 送信で初: ${senderNewResult.newCount.toLocaleString("ja-JP")})` +
       (newAddressFailCount > 0 ? `（${newAddressFailCount}件確認失敗）` : "")
     );
 
