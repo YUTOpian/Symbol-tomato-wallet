@@ -7,7 +7,7 @@
 
 const {appState, NetworkType} = W.config;
 const {selectNode} = W.nodeSelector;
-const {initSdk} = W.sdk;
+const {initFacadeOffline, initSdk} = W.sdk;
 const {refreshAccount, initLiveBalanceRefresh} = W.account;
 const {loadRecentTx, initLiveTx} = W.transactions;
 const {initWebSocket, closeWebSocket} = W.ws;
@@ -209,9 +209,13 @@ function getAccounts() {
 }
 
 /* ============================================================
-   アカウント切替（SSS / ニーモニック由来 / 秘密鍵由来 共通）
+   アカウント切替(オフライン部分): SSS / ニーモニック由来 / 秘密鍵由来 共通。
+   ノードへの通信は一切行わない。ホーム画面表示に必要な状態
+   (現在のアドレス・公開鍵・署名用KeyPairなど)だけをここで揃える。
+   これにより、ニーモニック作成〜ログイン〜ホーム画面までを完全に
+   オフラインで完結させられる。
 ============================================================ */
-async function switchToAccount(id) {
+async function switchToAccountOffline(id) {
   const acc = appState.accounts.find((a) => a.id === id);
   if (!acc) {
     throw new Error("アカウントが見つかりません");
@@ -219,12 +223,10 @@ async function switchToAccount(id) {
 
   closeWebSocket();
 
-  // ノード/SDKがまだ準備できていなければここで準備する
-  // (アカウント追加・切替時は既に準備済みのことが多いので再選択しない)
-  if (!appState.isSdkReady) {
-    const isTestnet = appState.networkType === NetworkType.TESTNET;
-    appState.NODE = await selectNode(isTestnet);
-    await initSdk();
+  // Facade(SDKモジュール+ネットワーク種別)がまだ準備できていなければ
+  // オフラインで用意する(アカウント追加・切替時は既に準備済みのことが多い)
+  if (!appState.facade) {
+    await initFacadeOffline(appState.networkType ?? NetworkType.MAINNET);
   }
 
   if (acc.source === "sss") {
@@ -257,6 +259,48 @@ async function switchToAccount(id) {
   const addressEl = document.getElementById("account-address");
   if (addressEl) addressEl.textContent = appState.currentAddress.toString();
 
+  await persistAccounts();
+}
+
+/* ============================================================
+   アカウント切替(オンライン部分): ノードへ接続し、残高・履歴・
+   リアルタイム更新を開始する。switchToAccountOffline()の後に
+   自動的に(バックグラウンドで)呼ばれる。
+   通信に失敗しても、ホーム画面自体は既にオフライン部分で表示できて
+   いるため、ここでの例外は呼び出し側で握りつぶし、オフラインのまま
+   使い続けられるようにする。
+============================================================ */
+async function connectAccountOnline() {
+  const isTestnet = appState.networkType === NetworkType.TESTNET;
+  appState.NODE = await selectNode(isTestnet);
+  await initSdk();
+
+  // initSdk()はFacadeを新しく作り直すため、署名用のKeyPair/現在アドレスも
+  // 作り直す(mainnet/testnet文字列だけで作ったオフライン版Facadeと、
+  // ノードから得た正式な識別子で作ったFacadeとで、通常は同じ結果になるが、
+  // 念のため揃えておく)
+  const acc = appState.accounts.find((a) => a.id === appState.activeAccountId);
+
+  if (acc && acc.source === "sss") {
+    if (appState.currentPubKey) {
+      const pub = new appState.sdkCore.PublicKey(appState.currentPubKey);
+      appState.currentAddress = appState.facade.createPublicAccount(pub).address;
+    }
+  } else if (acc) {
+    const keyPair = new appState.facade.static.KeyPair(
+      new appState.sdkCore.PrivateKey(acc.privateKeyHex)
+    );
+    appState.localKeyPair = keyPair;
+    appState.currentPubKey = keyPair.publicKey.toString();
+    appState.currentAddress = appState.facade.network.publicKeyToAddress(keyPair.publicKey);
+  } else if (appState.isReadOnly && appState.currentAddress) {
+    appState.currentAddress = new appState.sdkSymbol.Address(appState.currentAddress.toString());
+  }
+
+  if (acc) acc.address = appState.currentAddress?.toString();
+  const addressEl = document.getElementById("account-address");
+  if (addressEl && appState.currentAddress) addressEl.textContent = appState.currentAddress.toString();
+
   await refreshAccount();
   await loadRecentTx();
 
@@ -267,6 +311,22 @@ async function switchToAccount(id) {
   W.harvest.initLiveHarvestStatusRefresh(address);
 
   await persistAccounts();
+}
+
+/* ============================================================
+   アカウント切替（SSS / ニーモニック由来 / 秘密鍵由来 共通）
+   オフライン部分(ホーム画面表示に必要な最小限)を完了させたら、
+   オンライン部分(ノード接続・残高取得等)はバックグラウンドで自動的に
+   開始する(await しない)。これにより、呼び出し側(ログイン処理)は
+   ノードへの通信を待たずにホーム画面へ進める。
+   オンライン接続に失敗した場合(端末がオフライン等)もエラーは投げず、
+   コンソールに警告を出すだけにする(オフラインのまま使い続けられるように)。
+============================================================ */
+async function switchToAccount(id) {
+  await switchToAccountOffline(id);
+  connectAccountOnline().catch((e) => {
+    console.warn("switchToAccount: オンライン接続に失敗しました(オフラインのまま利用できます):", e);
+  });
 }
 
 /* ============================================================
@@ -411,8 +471,11 @@ async function loginWithPrivateKey(privateKeyHex, networkType, label) {
    ・秘密鍵/公開鍵は一切保持しない(currentPubKey = null)
    ・appState.accountsには追加しない(保存・パスワード保護の対象外)
    ・ネットワークはアドレスの先頭文字(N=Mainnet / T=Testnet)から判定する
+   ・アドレスのチェックサム検証まではオフラインで完了し、ホーム画面表示
+     まで進める。残高・履歴などの実データ取得はオンライン部分で行う
+     (バックグラウンドで自動的に開始する)。
 ============================================================ */
-async function loginAsReadOnly(addressInput) {
+async function loginAsReadOnlyOffline(addressInput) {
   const address = (addressInput || "").trim().toUpperCase().replace(/[\s-]/g, "");
 
   if (address.length !== 39) {
@@ -431,9 +494,7 @@ async function loginAsReadOnly(addressInput) {
   closeWebSocket();
 
   appState.networkType = networkType;
-  const isTestnet = networkType === NetworkType.TESTNET;
-  appState.NODE = await selectNode(isTestnet);
-  await initSdk();
+  await initFacadeOffline(networkType);
 
   // チェックサム検証を兼ねて生成する(不正なアドレスならここで例外になる)
   const addressObj = new appState.sdkSymbol.Address(address);
@@ -446,18 +507,35 @@ async function loginAsReadOnly(addressInput) {
   appState.currentAddress = addressObj;
   appState.activeAccountId = null;
 
+  const isTestnet = networkType === NetworkType.TESTNET;
   setText("network-label", isTestnet ? "Testnet" : "Mainnet");
   const addressEl = document.getElementById("account-address");
   if (addressEl) addressEl.textContent = addressObj.toString();
+}
+
+async function connectReadOnlyOnline() {
+  const isTestnet = appState.networkType === NetworkType.TESTNET;
+  appState.NODE = await selectNode(isTestnet);
+  await initSdk();
+
+  // initSdk()でFacadeを作り直すため、Addressオブジェクトも作り直しておく
+  appState.currentAddress = new appState.sdkSymbol.Address(appState.currentAddress.toString());
 
   await refreshAccount();
   await loadRecentTx();
 
-  const addressStr = addressObj.toString();
+  const addressStr = appState.currentAddress.toString();
   initWebSocket(addressStr);
   initLiveTx(addressStr);
   initLiveBalanceRefresh(addressStr);
   W.harvest.initLiveHarvestStatusRefresh(addressStr);
+}
+
+async function loginAsReadOnly(addressInput) {
+  await loginAsReadOnlyOffline(addressInput);
+  connectReadOnlyOnline().catch((e) => {
+    console.warn("loginAsReadOnly: オンライン接続に失敗しました(オフラインのまま利用できます):", e);
+  });
 }
 
 /* ============================================================
@@ -880,6 +958,9 @@ function resetSessionState() {
   appState.localKeyPair = null;
   appState.NODE = null;
   appState.isSdkReady = false;
+  appState.facade = null; // 異なるネットワークでの再ログイン時に古いFacadeを引き継がないようにする
+  appState.epochAdjustment = 0;
+  appState.generationHash = null;
   appState.networkType = null;
   appState.accounts = [];
   appState.activeAccountId = null;
@@ -941,11 +1022,15 @@ window.W.auth = {
   getVerifiedMnemonicForAccount,
   getAccounts,
   switchToAccount,
+  switchToAccountOffline,
+  connectAccountOnline,
   switchNetwork,
   connectWithSSS,
   loginWithMnemonic,
   loginWithPrivateKey,
   loginAsReadOnly,
+  loginAsReadOnlyOffline,
+  connectReadOnlyOnline,
   addAccountFromMnemonic,
   addNextAccountFromCurrentMnemonic,
   addAccountFromPrivateKey,
