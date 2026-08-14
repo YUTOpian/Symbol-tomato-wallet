@@ -545,8 +545,12 @@ window.addEventListener("load", async () => {
   // ============================
   // QRコードでログイン用バックアップ(パスワード設定直後)
   // 今設定したパスワードで、現在のアカウントの秘密鍵を暗号化してQRコード化する。
+  // ニーモニック由来のアカウントで、かつこのセッション中にニーモニックが
+  // 取得できる場合は、ニーモニック版QRコードもあわせて生成する
+  // (1枚から複数アカウントを復元できるため、より汎用的なバックアップになる)。
   // ============================
   let qrBackupDataUrl = null;
+  let qrBackupMnemonicDataUrl = null;
 
   async function showQrBackupPage(password) {
     showPage(qrBackupPage);
@@ -554,21 +558,53 @@ window.addEventListener("load", async () => {
     const imgEl = document.getElementById("qr-backup-image");
     imgEl.textContent = "生成中...";
     qrBackupDataUrl = null;
+    qrBackupMnemonicDataUrl = null;
+
+    const mnemonicSection = document.getElementById("qr-backup-mnemonic-section");
+    const mnemonicImgEl = document.getElementById("qr-backup-mnemonic-image");
+    if (mnemonicSection) mnemonicSection.style.display = "none";
 
     try {
       const account = appState.accounts.find((a) => a.id === appState.activeAccountId);
       if (!account) throw new Error("アカウント情報が見つかりません。");
 
-      const privateKeyHex = getPrivateKeyForAccount(account);
       const address = appState.currentAddress.toString();
 
-      const payload = await W.qrLogin.buildQrLoginPayload(privateKeyHex, address, password);
+      // 秘密鍵版(必須。全アカウント種別で作成可能)
+      const privateKeyHex = getPrivateKeyForAccount(account);
+      const payload = await W.qrLogin.buildQrLoginPayload(privateKeyHex, address, password, "privateKey");
       qrBackupDataUrl = await QRCode.toDataURL(JSON.stringify(payload), {
         width: 260,
         margin: 1,
       });
+      imgEl.innerHTML = `<img src="${qrBackupDataUrl}" alt="QRコードでログイン(秘密鍵版)">`;
 
-      imgEl.innerHTML = `<img src="${qrBackupDataUrl}" alt="QRコードでログイン">`;
+      // ニーモニック版(ニーモニック由来のアカウントで、かつ今のセッション中に
+      // ニーモニックが取得できる場合のみ作成する)
+      if (account.source === "mnemonic") {
+        try {
+          const mnemonicPhrase = await getVerifiedMnemonicForAccount(account);
+          const mnemonicPayload = await W.qrLogin.buildQrLoginPayload(
+            mnemonicPhrase,
+            address,
+            password,
+            "mnemonic",
+            { accountIndex: account.accountIndex ?? 0 }
+          );
+          qrBackupMnemonicDataUrl = await QRCode.toDataURL(JSON.stringify(mnemonicPayload), {
+            width: 260,
+            margin: 1,
+          });
+          if (mnemonicImgEl) {
+            mnemonicImgEl.innerHTML = `<img src="${qrBackupMnemonicDataUrl}" alt="QRコードでログイン(ニーモニック版)">`;
+          }
+          if (mnemonicSection) mnemonicSection.style.display = "";
+        } catch (e) {
+          // 「取り出せないモード」等でニーモニックが取得できない場合は、
+          // ニーモニック版セクション自体を出さずに秘密鍵版のみで案内する
+          console.warn("ニーモニック版QRコードの生成をスキップしました:", e.message);
+        }
+      }
     } catch (e) {
       console.error("showQrBackupPage error:", e);
       imgEl.textContent = "QRコードの生成に失敗しました。";
@@ -584,7 +620,22 @@ window.addEventListener("load", async () => {
     const address = appState.currentAddress?.toString() || "account";
     const a = document.createElement("a");
     a.href = qrBackupDataUrl;
-    a.download = `symbol-qr-login-${address}.png`;
+    a.download = `symbol-qr-login-privatekey-${address}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showPopup("QRコードをダウンロードしました");
+  });
+
+  document.getElementById("qr-backup-mnemonic-download-btn")?.addEventListener("click", () => {
+    if (!qrBackupMnemonicDataUrl) {
+      setStatus("qr-backup-status", "QRコードがまだ生成されていません。", "error");
+      return;
+    }
+    const address = appState.currentAddress?.toString() || "account";
+    const a = document.createElement("a");
+    a.href = qrBackupMnemonicDataUrl;
+    a.download = `symbol-qr-login-mnemonic-${address}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -593,6 +644,7 @@ window.addEventListener("load", async () => {
 
   document.getElementById("qr-backup-next-btn")?.addEventListener("click", () => {
     qrBackupDataUrl = null;
+    qrBackupMnemonicDataUrl = null;
     goHome();
   });
 
@@ -720,7 +772,8 @@ window.addEventListener("load", async () => {
     setStatus(statusId, "QRコードを復号しています...");
 
     try {
-      const { privateKeyHex, address } = await W.qrLogin.decryptQrLoginPayload(payload, password);
+      const decrypted = await W.qrLogin.decryptQrLoginPayload(payload, password);
+      const address = decrypted.address;
 
       let networkType;
       if (address[0] === "N") {
@@ -736,13 +789,20 @@ window.addEventListener("load", async () => {
       }
 
       setStatus(statusId, "ログイン中...");
-      await loginWithPrivateKey(privateKeyHex, networkType, "QRコードログイン");
 
-      // 復号した秘密鍵から実際に導出されるアドレスが、QRコードに記録された
+      if (decrypted.kind === "mnemonic") {
+        // ニーモニック版QR: このセッションでニーモニックそのものを復元するため、
+        // 以降このアカウントの「バックアップを表示」も使えるようexportable=trueにする
+        await loginWithMnemonic(decrypted.mnemonicPhrase, networkType, decrypted.accountIndex ?? 0, true);
+      } else {
+        await loginWithPrivateKey(decrypted.privateKeyHex, networkType, "QRコードログイン");
+      }
+
+      // 復号結果から実際に導出されるアドレスが、QRコードに記録された
       // アドレスと一致するか念のため確認する(パスワードは正しく復号できても、
       // 異なる形式のQRコードを誤って読み込んだ場合の保険)
       if (appState.currentAddress?.toString() !== address) {
-        console.warn("QRログイン: 復号した秘密鍵から導出されるアドレスがQRコード内のアドレスと一致しません", {
+        console.warn("QRログイン: 復号結果から導出されるアドレスがQRコード内のアドレスと一致しません", {
           expected: address,
           actual: appState.currentAddress?.toString(),
         });
