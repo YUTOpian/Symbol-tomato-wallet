@@ -556,13 +556,11 @@ window.addEventListener("load", async () => {
     showPage(qrBackupPage);
     setStatus("qr-backup-status", "", "default");
     const imgEl = document.getElementById("qr-backup-image");
+    const mnemonicImgEl = document.getElementById("qr-backup-mnemonic-image");
     imgEl.textContent = "生成中...";
+    if (mnemonicImgEl) mnemonicImgEl.textContent = "生成中...";
     qrBackupDataUrl = null;
     qrBackupMnemonicDataUrl = null;
-
-    const mnemonicSection = document.getElementById("qr-backup-mnemonic-section");
-    const mnemonicImgEl = document.getElementById("qr-backup-mnemonic-image");
-    if (mnemonicSection) mnemonicSection.style.display = "none";
 
     try {
       const account = appState.accounts.find((a) => a.id === appState.activeAccountId);
@@ -574,41 +572,47 @@ window.addEventListener("load", async () => {
       const privateKeyHex = getPrivateKeyForAccount(account);
       const payload = await W.qrLogin.buildQrLoginPayload(privateKeyHex, address, password, "privateKey");
       qrBackupDataUrl = await QRCode.toDataURL(JSON.stringify(payload), {
-        width: 260,
+        width: 220,
         margin: 1,
       });
-      imgEl.innerHTML = `<img src="${qrBackupDataUrl}" alt="QRコードでログイン(秘密鍵版)">`;
-
-      // ニーモニック版(ニーモニック由来のアカウントで、かつ今のセッション中に
-      // ニーモニックが取得できる場合のみ作成する)
-      if (account.source === "mnemonic") {
-        try {
-          const mnemonicPhrase = await getVerifiedMnemonicForAccount(account);
-          const mnemonicPayload = await W.qrLogin.buildQrLoginPayload(
-            mnemonicPhrase,
-            address,
-            password,
-            "mnemonic",
-            { accountIndex: account.accountIndex ?? 0 }
-          );
-          qrBackupMnemonicDataUrl = await QRCode.toDataURL(JSON.stringify(mnemonicPayload), {
-            width: 260,
-            margin: 1,
-          });
-          if (mnemonicImgEl) {
-            mnemonicImgEl.innerHTML = `<img src="${qrBackupMnemonicDataUrl}" alt="QRコードでログイン(ニーモニック版)">`;
-          }
-          if (mnemonicSection) mnemonicSection.style.display = "";
-        } catch (e) {
-          // 「取り出せないモード」等でニーモニックが取得できない場合は、
-          // ニーモニック版セクション自体を出さずに秘密鍵版のみで案内する
-          console.warn("ニーモニック版QRコードの生成をスキップしました:", e.message);
-        }
-      }
+      imgEl.innerHTML = `<img src="${qrBackupDataUrl}" alt="QRコードでログイン(秘密鍵版)" style="max-width:100%;">`;
     } catch (e) {
-      console.error("showQrBackupPage error:", e);
+      console.error("showQrBackupPage(秘密鍵版) error:", e);
       imgEl.textContent = "QRコードの生成に失敗しました。";
       setStatus("qr-backup-status", e.message || "QRコードの生成に失敗しました。", "error");
+    }
+
+    // ニーモニック版(ニーモニック由来のアカウントで、かつ今のセッション中に
+    // ニーモニックが取得できる場合のみ作成する。取得できない場合はその理由を
+    // そのまま表示欄に出す(サイレントに隠さない))
+    if (!mnemonicImgEl) return;
+
+    try {
+      const account = appState.accounts.find((a) => a.id === appState.activeAccountId);
+      if (!account) throw new Error("アカウント情報が見つかりません。");
+
+      if (account.source !== "mnemonic") {
+        mnemonicImgEl.textContent = "このアカウントはニーモニック由来ではないため、ニーモニック版は作成できません。";
+        return;
+      }
+
+      const address = appState.currentAddress.toString();
+      const mnemonicPhrase = await getVerifiedMnemonicForAccount(account);
+      const mnemonicPayload = await W.qrLogin.buildQrLoginPayload(
+        mnemonicPhrase,
+        address,
+        password,
+        "mnemonic",
+        { accountIndex: account.accountIndex ?? 0 }
+      );
+      qrBackupMnemonicDataUrl = await QRCode.toDataURL(JSON.stringify(mnemonicPayload), {
+        width: 220,
+        margin: 1,
+      });
+      mnemonicImgEl.innerHTML = `<img src="${qrBackupMnemonicDataUrl}" alt="QRコードでログイン(ニーモニック版)" style="max-width:100%;">`;
+    } catch (e) {
+      console.warn("showQrBackupPage(ニーモニック版) スキップ理由:", e);
+      mnemonicImgEl.textContent = e.message || "ニーモニック版QRコードの生成に失敗しました。";
     }
   }
 
