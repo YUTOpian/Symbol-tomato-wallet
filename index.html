@@ -235,35 +235,25 @@
         ログインできます。画像として保存し、ニーモニックと同様に安全な場所に
         保管してください（第三者に見られない場所へ）。
       </p>
-
-      <h3 style="margin-top:16px;">秘密鍵版</h3>
-      <p style="font-size:12px;color:#94a3b8;">
-        このアカウント1つ分の秘密鍵を暗号化したQRコードです。
-      </p>
       <p style="font-size:12px;color:#f97316;">
-        ⚠️ QRコード単体が流出してもパスワードが分からなければ資産は保護されますが、
-        パスワードとセットで管理するとQRコードと同じ強度になります。パスワードを
-        忘れると、このQRコードから秘密鍵を復元することは二度とできません。
+        ⚠️ どちらもパスワードとセットで初めて意味を持ちます。ニーモニック版は
+        1枚でこのニーモニックから作られる全アカウントを復元できるため、
+        秘密鍵版(このアカウント1つ分)よりも保管には一段の注意が必要です。
+        パスワードを忘れると、QRコードから秘密鍵/ニーモニックを復元することは
+        二度とできません。
       </p>
 
-      <div id="qr-backup-image" style="text-align:center;margin:12px 0;">生成中...</div>
-      <button id="qr-backup-download-btn" class="account-hide-btn" type="button">💾 秘密鍵版QRコードをダウンロード</button>
-
-      <div id="qr-backup-mnemonic-section" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid #374151;">
-        <h3>ニーモニック版</h3>
-        <p style="font-size:12px;color:#94a3b8;">
-          このアカウントのもとになっているニーモニック(シードフレーズ)そのものを
-          暗号化したQRコードです。1枚でこのニーモニックから作られる全アカウントを
-          復元できるため、秘密鍵版よりも保管には一段の注意が必要です。
-        </p>
-        <p style="font-size:12px;color:#f97316;">
-          ⚠️ こちらもパスワードとセットで初めて意味を持ちますが、影響範囲が
-          「アカウント1つ」ではなく「このニーモニックに紐づく全アカウント」に
-          及びます。取り扱いには十分ご注意ください。
-        </p>
-
-        <div id="qr-backup-mnemonic-image" style="text-align:center;margin:12px 0;">生成中...</div>
-        <button id="qr-backup-mnemonic-download-btn" class="account-hide-btn" type="button">💾 ニーモニック版QRコードをダウンロード</button>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
+        <div style="flex:1;min-width:200px;text-align:center;">
+          <div style="font-weight:bold;margin-bottom:6px;">ニーモニック</div>
+          <div id="qr-backup-mnemonic-image" style="min-height:40px;">生成中...</div>
+          <button id="qr-backup-mnemonic-download-btn" class="account-hide-btn" type="button" style="margin-top:8px;">💾 ダウンロード</button>
+        </div>
+        <div style="flex:1;min-width:200px;text-align:center;">
+          <div style="font-weight:bold;margin-bottom:6px;">秘密鍵</div>
+          <div id="qr-backup-image" style="min-height:40px;">生成中...</div>
+          <button id="qr-backup-download-btn" class="account-hide-btn" type="button" style="margin-top:8px;">💾 ダウンロード</button>
+        </div>
       </div>
 
       <button id="qr-backup-next-btn" class="button-primary" style="margin-top:20px;">次へ（ホームへ）</button>
