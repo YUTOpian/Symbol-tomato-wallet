@@ -1075,6 +1075,30 @@ body {
   border-radius: 16px;
 }
 
+/* ============================================================
+   QRコードログイン: パスワード入力ダイアログ
+============================================================ */
+#qr-login-password-dialog {
+  background: #1e293b;
+  color: white;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 0;
+  width: 90%;
+  max-width: 460px;
+}
+
+#qr-login-password-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+#qr-login-password-dialog .card {
+  margin: 0;
+  background: #1e293b;
+  color: white;
+  border-radius: 16px;
+}
+
 .confirm-tx-row {
   padding: 8px 0;
   border-bottom: 1px solid #334155;
