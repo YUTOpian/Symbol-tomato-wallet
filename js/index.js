@@ -573,7 +573,7 @@ window.addEventListener("load", async () => {
       const payload = await W.qrLogin.buildQrLoginPayload(privateKeyHex, address, password, "privateKey");
       qrBackupDataUrl = await QRCode.toDataURL(JSON.stringify(payload), {
         width: 220,
-        margin: 1,
+        margin: 4,
       });
       imgEl.innerHTML = `<img src="${qrBackupDataUrl}" alt="QRコードでログイン(秘密鍵版)" style="max-width:100%;">`;
     } catch (e) {
@@ -607,7 +607,7 @@ window.addEventListener("load", async () => {
       );
       qrBackupMnemonicDataUrl = await QRCode.toDataURL(JSON.stringify(mnemonicPayload), {
         width: 220,
-        margin: 1,
+        margin: 4,
       });
       mnemonicImgEl.innerHTML = `<img src="${qrBackupMnemonicDataUrl}" alt="QRコードでログイン(ニーモニック版)" style="max-width:100%;">`;
     } catch (e) {
@@ -952,7 +952,7 @@ window.addEventListener("load", async () => {
       console.error(`AddressQR生成失敗(${walletName})、通常QRにフォールバック`, e);
       const dataUrl = await QRCode.toDataURL(address, {
         width: 180,
-        margin: 1
+        margin: 4
       });
       qr.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
     }
@@ -1012,7 +1012,7 @@ window.addEventListener("load", async () => {
 
       const dataUrl = await QRCode.toDataURL(JSON.stringify(qrJson), {
         width: 180,
-        margin: 1,
+        margin: 4,
       });
       qr.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
     } catch (e) {
@@ -1031,7 +1031,7 @@ window.addEventListener("load", async () => {
       const content = `{symbol:${address}}`;
       const dataUrl = await QRCode.toDataURL(content, {
         width: 180,
-        margin: 1,
+        margin: 4,
       });
       qr.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
     } catch (e) {
