@@ -20,7 +20,7 @@
 
 const {appState, getXymMosaicIdHex, NetworkType} = W.config;
 const {formatMosaicAmount} = W.utils;
-const {computeHeightRange, formatUtcJstFromMs} = W.onchainAnalysis;
+const {computeHeightRange, formatUtcJstFromMs, validateSpecificDate} = W.onchainAnalysis;
 
 const TRANSFER_TYPE = 16724; // Transfer Transaction
 const AGGREGATE_COMPLETE_TYPE = 16705;
@@ -537,24 +537,49 @@ function renderSummary(results) {
    分析本体。「データ」画面の「取引所フロー分析」カードから呼ばれる。
    mode: "24h" | "7d" | "30d"
 ============================================================ */
-async function loadExchangeFlowAnalysis(mode) {
+async function loadExchangeFlowAnalysis(mode, customRange) {
   const statusEl = document.getElementById("exchange-flow-status");
   const listEl = document.getElementById("exchange-flow-list");
   const titleEl = document.getElementById("exchange-flow-range-title");
   const summaryEl = document.getElementById("exchange-flow-summary");
+  const customErrorEl = document.getElementById("exchange-flow-custom-range-error");
   const runBtns = [
     document.getElementById("exchange-flow-run-24h-btn"),
     document.getElementById("exchange-flow-run-7d-btn"),
     document.getElementById("exchange-flow-run-30d-btn"),
+    document.getElementById("exchange-flow-run-custom-btn"),
   ];
+
+  if (customErrorEl) customErrorEl.textContent = "";
 
   if (!appState.NODE || !appState.epochAdjustment || !appState.facade) {
     if (statusEl) statusEl.textContent = "接続完了後にご利用いただけます。";
     return;
   }
 
+  // 「指定日」の場合は、通信を始める前に入力値を検証する
+  // (ジェネシスブロック生成前/未来日でないかの確認にノードへの問い合わせが必要なため非同期)
+  let customMs = null;
+  if (mode === "custom") {
+    runBtns.forEach((b) => { if (b) b.disabled = true; });
+    if (statusEl) statusEl.textContent = "日付を確認しています...";
+
+    const validation = await validateSpecificDate(customRange?.dateStr, customRange?.timezone);
+    if (!validation.ok) {
+      runBtns.forEach((b) => { if (b) b.disabled = false; });
+      if (customErrorEl) customErrorEl.textContent = validation.error;
+      if (statusEl) statusEl.textContent = "";
+      return;
+    }
+    customMs = { fromMs: validation.fromMs, toMs: validation.toMs };
+    customRange = { ...customRange, timezone: validation.timezone };
+  }
+
   const hours = RANGE_HOURS[mode] ?? 24;
-  const rangeLabelBase = RANGE_LABELS[mode] ?? "過去24時間";
+  const rangeLabelBase =
+    mode === "custom"
+      ? `指定日（${customRange.dateStr}, ${customRange.timezone}基準 0:00〜24:00）`
+      : RANGE_LABELS[mode] ?? "過去24時間";
   if (titleEl) titleEl.textContent = rangeLabelBase;
 
   runBtns.forEach((b) => { if (b) b.disabled = true; });
@@ -563,12 +588,17 @@ async function loadExchangeFlowAnalysis(mode) {
   if (statusEl) statusEl.textContent = "集計対象のブロック範囲を特定しています...";
 
   try {
-    const { fromHeight, toHeight, fromTimestampMs, toTimestampMs } = await computeHeightRange("rollingHours", hours);
+    const { fromHeight, toHeight, fromTimestampMs, toTimestampMs, toIsNow } =
+      mode === "custom"
+        ? await computeHeightRange(mode, undefined, customMs)
+        : await computeHeightRange("rollingHours", hours);
     const xymMosaicIds = buildXymMosaicIdSet();
 
     const fromText = formatUtcJstFromMs(fromTimestampMs);
     const toText = formatUtcJstFromMs(toTimestampMs);
-    const rangeLabel = `${rangeLabelBase}（${fromText} 〜 ${toText}）`;
+    const rangeLabel = toIsNow
+      ? `${rangeLabelBase}（${fromText} 〜 現在）`
+      : `${rangeLabelBase}（${fromText} 〜 ${toText}）`;
 
     const results = [];
     for (const ex of EXCHANGES) {

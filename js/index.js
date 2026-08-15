@@ -1129,6 +1129,12 @@ window.addEventListener("load", async () => {
     W.exchangeFlow?.loadExchangeFlowAnalysis("30d");
   });
 
+  document.getElementById("exchange-flow-run-custom-btn")?.addEventListener("click", () => {
+    const dateStr = document.getElementById("exchange-flow-custom-date")?.value;
+    const timezone = document.getElementById("exchange-flow-custom-timezone")?.value;
+    W.exchangeFlow?.loadExchangeFlowAnalysis("custom", { dateStr, timezone });
+  });
+
   document.getElementById("back-account-data")?.addEventListener("click", () => showPage(accountPage));
 
   document.getElementById("menu-namespace")?.addEventListener("click", async () => {
