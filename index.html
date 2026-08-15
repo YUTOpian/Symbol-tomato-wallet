@@ -948,7 +948,7 @@
             <div class="data-card-mini">
               <div class="data-card-mini-label">新規アドレス作成数</div>
               <div id="onchain-new-address-count" class="data-card-mini-value">---</div>
-              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">「受け取って初」＋「送って初」の合算(近似値)</div>
+              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">ネットワーク上で新しく認知されたアドレス数</div>
             </div>
             <div id="onchain-whale-count-card" class="data-card-mini" style="cursor:pointer;">
               <div class="data-card-mini-label">大口XYM移動件数(10,000 XYM以上)</div>
@@ -970,6 +970,28 @@
           <button id="exchange-flow-run-24h-btn" class="button-primary" type="button">過去24時間</button>
           <button id="exchange-flow-run-7d-btn" class="button-primary" type="button">過去7日間</button>
           <button id="exchange-flow-run-30d-btn" class="button-primary" type="button">過去30日間</button>
+
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid #374151;">
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;">
+              指定した日付(0:00〜24:00)で集計
+            </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+              <label style="font-size:12px;color:#94a3b8;">
+                日付
+                <input type="date" id="exchange-flow-custom-date" style="width:auto;display:inline-block;margin-left:4px;">
+              </label>
+              <label style="font-size:12px;color:#94a3b8;">
+                基準
+                <select id="exchange-flow-custom-timezone" style="width:auto;display:inline-block;margin-left:4px;">
+                  <option value="UTC">UTC</option>
+                  <option value="JST">JST(日本標準時)</option>
+                </select>
+              </label>
+              <button id="exchange-flow-run-custom-btn" class="button-primary" type="button" style="margin-top:0;">この日で集計</button>
+            </div>
+            <div id="exchange-flow-custom-range-error" style="font-size:12px;color:#f87171;margin-top:4px;"></div>
+          </div>
+
           <div id="exchange-flow-range-title" style="font-size:13px;font-weight:bold;margin-top:8px;color:#e5e7eb;"></div>
           <div id="exchange-flow-status" style="font-size:12px;color:#94a3b8;margin-top:6px;"></div>
 
