@@ -82,6 +82,8 @@ const RANGE_HOURS = {
 
 // 直近の集計結果(詳細画面表示用)。 exId → { rangeLabel, result }
 const lastResultsByExchangeId = {};
+// 直近の集計結果一式(CSV出力用)。 { rangeLabel, results: [{ex, result}] }
+let lastExchangeFlowSummary = null;
 
 /* ============================================================
    REST APIのアドレス表現(16進 or base32)を統一する
@@ -631,6 +633,24 @@ async function loadExchangeFlowAnalysis(mode, customRange) {
     }
     renderSummary(results);
 
+    // CSV出力用に、詳細な取引履歴(transactions)は含めずに保存する
+    // (取引所フロー分析の詳細=流入・流出履歴はCSV出力の対象外とするため)
+    lastExchangeFlowSummary = {
+      rangeLabel,
+      results: results.map(({ ex, result }) => ({
+        ex,
+        result: {
+          inflowAmount: result.inflowAmount,
+          outflowAmount: result.outflowAmount,
+          inflowCount: result.inflowCount,
+          outflowCount: result.outflowCount,
+          truncated: result.truncated,
+          errored: result.errored,
+          errorDetail: result.errorDetail,
+        },
+      })),
+    };
+
     if (statusEl) {
       statusEl.textContent =
         `集計範囲: 高さ ${fromHeight.toLocaleString("ja-JP")} 〜 ${toHeight.toLocaleString("ja-JP")}（${rangeLabel}）`;
@@ -761,6 +781,68 @@ function showExchangeDetail(exId) {
 }
 
 /* ============================================================
+   取引所フロー分析の結果をCSVとして書き出す。
+   ・全取引所合計(合計流入・合計流出・合計純増減)
+   ・取引所別内訳(流入・流出・純増減・件数)
+   のみを対象とし、個別の取引履歴(流入・流出履歴)は含めない。
+============================================================ */
+function exportExchangeFlowCsv() {
+  const statusEl = document.getElementById("exchange-flow-status");
+
+  if (!lastExchangeFlowSummary) {
+    if (statusEl) statusEl.textContent = "先に集計を実行してください。";
+    return;
+  }
+
+  const { rangeLabel, results } = lastExchangeFlowSummary;
+  const okResults = results.filter((r) => !r.result.errored);
+
+  const totalInflow = okResults.reduce((s, r) => s + r.result.inflowAmount, 0n);
+  const totalOutflow = okResults.reduce((s, r) => s + r.result.outflowAmount, 0n);
+  const totalNet = totalInflow - totalOutflow;
+
+  const toXym = (atomic) => Number(atomic) / 1_000_000;
+
+  const rows = [
+    ["取引所フロー分析 集計結果"],
+    ["集計範囲", rangeLabel],
+    [],
+    ["全取引所合計"],
+    ["合計流入(XYM)", toXym(totalInflow)],
+    ["合計流出(XYM)", toXym(totalOutflow)],
+    ["合計純増減(XYM)", toXym(totalNet)],
+    [],
+    ["取引所別内訳"],
+    ["取引所", "アドレス", "流入(XYM)", "流入件数", "流出(XYM)", "流出件数", "純増減(XYM)", "打ち切り", "取得エラー"],
+  ];
+
+  for (const { ex, result } of results) {
+    const addressText = ex.addresses.map((a) => (a.label ? `${a.label}: ${a.address}` : a.address)).join(" / ");
+
+    if (result.errored) {
+      rows.push([ex.label, addressText, "", "", "", "", "", "", result.errorDetail || "取得に失敗しました"]);
+      continue;
+    }
+
+    const net = result.inflowAmount - result.outflowAmount;
+    rows.push([
+      ex.label,
+      addressText,
+      toXym(result.inflowAmount),
+      result.inflowCount,
+      toXym(result.outflowAmount),
+      result.outflowCount,
+      toXym(net),
+      result.truncated ? "はい" : "いいえ",
+      "",
+    ]);
+  }
+
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  W.utils.downloadCsv(`exchange-flow-analysis-${dateStamp}.csv`, rows);
+}
+
+/* ============================================================
    初期化: 一覧行のクリック / 詳細画面の戻るボタン
 ============================================================ */
 function initExchangeFlowInteractions() {
@@ -773,6 +855,10 @@ function initExchangeFlowInteractions() {
 
   document.getElementById("back-exchange-flow-detail")?.addEventListener("click", () => {
     showPageEl(document.getElementById("data-page"));
+  });
+
+  document.getElementById("exchange-flow-export-csv-btn")?.addEventListener("click", () => {
+    exportExchangeFlowCsv();
   });
 }
 

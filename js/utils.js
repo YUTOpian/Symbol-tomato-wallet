@@ -170,6 +170,36 @@ async function updateNodeInfoPriceDisplay() {
   el.innerHTML = lines.length > 0 ? lines.join("<br>") : "価格の取得に失敗しました";
 }
 
+// ============================================================
+// CSV書き出し
+// ============================================================
+
+// CSVの1セル値をエスケープする(カンマ・ダブルクォート・改行を含む場合は
+// ダブルクォートで囲み、内部のダブルクォートは""にする)
+function csvEscapeCell(value) {
+  const str = value == null ? "" : String(value);
+  if (/[",\n\r]/.test(str)) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
+// rows: 2次元配列(1行=1配列)。Excelでの日本語文字化けを防ぐため
+// UTF-8 BOM付きで書き出す
+function downloadCsv(filename, rows) {
+  const csvContent = rows.map((row) => row.map(csvEscapeCell).join(",")).join("\r\n");
+  const bom = "\uFEFF";
+  const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 window.W.utils = {
   hexToBytes,
   showPopup,
@@ -178,7 +208,9 @@ window.W.utils = {
   hexToUint8Array,
   isSSSConnected,
   getSSSStatusHtml,
-  renderNodeInfoHtml
+  renderNodeInfoHtml,
+  csvEscapeCell,
+  downloadCsv
 };
 
 })();

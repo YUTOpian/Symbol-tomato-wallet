@@ -27,7 +27,7 @@
 
 const {appState, NetworkType} = W.config;
 const {getXymMosaicIdHex} = W.config;
-const {formatMosaicAmount} = W.utils;
+const {formatMosaicAmount, downloadCsv} = W.utils;
 const {getHistoricalXymJpyRate, getHistoricalXymUsdRate} = W.priceRates;
 
 const TRANSFER_TYPE = 16724; // Transfer Transaction
@@ -40,6 +40,7 @@ const NEW_ADDRESS_CHECK_CONCURRENCY = 10; // 新規アドレス判定(初回ト�
 
 // 直近の集計結果(大口一覧の詳細画面表示用)
 let lastWhaleResult = null; // { whales, rangeLabel }
+let lastOnchainSummary = null; // CSV出力用に保持する集計サマリー一式
 
 /* ============================================================
    REST APIのアドレス表現(16進 or base32)を統一する
@@ -567,10 +568,104 @@ function showWhaleDetail() {
   showPageEl(document.getElementById("onchain-whale-detail-page"));
 }
 
+/* ============================================================
+   オンチェーン分析の結果をCSVとして書き出す。
+   ・集計サマリー(平均ブロック生成間隔・XYM総移動量・XYM送金件数・
+     モザイク送信件数・アクティブアドレス数・新規アドレス作成数・
+     大口XYM移動件数)
+   ・大口XYM移動一覧の明細(時刻・送信元・送信先・金額・円/ドル換算・
+     高さ・Explorerハッシュ)
+   の2セクションを1つのCSVファイルにまとめる。
+   円・ドル換算は日足終値ベースの過去レート(renderWhaleDetailと同じ
+   考え方)を使うため、非同期関数にしている。
+============================================================ */
+async function exportOnchainAnalysisCsv() {
+  const statusEl = document.getElementById("onchain-analysis-status");
+
+  if (!lastOnchainSummary) {
+    if (statusEl) statusEl.textContent = "先に集計を実行してください。";
+    return;
+  }
+
+  const s = lastOnchainSummary;
+  const truncatedText = (v) => (v ? "はい(打ち切りあり)" : "いいえ");
+
+  const rows = [
+    ["オンチェーン分析 集計結果"],
+    ["集計範囲", s.rangeLabel],
+    ["対象ブロック高", `${s.scanFromHeight} 〜 ${s.toHeight}`],
+    ["ジェネシスブロックを除外", s.includesGenesisBlock ? "はい" : "いいえ"],
+    ["平均ブロック生成間隔(秒)", s.avgBlockIntervalSec != null ? s.avgBlockIntervalSec.toFixed(1) : ""],
+    ["XYM送金件数", s.transferCount, "打ち切り", truncatedText(s.transferTruncated)],
+    ["XYM総移動量", Number(s.totalAmountAtomic) / 1_000_000, "打ち切り", truncatedText(s.transferTruncated)],
+    ["モザイク送信件数(XYM含む)", s.mosaicTransferCount, "打ち切り", truncatedText(s.transferTruncated)],
+    ["アクティブアドレス数", s.activeAddressCount, "打ち切り", truncatedText(s.activeTruncated)],
+    ["新規アドレス作成数", s.newAddressTotal, "確認失敗件数", s.newAddressFailCount],
+    ["大口XYM移動件数", s.whaleCount, "打ち切り", truncatedText(s.transferTruncated)],
+    [],
+    ["大口XYM移動一覧"],
+    ["時刻(UTC)", "時刻(JST)", "送信元", "送信先", "金額(XYM)", "円換算", "ドル換算", "高さ", "Explorerハッシュ"],
+  ];
+
+  const sortedWhales = [...s.whales].sort((a, b) => Number(b.height) - Number(a.height));
+  const unixMsList = sortedWhales
+    .filter((w) => appState.epochAdjustment && w.timestampRaw != null)
+    .map((w) => Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw));
+  const rateMap = await buildHistoricalRateMap(unixMsList);
+
+  for (const w of sortedWhales) {
+    let senderAddr = "---";
+    try {
+      senderAddr = w.senderPublicKey ? publicKeyToAddress(w.senderPublicKey) : "---";
+    } catch {
+      senderAddr = "---";
+    }
+
+    let utcText = "";
+    let jstText = "";
+    let jpyValue = "";
+    let usdValue = "";
+    if (appState.epochAdjustment && w.timestampRaw != null) {
+      const unixMs = Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw);
+      const date = new Date(unixMs);
+      utcText = date.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+      jstText =
+        date.toLocaleString("ja-JP", {
+          timeZone: "Asia/Tokyo", hour12: false,
+          year: "numeric", month: "2-digit", day: "2-digit",
+          hour: "2-digit", minute: "2-digit", second: "2-digit",
+        }).replace(/\//g, "-") + " JST";
+
+      const rates = rateMap.get(utcDateKeyFromMs(unixMs));
+      const xymValue = Number(w.amount) / 1_000_000;
+      if (rates?.jpyRate != null) jpyValue = Math.round(xymValue * rates.jpyRate);
+      if (rates?.usdResult?.rate != null) usdValue = (xymValue * rates.usdResult.rate).toFixed(2);
+    }
+
+    rows.push([
+      utcText,
+      jstText,
+      senderAddr,
+      w.recipientAddress ?? "---",
+      Number(w.amount) / 1_000_000,
+      jpyValue,
+      usdValue,
+      w.height,
+      w.hash ?? "",
+    ]);
+  }
+
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  downloadCsv(`onchain-analysis-${dateStamp}.csv`, rows);
+}
+
 function initOnchainAnalysisInteractions() {
   document.getElementById("onchain-whale-count-card")?.addEventListener("click", showWhaleDetail);
   document.getElementById("back-onchain-whale-detail")?.addEventListener("click", () => {
     showPageEl(document.getElementById("data-page"));
+  });
+  document.getElementById("onchain-analysis-export-csv-btn")?.addEventListener("click", () => {
+    exportOnchainAnalysisCsv();
   });
 }
 
@@ -863,6 +958,25 @@ async function loadOnchainAnalysis(mode, customRange) {
 
     // 大口XYM移動 詳細画面用に保存(クリックされたときに再取得せず表示するため)
     lastWhaleResult = { whales: result.whales, rangeLabel, truncated: result.truncated };
+
+    // CSV出力用に、画面に表示している集計サマリー一式を保存しておく
+    lastOnchainSummary = {
+      rangeLabel,
+      scanFromHeight,
+      toHeight,
+      includesGenesisBlock,
+      avgBlockIntervalSec,
+      transferCount: result.transferCount,
+      totalAmountAtomic: result.totalAmount,
+      transferTruncated: result.truncated,
+      mosaicTransferCount: result.mosaicTransferCount,
+      activeAddressCount: activeResult.signerPublicKeys.size,
+      activeTruncated: activeResult.truncated,
+      newAddressTotal,
+      newAddressFailCount,
+      whaleCount: result.whales.length,
+      whales: result.whales,
+    };
 
     const genesisNote = includesGenesisBlock
       ? "\n※ 高さ1(ジェネシスブロック)はSymbolネットワーク開始時の初期配布による大量データを含むため、集計対象から除外しています。"
