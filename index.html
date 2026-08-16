@@ -29,20 +29,17 @@
         ログイン方法を選んでください。
       </p>
 
-      <div class="settings-menu">
-        <button id="choose-create-new" class="settings-menu-item">
-          🆕 新規作成
-        </button>
-        <button id="choose-mnemonic" class="settings-menu-item">
-          📝 ニーモニックをインポートする
-        </button>
-        <button id="choose-privatekey" class="settings-menu-item">
-          🔑 秘密鍵をインポートする
-        </button>
-        <button id="choose-sss" class="settings-menu-item">
-          🧩 SSS Extensionと接続する
-        </button>
-      </div>
+      <p style="font-size:13px;color:#94a3b8;">
+        ニーモニックの新規作成・インポート、秘密鍵のインポートでアカウントを作成してログインします。
+      </p>
+      <button id="choose-create-account" class="button-primary">🆕 アカウントを作成する</button>
+
+      <hr>
+
+      <p style="font-size:13px;color:#94a3b8;">
+        SSS Extension（ブラウザ拡張機能）と接続してログインします。
+      </p>
+      <button id="choose-sss" class="button-primary">🧩 SSS Extensionと接続する</button>
 
       <div id="welcome-status"></div>
 
@@ -93,115 +90,111 @@
   </div>
 
   <!-- ============================================================
-       新規作成画面
+       アカウント作成(新規作成 / ニーモニックのインポート / 秘密鍵のインポート)
   ============================================================ -->
-  <div id="create-new-page" class="page">
+  <div id="account-create-page" class="page">
     <div class="card">
-      <h2>新規作成</h2>
-      <button id="back-welcome-create-new" class="button-primary">← 戻る</button>
+      <h2>アカウント作成</h2>
+      <button id="back-welcome-account-create" class="button-primary">← 戻る</button>
 
-      <p style="font-size:13px;color:#94a3b8;">
-        以下のニーモニックフレーズが、あなたの新しいアカウントの鍵になります。
-        <b>紙に書き写すなどして、必ず安全な場所に記録してください。</b>
-        このフレーズを失うとアカウントに二度とアクセスできなくなり、
-        他人に知られるとアカウントの資産を自由に操作されてしまいます。
-      </p>
-
-      <div id="create-new-mnemonic" class="mnemonic-grid" style="user-select: text;">生成中...</div>
-      <button id="create-new-mnemonic-copy-btn" class="account-hide-btn" type="button">📋 ニーモニックをコピー</button>
-
-      <div style="margin-top:12px;">
-        <label style="font-size:13px;color:#e5e7eb;display:flex;align-items:flex-start;gap:8px;">
-          <input type="checkbox" id="create-new-exportable-toggle" style="width:auto;margin-top:3px;">
-          <span>このニーモニックを、後で「設定 → バックアップ」からいつでも取り出せるようにする</span>
-        </label>
-        <p style="font-size:12px;color:#f97316;margin-top:4px;">
-          ⚠️ チェックすると、ニーモニックをパスワードで暗号化してこの端末に保存し、
-          いつでも取り出せるようにします(利便性重視。保存先が漏洩した場合のリスクは高くなります)。
-          チェックしない場合、ニーモニックは一切保存されず、この画面を離れたセッションでは
-          二度と表示できなくなります(より安全。秘密鍵のバックアップは引き続き可能です)。
-        </p>
+      <div class="wallet-tabs">
+        <div id="account-create-tab-new" class="wallet-tab active">新規作成</div>
+        <div id="account-create-tab-mnemonic" class="wallet-tab">ニーモニックのインポート</div>
+        <div id="account-create-tab-privatekey" class="wallet-tab">秘密鍵のインポート</div>
       </div>
 
-      <p><b>秘密鍵（アカウント番号 0）：</b></p>
-      <div id="create-new-privatekey" class="input-box" style="word-break:break-all; user-select: text; font-family: monospace; font-size: 12.5px;">生成中...</div>
-      <button id="create-new-privatekey-copy-btn" class="account-hide-btn" type="button">📋 秘密鍵をコピー</button>
-
-      <p><b>ネットワーク：</b></p>
-      <select id="create-new-network-select" class="input-box">
-        <option value="mainnet">Mainnet</option>
-        <option value="testnet">Testnet</option>
-      </select>
-
-      <button id="create-new-next-btn" class="button-primary">次に進む</button>
-      <div id="create-new-status"></div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       ニーモニックインポート画面
-  ============================================================ -->
-  <div id="mnemonic-import-page" class="page">
-    <div class="card">
-      <h2>ニーモニックのインポート</h2>
-      <button id="back-welcome-mnemonic" class="button-primary">← 戻る</button>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        12語または24語のニーモニックフレーズを入力してください。この端末以外には送信されません。
-      </p>
-
-      <p style="font-size:12px;color:#94a3b8;margin-bottom:4px;">
-        フレーズ全体をどこか1マスに貼り付けると、自動ですべてのマスに割り振られます。
-      </p>
-      <div id="mnemonic-input-grid" class="mnemonic-input-grid"></div>
-
-      <div style="margin-top:12px;">
-        <label style="font-size:13px;color:#e5e7eb;display:flex;align-items:flex-start;gap:8px;">
-          <input type="checkbox" id="mnemonic-import-exportable-toggle" style="width:auto;margin-top:3px;">
-          <span>このニーモニックを、後で「設定 → バックアップ」からいつでも取り出せるようにする</span>
-        </label>
-        <p style="font-size:12px;color:#f97316;margin-top:4px;">
-          ⚠️ チェックすると、ニーモニックをパスワードで暗号化してこの端末に保存し、
-          いつでも取り出せるようにします(利便性重視。保存先が漏洩した場合のリスクは高くなります)。
-          チェックしない場合、ニーモニックは一切保存されず、次回以降は秘密鍵のみバックアップ可能です。
+      <!-- 新規作成 -->
+      <div id="account-create-content-new">
+        <p style="font-size:13px;color:#94a3b8;">
+          以下のニーモニックフレーズが、あなたの新しいアカウントの鍵になります。
+          <b>紙に書き写すなどして、必ず安全な場所に記録してください。</b>
+          このフレーズを失うとアカウントに二度とアクセスできなくなり、
+          他人に知られるとアカウントの資産を自由に操作されてしまいます。
         </p>
+
+        <div id="create-new-mnemonic" class="mnemonic-grid" style="user-select: text;">生成中...</div>
+        <button id="create-new-mnemonic-copy-btn" class="account-hide-btn" type="button">📋 ニーモニックをコピー</button>
+
+        <div style="margin-top:12px;">
+          <label style="font-size:13px;color:#e5e7eb;display:flex;align-items:flex-start;gap:8px;">
+            <input type="checkbox" id="create-new-exportable-toggle" style="width:auto;margin-top:3px;">
+            <span>このニーモニックを、後で「設定 → バックアップ」からいつでも取り出せるようにする</span>
+          </label>
+          <p style="font-size:12px;color:#f97316;margin-top:4px;">
+            ⚠️ チェックすると、ニーモニックをパスワードで暗号化してこの端末に保存し、
+            いつでも取り出せるようにします(利便性重視。保存先が漏洩した場合のリスクは高くなります)。
+            チェックしない場合、ニーモニックは一切保存されず、この画面を離れたセッションでは
+            二度と表示できなくなります(より安全。秘密鍵のバックアップは引き続き可能です)。
+          </p>
+        </div>
+
+        <p><b>秘密鍵（アカウント番号 0）：</b></p>
+        <div id="create-new-privatekey" class="input-box" style="word-break:break-all; user-select: text; font-family: monospace; font-size: 12.5px;">生成中...</div>
+        <button id="create-new-privatekey-copy-btn" class="account-hide-btn" type="button">📋 秘密鍵をコピー</button>
+
+        <p><b>ネットワーク：</b></p>
+        <select id="create-new-network-select" class="input-box">
+          <option value="mainnet">Mainnet</option>
+          <option value="testnet">Testnet</option>
+        </select>
+
+        <button id="create-new-next-btn" class="button-primary">次に進む</button>
+        <div id="create-new-status"></div>
       </div>
 
-      <p><b>ネットワーク：</b></p>
-      <select id="mnemonic-network-select" class="input-box">
-        <option value="mainnet">Mainnet</option>
-        <option value="testnet">Testnet</option>
-      </select>
+      <!-- ニーモニックのインポート -->
+      <div id="account-create-content-mnemonic" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          12語または24語のニーモニックフレーズを入力してください。この端末以外には送信されません。
+        </p>
 
-      <button id="import-mnemonic-btn" class="button-primary">インポートする</button>
-      <div id="mnemonic-import-status"></div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:4px;">
+          フレーズ全体をどこか1マスに貼り付けると、自動ですべてのマスに割り振られます。
+        </p>
+        <div id="mnemonic-input-grid" class="mnemonic-input-grid"></div>
+
+        <div style="margin-top:12px;">
+          <label style="font-size:13px;color:#e5e7eb;display:flex;align-items:flex-start;gap:8px;">
+            <input type="checkbox" id="mnemonic-import-exportable-toggle" style="width:auto;margin-top:3px;">
+            <span>このニーモニックを、後で「設定 → バックアップ」からいつでも取り出せるようにする</span>
+          </label>
+          <p style="font-size:12px;color:#f97316;margin-top:4px;">
+            ⚠️ チェックすると、ニーモニックをパスワードで暗号化してこの端末に保存し、
+            いつでも取り出せるようにします(利便性重視。保存先が漏洩した場合のリスクは高くなります)。
+            チェックしない場合、ニーモニックは一切保存されず、次回以降は秘密鍵のみバックアップ可能です。
+          </p>
+        </div>
+
+        <p><b>ネットワーク：</b></p>
+        <select id="mnemonic-network-select" class="input-box">
+          <option value="mainnet">Mainnet</option>
+          <option value="testnet">Testnet</option>
+        </select>
+
+        <button id="import-mnemonic-btn" class="button-primary">インポートする</button>
+        <div id="mnemonic-import-status"></div>
+      </div>
+
+      <!-- 秘密鍵のインポート -->
+      <div id="account-create-content-privatekey" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          64桁の秘密鍵(16進数)を入力してください。この端末以外には送信されません。
+        </p>
+
+        <input id="privatekey-import-input" class="input-box" placeholder="秘密鍵（64桁の16進数）">
+
+        <p><b>ネットワーク：</b></p>
+        <select id="privatekey-import-network-select" class="input-box">
+          <option value="mainnet">Mainnet</option>
+          <option value="testnet">Testnet</option>
+        </select>
+
+        <button id="import-privatekey-btn" class="button-primary">インポートする</button>
+        <div id="privatekey-import-status"></div>
+      </div>
     </div>
   </div>
 
-  <!-- ============================================================
-       秘密鍵インポート画面
-  ============================================================ -->
-  <div id="privatekey-import-page" class="page">
-    <div class="card">
-      <h2>秘密鍵のインポート</h2>
-      <button id="back-welcome-privatekey" class="button-primary">← 戻る</button>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        64桁の秘密鍵(16進数)を入力してください。この端末以外には送信されません。
-      </p>
-
-      <input id="privatekey-import-input" class="input-box" placeholder="秘密鍵（64桁の16進数）">
-
-      <p><b>ネットワーク：</b></p>
-      <select id="privatekey-import-network-select" class="input-box">
-        <option value="mainnet">Mainnet</option>
-        <option value="testnet">Testnet</option>
-      </select>
-
-      <button id="import-privatekey-btn" class="button-primary">インポートする</button>
-      <div id="privatekey-import-status"></div>
-    </div>
-  </div>
 
   <!-- ============================================================
        パスワード設定画面(任意・インポート直後に表示)
