@@ -25,6 +25,29 @@
   <div id="welcome-page" class="page active">
     <div class="card">
       <h2>ようこそ</h2>
+
+      <!-- ============================================================
+           ログイン(この端末に保存済みのアカウントがある場合はパスワードで、
+           無い場合はQRコードでログインする)
+      ============================================================ -->
+      <h2>ログイン</h2>
+      <div id="welcome-login-has-data" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          以前このアプリでパスワードを設定してアカウントを保存しています。そのパスワードを入力してください。
+        </p>
+        <input id="unlock-password-input" class="input-box" type="password" placeholder="パスワード">
+        <button id="unlock-btn" class="button-primary">ログイン</button>
+      </div>
+      <div id="welcome-login-no-data" style="display:none;">
+        <p style="font-size:13px;color:#94a3b8;">
+          この端末に保存されているアカウントデータはありません。アカウントをお持ちの場合は、下の「QRコードを読み取ってログイン」からログインしてください。
+        </p>
+      </div>
+      <div id="unlock-status"></div>
+      <button id="forget-account-btn" class="button-primary" type="button" style="display:none;">🗑 この端末に保存されているアカウントデータを削除する</button>
+
+      <hr>
+
       <p style="font-size:13px;color:#94a3b8;">
         ログイン方法を選んでください。
       </p>
@@ -249,62 +272,6 @@
   </div>
 
   <!-- ============================================================
-       ロック解除画面(保存済みアカウントがある場合)
-  ============================================================ -->
-  <div id="unlock-page" class="page">
-    <div class="card">
-      <h2>ログイン</h2>
-      <p style="font-size:13px;color:#94a3b8;">
-        以前このアプリでパスワードを設定してアカウントを保存しています。そのパスワードを入力してください。
-      </p>
-
-      <input id="unlock-password-input" class="input-box" type="password" placeholder="パスワード">
-      <button id="unlock-btn" class="button-primary">ログイン</button>
-      <div id="unlock-status"></div>
-
-      <hr>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        SSS Extensionを利用して、外部ウォレットから接続できます。
-      </p>
-      <button id="unlock-sss-btn" class="button-primary">🧩 SSS Extensionと接続する</button>
-
-      <hr>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        パスワードを設定した覚えがない、または忘れてしまった場合は、この端末に保存されたデータを削除して
-        SSS接続かニーモニックの入力からやり直せます（ニーモニックさえ分かっていれば、資産がなくなることはありません）。
-      </p>
-      <button id="forget-account-btn" class="button-primary">保存データを削除してやり直す</button>
-
-      <hr>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        秘密鍵を入力せず、Symbolアドレスを指定して残高・アクティビティなどを閲覧だけしたい場合はこちら（ログイン不要・送金不可）。
-      </p>
-      <button id="unlock-address-lookup-btn" class="button-primary">🔍 アドレスを照会する（閲覧のみ）</button>
-
-      <hr>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        オフラインで署名済みのトランザクションファイルをお持ちの場合は、こちらから読み込んでブロードキャストできます（ログイン不要）。
-      </p>
-      <button id="unlock-offline-broadcast-btn" class="button-primary">📥 オフライン署名データを読み込む</button>
-
-      <hr>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        別のアカウントの「QRコードでログイン」用の画像とパスワードをお持ちの場合は、こちらからログインできます。
-        <b>この端末に保存されている現在のアカウント情報は削除され、置き換わります</b>
-        （ニーモニックや秘密鍵をお持ちであれば、資産自体がなくなることはありません）。
-      </p>
-      <button id="unlock-qr-login-camera-btn" class="button-primary">📷 QRコードを読み取ってログイン</button>
-      <button id="unlock-qr-login-file-btn" class="account-hide-btn" type="button">🖼 QRコード画像ファイルを選択してログイン</button>
-      <input type="file" id="unlock-qr-login-file-input" accept="image/*" style="display:none;">
-    </div>
-  </div>
-
-  <!-- ============================================================
        アカウント画面
   ============================================================ -->
   <div id="account-page" class="page">
@@ -524,9 +491,6 @@
         </button>
         <button id="menu-backup" class="settings-menu-item">
           🗝️ バックアップ(ニーモニック・秘密鍵)
-        </button>
-        <button id="lock-session-btn" class="settings-menu-item" style="display:none;">
-          🔒 ログイン画面に戻る
         </button>
         <button id="logout-btn" class="settings-menu-item">
           🚪 ログアウト
