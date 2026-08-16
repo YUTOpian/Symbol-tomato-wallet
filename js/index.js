@@ -560,6 +560,8 @@ window.addEventListener("load", async () => {
   // ============================
   let qrBackupDataUrl = null;
   let qrBackupMnemonicDataUrl = null;
+  let qrBackupPrivateKeyDownloaded = false;
+  let qrBackupMnemonicDownloaded = false;
 
   async function showQrBackupPage(password) {
     showPage(qrBackupPage);
@@ -570,6 +572,8 @@ window.addEventListener("load", async () => {
     if (mnemonicImgEl) mnemonicImgEl.textContent = "生成中...";
     qrBackupDataUrl = null;
     qrBackupMnemonicDataUrl = null;
+    qrBackupPrivateKeyDownloaded = false;
+    qrBackupMnemonicDownloaded = false;
 
     try {
       const account = appState.accounts.find((a) => a.id === appState.activeAccountId);
@@ -637,6 +641,7 @@ window.addEventListener("load", async () => {
     document.body.appendChild(a);
     a.click();
     a.remove();
+    qrBackupPrivateKeyDownloaded = true;
     showPopup("QRコードをダウンロードしました");
   });
 
@@ -652,13 +657,45 @@ window.addEventListener("load", async () => {
     document.body.appendChild(a);
     a.click();
     a.remove();
+    qrBackupMnemonicDownloaded = true;
     showPopup("QRコードをダウンロードしました");
   });
 
+  // ここで初めてのログインを完了とはせず、あえて「ようこそ画面」へ戻す。
+  // 「アカウント作成 → QRコード生成 → ダウンロード → QRコードでログインし直す」
+  // という一連の流れを実際に一度体験してもらうことで、
+  // ①QRコードとパスワードの組み合わせが確実に機能することを本人が確認できる
+  // ②ダウンロードし忘れたまま先に進んでしまう事故を防ぐ
+  // という2つのねらいがある(単にgoHome()で素通りさせない)。
   document.getElementById("qr-backup-next-btn")?.addEventListener("click", () => {
+    if (!qrBackupPrivateKeyDownloaded && !qrBackupMnemonicDownloaded) {
+      setStatus("qr-backup-status", "先にQRコードをダウンロードしてください。", "error");
+      return;
+    }
+
+    const undownloadedWarning = !qrBackupPrivateKeyDownloaded
+      ? "\n\n⚠️ 秘密鍵版のQRコードがまだダウンロードされていません。"
+      : (qrBackupMnemonicDataUrl && !qrBackupMnemonicDownloaded)
+      ? "\n\n⚠️ ニーモニック版のQRコードがまだダウンロードされていません。"
+      : "";
+
+    const confirmed = confirm(
+      "QRコードのダウンロードは完了していますか？" + undownloadedWarning +
+      "\n\nこの後は「ようこそ画面」に戻ります。次回以降このアカウントでログインするには、" +
+      "ダウンロードしたQRコードと今設定したパスワードを使って「QRコードでログイン」から" +
+      "ログインしてください。\n\n続けてよろしいですか？"
+    );
+    if (!confirmed) return;
+
     qrBackupDataUrl = null;
     qrBackupMnemonicDataUrl = null;
-    goHome();
+    qrBackupPrivateKeyDownloaded = false;
+    qrBackupMnemonicDownloaded = false;
+
+    // ホーム画面へは進めず、セッション状態をリセットして「ようこそ画面」に戻す。
+    // これにより、実際にQRコードでログインし直すことが初回ログインの必須手順になる。
+    lockSession();
+    showPage(welcomePage);
   });
 
   // ============================
