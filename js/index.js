@@ -416,7 +416,6 @@ window.addEventListener("load", async () => {
     const mnemonicPhrase = readMnemonicFromGrid("mnemonic-input-grid");
     const networkChoice = document.getElementById("mnemonic-network-select").value;
     const networkType = networkChoice === "testnet" ? NetworkType.TESTNET : NetworkType.MAINNET;
-    const exportable = !!document.getElementById("mnemonic-import-exportable-toggle")?.checked;
 
     if (!mnemonicPhrase) {
       setStatus("mnemonic-import-status", "ニーモニックを入力してください。", "error");
@@ -425,7 +424,7 @@ window.addEventListener("load", async () => {
 
     setStatus("mnemonic-import-status", "インポート中...");
     try {
-      await loginWithMnemonic(mnemonicPhrase, networkType, 0, exportable);
+      await loginWithMnemonic(mnemonicPhrase, networkType, 0, false);
       resetMnemonicInputGrid("mnemonic-input-grid");
       setStatus("mnemonic-import-status", "", "default");
       showPage(passwordSetupPage);
