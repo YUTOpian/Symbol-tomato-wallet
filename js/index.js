@@ -107,9 +107,7 @@ window.addEventListener("load", async () => {
   // ============================
   const welcomePage = document.getElementById("welcome-page");
   const addressLookupPage = document.getElementById("address-lookup-page");
-  const createNewPage = document.getElementById("create-new-page");
-  const mnemonicImportPage = document.getElementById("mnemonic-import-page");
-  const privatekeyImportPage = document.getElementById("privatekey-import-page");
+  const accountCreatePage = document.getElementById("account-create-page");
   const passwordSetupPage = document.getElementById("password-setup-page");
   const qrBackupPage = document.getElementById("qr-backup-page");
   const unlockPage = document.getElementById("unlock-page");
@@ -201,10 +199,10 @@ window.addEventListener("load", async () => {
   });
 
   // ============================
-  // 新規作成
+  // 新規作成(「アカウント作成」ボタン → account-create-page、
+  // デフォルトで「新規作成」タブが開いた状態でニーモニックを生成する)
   // ============================
-  document.getElementById("choose-create-new")?.addEventListener("click", async () => {
-    showPage(createNewPage);
+  async function startCreateNewAccountFlow() {
     setStatus("create-new-status", "", "default");
     const mnemonicEl = document.getElementById("create-new-mnemonic");
     const privateKeyEl = document.getElementById("create-new-privatekey");
@@ -228,6 +226,21 @@ window.addEventListener("load", async () => {
       mnemonicEl.innerHTML = "生成に失敗しました。";
       privateKeyEl.textContent = "---";
     }
+  }
+
+  document.getElementById("choose-create-account")?.addEventListener("click", async () => {
+    // 「アカウント作成」ボタンを押すたびに、各タブの内容を初期状態に揃える
+    resetMnemonicInputGrid("mnemonic-input-grid");
+    const privatekeyInput = document.getElementById("privatekey-import-input");
+    if (privatekeyInput) privatekeyInput.value = "";
+    setStatus("mnemonic-import-status", "", "default");
+    setStatus("privatekey-import-status", "", "default");
+
+    // 常に「新規作成」タブを開いた状態で表示する
+    document.getElementById("account-create-tab-new")?.click();
+
+    showPage(accountCreatePage);
+    await startCreateNewAccountFlow();
   });
 
   document.getElementById("create-new-mnemonic-copy-btn")?.addEventListener("click", async () => {
@@ -254,7 +267,7 @@ window.addEventListener("load", async () => {
     }
   });
 
-  document.getElementById("back-welcome-create-new")?.addEventListener("click", () => showPage(welcomePage));
+  document.getElementById("back-welcome-account-create")?.addEventListener("click", () => showPage(welcomePage));
 
   document.getElementById("create-new-next-btn")?.addEventListener("click", async () => {
     const mnemonicPhrase = document.getElementById("create-new-mnemonic").dataset.mnemonic;
@@ -391,19 +404,14 @@ window.addEventListener("load", async () => {
     check();
   }
 
-  ensureMnemonicGridPopulated("mnemonic-import-page", "mnemonic-input-grid");
+  // account-create-page内の「ニーモニックのインポート」タブは、
+  // 「アカウント作成」ボタン押下時に明示的にresetMnemonicInputGrid()するため、
+  // ここでの監視は不要(以前は独立ページだったための名残)
   ensureMnemonicGridPopulated("add-account-mnemonic-page", "add-mnemonic-input-grid");
 
   // ============================
-  // ニーモニックインポート画面(ようこそ画面から)
+  // ニーモニックのインポート(account-create-page内の「ニーモニックのインポート」タブ)
   // ============================
-  document.getElementById("choose-mnemonic")?.addEventListener("click", () => {
-    resetMnemonicInputGrid("mnemonic-input-grid");
-    showPage(mnemonicImportPage);
-  });
-
-  document.getElementById("back-welcome-mnemonic")?.addEventListener("click", () => showPage(welcomePage));
-
   document.getElementById("import-mnemonic-btn")?.addEventListener("click", async () => {
     const mnemonicPhrase = readMnemonicFromGrid("mnemonic-input-grid");
     const networkChoice = document.getElementById("mnemonic-network-select").value;
@@ -428,14 +436,8 @@ window.addEventListener("load", async () => {
   });
 
   // ============================
-  // 秘密鍵インポート画面へ
+  // 秘密鍵のインポート(account-create-page内の「秘密鍵のインポート」タブ)
   // ============================
-  document.getElementById("choose-privatekey")?.addEventListener("click", () => {
-    showPage(privatekeyImportPage);
-  });
-
-  document.getElementById("back-welcome-privatekey")?.addEventListener("click", () => showPage(welcomePage));
-
   document.getElementById("import-privatekey-btn")?.addEventListener("click", async () => {
     const privateKeyHex = document.getElementById("privatekey-import-input").value.trim();
     const networkChoice = document.getElementById("privatekey-import-network-select").value;
@@ -457,6 +459,13 @@ window.addEventListener("load", async () => {
       setStatus("privatekey-import-status", e.message || "インポートに失敗しました。", "error");
     }
   });
+
+  // account-create-page内のタブ切替(新規作成 / ニーモニックのインポート / 秘密鍵のインポート)
+  setupTabGroup(
+    ["account-create-tab-new", "account-create-tab-mnemonic", "account-create-tab-privatekey"],
+    ["account-create-content-new", "account-create-content-mnemonic", "account-create-content-privatekey"],
+    [null, null, null]
+  );
 
   // ============================
   // アドレス照会(閲覧専用・秘密鍵不要・パスワード不要)
