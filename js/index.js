@@ -110,7 +110,6 @@ window.addEventListener("load", async () => {
   const accountCreatePage = document.getElementById("account-create-page");
   const passwordSetupPage = document.getElementById("password-setup-page");
   const qrBackupPage = document.getElementById("qr-backup-page");
-  const unlockPage = document.getElementById("unlock-page");
   const accountPage = document.getElementById("account-page");
   const sendPage = document.getElementById("send-page");
   const transferPage = document.getElementById("transfer-page");
@@ -147,6 +146,31 @@ window.addEventListener("load", async () => {
       p.classList.remove("active");
     });
     page.classList.add("active");
+
+    // ようこそ画面を表示するたびに、ログインフォーム(パスワード欄 or
+    // QRコードでログインの案内)と「アカウントデータを削除する」ボタンの
+    // 表示を、その時点の保存状況に合わせて更新する
+    if (page === welcomePage) {
+      updateWelcomeLoginSection();
+    }
+  }
+
+  // 保存済みアカウントデータの有無に応じて、ようこそ画面のログイン欄を出し分ける
+  //   "encrypted"(パスワード設定済み) → パスワード入力でログインできる旨を表示
+  //   それ以外("plain"/"none")        → QRコードでログインするよう案内
+  // 「アカウントデータを削除する」ボタンは、何かしら保存されている場合のみ表示する
+  function updateWelcomeLoginSection() {
+    const mode = getVaultMode();
+    const hasDataEl = document.getElementById("welcome-login-has-data");
+    const noDataEl = document.getElementById("welcome-login-no-data");
+    const forgetBtn = document.getElementById("forget-account-btn");
+
+    const canPasswordLogin = mode === "encrypted";
+    if (hasDataEl) hasDataEl.style.display = canPasswordLogin ? "" : "none";
+    if (noDataEl) noDataEl.style.display = canPasswordLogin ? "none" : "";
+    if (forgetBtn) forgetBtn.style.display = mode === "none" ? "none" : "";
+
+    setStatus("unlock-status", "", "default");
   }
 
   function updateReadOnlyUiVisibility() {
@@ -165,14 +189,13 @@ window.addEventListener("load", async () => {
 
   // ============================
   // 起動時の初期画面判定
-  // - パスワード設定済み(暗号化保存) → ロック解除画面
   // - パスワード未設定だが保存あり(平文保存) → 確認なしでそのまま自動ログイン
-  // - 何も保存されていない → ログイン方法選択画面
+  // - それ以外(パスワード設定済み・何も保存されていない) → ようこそ画面
+  //   (パスワード設定済みの場合は、ようこそ画面内のログインフォームで
+  //    パスワードの入力を求める)
   // ============================
   const vaultMode = getVaultMode();
-  if (vaultMode === "encrypted") {
-    showPage(unlockPage);
-  } else if (vaultMode === "plain") {
+  if (vaultMode === "plain") {
     try {
       await restorePlainVault();
       goHome();
@@ -469,22 +492,13 @@ window.addEventListener("load", async () => {
   // ============================
   // アドレス照会(閲覧専用・秘密鍵不要・パスワード不要)
   // ============================
-  let addressLookupOrigin = "welcome"; // "welcome" | "login" - 戻る先とSettings表示の出し分けに使う
-
   document.getElementById("welcome-address-lookup-btn")?.addEventListener("click", () => {
-    addressLookupOrigin = "welcome";
-    setStatus("address-lookup-status", "", "default");
-    showPage(addressLookupPage);
-  });
-
-  document.getElementById("unlock-address-lookup-btn")?.addEventListener("click", () => {
-    addressLookupOrigin = "login";
     setStatus("address-lookup-status", "", "default");
     showPage(addressLookupPage);
   });
 
   document.getElementById("back-welcome-address-lookup")?.addEventListener("click", () => {
-    showPage(addressLookupOrigin === "login" ? unlockPage : welcomePage);
+    showPage(welcomePage);
   });
 
   document.getElementById("address-lookup-qr-btn")?.addEventListener("click", () => {
@@ -511,7 +525,6 @@ window.addEventListener("load", async () => {
     setStatus("address-lookup-status", "照会中...");
     try {
       await loginAsReadOnly(addressInput);
-      appState.readOnlyFromLogin = addressLookupOrigin === "login";
       document.getElementById("address-lookup-input").value = "";
       setStatus("address-lookup-status", "", "default");
       goHome();
@@ -698,7 +711,7 @@ window.addEventListener("load", async () => {
   });
 
   // ============================
-  // ロック解除(保存済みアカウントでログイン)
+  // パスワードでログイン(この端末に保存済みのアカウントがある場合)
   // ============================
   document.getElementById("unlock-btn")?.addEventListener("click", async () => {
     const pw = document.getElementById("unlock-password-input").value;
@@ -717,17 +730,8 @@ window.addEventListener("load", async () => {
     }
   });
 
-  document.getElementById("unlock-sss-btn")?.addEventListener("click", async () => {
-    setStatus("unlock-status", "SSS Extensionに接続中...");
-    try {
-      await connectWithSSS();
-      goHome();
-    } catch (e) {
-      console.error("connectWithSSS error:", e);
-      setStatus("unlock-status", e.message || "SSS Extensionとの接続に失敗しました。", "error");
-    }
-  });
-
+  // ようこそ画面の「アカウントデータを削除する」ボタン
+  // (この端末に保存されているパスワード付き/平文いずれのボールトも削除する)
   document.getElementById("forget-account-btn")?.addEventListener("click", () => {
     if (!confirm(
       "この端末に保存されているアカウント情報を削除します。\n" +
@@ -735,13 +739,13 @@ window.addEventListener("load", async () => {
       "削除してよろしいですか？"
     )) return;
     clearVault();
-    showPage(welcomePage);
+    updateWelcomeLoginSection();
+    setStatus("unlock-status", "✅ 保存されていたアカウントデータを削除しました。", "success");
   });
 
   // ============================
   // QRコードでログイン
-  // ・welcome-page / unlock-page どちらからも、カメラ読み取り/画像ファイル
-  //   選択の2経路で使える共通処理。
+  // ・ようこそ画面から、カメラ読み取り/画像ファイル選択の2経路で使える共通処理。
   // ・読み取ったQRコードをパスワードで復号し、秘密鍵を取り出してログインする。
   //   ログインに使ったパスワードは、そのままこの端末の保存パスワードとしても
   //   再利用する(saveVault)。QRコード+パスワードだけでこの端末上に
@@ -793,11 +797,10 @@ window.addEventListener("load", async () => {
 
   /*
     読み取ったQRコードの生テキストを検証・復号し、ログインまで行う。
-    origin: "welcome" | "unlock" (unlockの場合は既存の保存データを
-    置き換える前に確認する)
+    この端末に既に保存済みのアカウントデータがある場合は、置き換える前に確認する。
   */
-  async function handleQrLoginText(text, origin) {
-    const statusId = origin === "unlock" ? "unlock-status" : "welcome-status";
+  async function handleQrLoginText(text) {
+    const statusId = "welcome-status";
 
     const payload = W.qrLogin.parseQrLoginPayloadText(text);
     if (!payload) {
@@ -805,7 +808,8 @@ window.addEventListener("load", async () => {
       return;
     }
 
-    if (origin === "unlock") {
+    const hadExistingData = getVaultMode() !== "none";
+    if (hadExistingData) {
       if (!confirm(
         "この端末に保存されている現在のアカウント情報を削除し、QRコードのアカウントに置き換えます。\n" +
         "（ニーモニックや秘密鍵をお持ちであれば、現在のアカウントの資産自体がなくなることはありません）\n\n" +
@@ -833,7 +837,7 @@ window.addEventListener("load", async () => {
         throw new Error("QRコードのアドレス形式が正しくありません。");
       }
 
-      if (origin === "unlock") {
+      if (hadExistingData) {
         clearVault();
       }
 
@@ -868,17 +872,16 @@ window.addEventListener("load", async () => {
     }
   }
 
-  function wireQrLoginButtons(origin, cameraBtnId, fileBtnId, fileInputId) {
+  function wireQrLoginButtons(cameraBtnId, fileBtnId, fileInputId) {
     document.getElementById(cameraBtnId)?.addEventListener("click", () => {
-      const statusId = origin === "unlock" ? "unlock-status" : "welcome-status";
-      setStatus(statusId, "", "default");
+      setStatus("welcome-status", "", "default");
       W.qrScanner?.openRawQrScanModal({
         scanningMessage: "カメラにQRコードでログイン用のコードを映してください...",
         onText: (text) => {
-          handleQrLoginText(text, origin);
+          handleQrLoginText(text);
         },
         onError: () => {
-          setStatus(statusId, "カメラを起動できませんでした。カメラへのアクセスを許可してください。", "error");
+          setStatus("welcome-status", "カメラを起動できませんでした。カメラへのアクセスを許可してください。", "error");
         },
       });
     });
@@ -892,24 +895,22 @@ window.addEventListener("load", async () => {
       fileInput.value = "";
       if (!file) return;
 
-      const statusId = origin === "unlock" ? "unlock-status" : "welcome-status";
-      setStatus(statusId, "画像を解析しています...");
+      setStatus("welcome-status", "画像を解析しています...");
       try {
         const text = await W.qrScanner.decodeQrFromImageFile(file);
         if (!text) {
-          setStatus(statusId, "画像からQRコードを読み取れませんでした。", "error");
+          setStatus("welcome-status", "画像からQRコードを読み取れませんでした。", "error");
           return;
         }
-        await handleQrLoginText(text, origin);
+        await handleQrLoginText(text);
       } catch (e) {
         console.error("decodeQrFromImageFile error:", e);
-        setStatus(statusId, e.message || "画像の読み込みに失敗しました。", "error");
+        setStatus("welcome-status", e.message || "画像の読み込みに失敗しました。", "error");
       }
     });
   }
 
-  wireQrLoginButtons("welcome", "welcome-qr-login-camera-btn", "welcome-qr-login-file-btn", "welcome-qr-login-file-input");
-  wireQrLoginButtons("unlock", "unlock-qr-login-camera-btn", "unlock-qr-login-file-btn", "unlock-qr-login-file-input");
+  wireQrLoginButtons("welcome-qr-login-camera-btn", "welcome-qr-login-file-btn", "welcome-qr-login-file-input");
 
   // 送金画面に「保有モザイク一覧」から直接入ったかどうか
   let cameFromMosaicList = false;
@@ -2103,7 +2104,6 @@ window.addEventListener("load", async () => {
   }
 
   document.getElementById("welcome-offline-broadcast-btn")?.addEventListener("click", openOfflineBroadcastPage);
-  document.getElementById("unlock-offline-broadcast-btn")?.addEventListener("click", openOfflineBroadcastPage);
 
   document.getElementById("offline-broadcast-file")?.addEventListener("change", async e => {
     const file = e.target.files?.[0];
@@ -2762,23 +2762,13 @@ window.addEventListener("load", async () => {
     const feeItem = document.getElementById("menu-fee-settings");
     if (feeItem) feeItem.style.display = isReadOnly ? "none" : "";
 
-    const lockBtn = document.getElementById("lock-session-btn");
     const networkSwitchItem = document.getElementById("menu-network-switch");
-
     if (isReadOnly) {
-      if (appState.readOnlyFromLogin) {
-        // ログイン画面から入った場合: 戻る先の暗号化保存アカウントが実在するはず。
-        // ネットワーク切替は対象アドレスと食い違ってしまうため出さない。
-        if (lockBtn) lockBtn.style.display = getVaultMode() === "encrypted" ? "" : "none";
-        if (networkSwitchItem) networkSwitchItem.style.display = "none";
-      } else {
-        // ようこそ画面から入った場合: 何もアカウントを作成していなければ
-        // 「ログイン画面に戻る」の戻り先がないため隠す。
-        if (lockBtn) lockBtn.style.display = appState.accounts.length > 0 ? "" : "none";
-        if (networkSwitchItem) networkSwitchItem.style.display = "";
-      }
+      // 読み取り専用モードで照会中のアドレスは、この端末に保存済みの
+      // アカウントのネットワークと食い違う可能性があるため、保存済み
+      // アカウントが存在する場合はネットワーク切り替えを出さない。
+      if (networkSwitchItem) networkSwitchItem.style.display = getVaultMode() === "none" ? "" : "none";
     } else {
-      if (lockBtn) lockBtn.style.display = getVaultMode() === "encrypted" ? "" : "none";
       if (networkSwitchItem) networkSwitchItem.style.display = isSss ? "none" : "";
     }
 
@@ -2789,12 +2779,6 @@ window.addEventListener("load", async () => {
     if (backupItem) backupItem.style.display = (isSss || isReadOnly) ? "none" : "";
 
     showPage(settingsPage);
-  });
-
-  document.getElementById("lock-session-btn")?.addEventListener("click", () => {
-    lockSession();
-    setStatus("unlock-status", "", "default");
-    showPage(unlockPage);
   });
 
   document.getElementById("menu-node-settings")?.addEventListener("click", async () => {
@@ -2842,9 +2826,14 @@ window.addEventListener("load", async () => {
   document.getElementById("apply-fee-btn")?.addEventListener("click", applyFeeSettings);
 
   document.getElementById("logout-btn")?.addEventListener("click", () => {
-    const confirmMsg = appState.isReadOnly
-      ? "アドレスの照会を終了し、ようこそ画面に戻ります。よろしいですか？"
-      : "ログアウトします。次回は再度ニーモニックの入力（またはSSS Extension接続）が必要になります。よろしいですか？";
+    let confirmMsg;
+    if (appState.isReadOnly) {
+      confirmMsg = "アドレスの照会を終了し、ようこそ画面に戻ります。よろしいですか？";
+    } else if (appState.authMode === "sss") {
+      confirmMsg = "SSS Extensionとの接続を終了し、ようこそ画面に戻ります。よろしいですか？";
+    } else {
+      confirmMsg = "ログアウトします。アカウントの情報はこの端末に保存されたままなので、次回はようこそ画面で同じパスワードを入力すればログインできます。よろしいですか？";
+    }
     if (!confirm(confirmMsg)) return;
     logout();
     showPage(welcomePage);

@@ -88,11 +88,6 @@ const appState = {
   // 署名を伴う操作をUI側で隠す。
   isReadOnly: false,
 
-  // 読み取り専用モードに、ようこそ画面からではなくログイン画面(既存の
-  // 暗号化保存アカウントがある状態)から入った場合はtrue。
-  // 設定メニューの出し分け(戻る先の有無・ネットワーク切替の要否)に使う。
-  readOnlyFromLogin: false,
-
   // ローカル(ニーモニック)ログイン時のみ使用。メモリ上にのみ保持し、
   // 平文のままlocalStorageに保存することはない。
   localPrivateKeyHex: null,

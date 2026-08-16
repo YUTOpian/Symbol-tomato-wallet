@@ -951,7 +951,6 @@ function resetSessionState() {
 
   appState.authMode = null;
   appState.isReadOnly = false;
-  appState.readOnlyFromLogin = false;
   appState.currentPubKey = null;
   appState.currentAddress = null;
   appState.localPrivateKeyHex = null;
@@ -968,19 +967,20 @@ function resetSessionState() {
 
 /* ============================================================
    ログアウト
-   保存済みアカウント(パスワード付きボールト)も削除するため、
-   次回は自動ログインできず、必ずSSS接続かニーモニック/秘密鍵の
-   再入力が必要になる
+   保存済みアカウント(パスワード付きボールト)はこの端末に残したまま、
+   セッション状態だけをリセットする(lockSessionと同じ効果)。
+   次回はようこそ画面のログインフォームで同じパスワードを入力すれば
+   再度ログインできる。保存データそのものを消したい場合は、
+   ようこそ画面の「アカウントデータを削除する」ボタン(clearVault)を使う。
 ============================================================ */
 function logout() {
-  clearVault();
-  resetSessionState();
+  lockSession();
 }
 
 /* ============================================================
    ロック
-   ログアウトと違い、保存済みボールト(localStorage)は削除しない。
-   次回はパスワード入力(ロック解除画面)だけで復帰できる。
+   保存済みボールト(localStorage)は削除しない。
+   次回はパスワード入力(ようこそ画面のログインフォーム)だけで復帰できる。
    新規作成 / ニーモニックインポートでログインした場合(authMode==="local")
    のみ使う想定。
 ============================================================ */
