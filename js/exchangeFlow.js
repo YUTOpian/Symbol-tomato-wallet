@@ -789,57 +789,63 @@ function showExchangeDetail(exId) {
 function exportExchangeFlowCsv() {
   const statusEl = document.getElementById("exchange-flow-status");
 
-  if (!lastExchangeFlowSummary) {
-    if (statusEl) statusEl.textContent = "先に集計を実行してください。";
-    return;
-  }
-
-  const { rangeLabel, results } = lastExchangeFlowSummary;
-  const okResults = results.filter((r) => !r.result.errored);
-
-  const totalInflow = okResults.reduce((s, r) => s + r.result.inflowAmount, 0n);
-  const totalOutflow = okResults.reduce((s, r) => s + r.result.outflowAmount, 0n);
-  const totalNet = totalInflow - totalOutflow;
-
-  const toXym = (atomic) => Number(atomic) / 1_000_000;
-
-  const rows = [
-    ["取引所フロー分析 集計結果"],
-    ["集計範囲", rangeLabel],
-    [],
-    ["全取引所合計"],
-    ["合計流入(XYM)", toXym(totalInflow)],
-    ["合計流出(XYM)", toXym(totalOutflow)],
-    ["合計純増減(XYM)", toXym(totalNet)],
-    [],
-    ["取引所別内訳"],
-    ["取引所", "アドレス", "流入(XYM)", "流入件数", "流出(XYM)", "流出件数", "純増減(XYM)", "打ち切り", "取得エラー"],
-  ];
-
-  for (const { ex, result } of results) {
-    const addressText = ex.addresses.map((a) => (a.label ? `${a.label}: ${a.address}` : a.address)).join(" / ");
-
-    if (result.errored) {
-      rows.push([ex.label, addressText, "", "", "", "", "", "", result.errorDetail || "取得に失敗しました"]);
-      continue;
+  try {
+    if (!lastExchangeFlowSummary) {
+      if (statusEl) statusEl.textContent = "先に集計を実行してください。";
+      return;
     }
 
-    const net = result.inflowAmount - result.outflowAmount;
-    rows.push([
-      ex.label,
-      addressText,
-      toXym(result.inflowAmount),
-      result.inflowCount,
-      toXym(result.outflowAmount),
-      result.outflowCount,
-      toXym(net),
-      result.truncated ? "はい" : "いいえ",
-      "",
-    ]);
-  }
+    const { rangeLabel, results } = lastExchangeFlowSummary;
+    const okResults = results.filter((r) => !r.result.errored);
 
-  const dateStamp = new Date().toISOString().slice(0, 10);
-  W.utils.downloadCsv(`exchange-flow-analysis-${dateStamp}.csv`, rows);
+    const totalInflow = okResults.reduce((s, r) => s + r.result.inflowAmount, 0n);
+    const totalOutflow = okResults.reduce((s, r) => s + r.result.outflowAmount, 0n);
+    const totalNet = totalInflow - totalOutflow;
+
+    const toXym = (atomic) => Number(atomic) / 1_000_000;
+
+    const rows = [
+      ["取引所フロー分析 集計結果"],
+      ["集計範囲", rangeLabel],
+      [],
+      ["全取引所合計"],
+      ["合計流入(XYM)", toXym(totalInflow)],
+      ["合計流出(XYM)", toXym(totalOutflow)],
+      ["合計純増減(XYM)", toXym(totalNet)],
+      [],
+      ["取引所別内訳"],
+      ["取引所", "アドレス", "流入(XYM)", "流入件数", "流出(XYM)", "流出件数", "純増減(XYM)", "打ち切り", "取得エラー"],
+    ];
+
+    for (const { ex, result } of results) {
+      const addressText = ex.addresses.map((a) => (a.label ? `${a.label}: ${a.address}` : a.address)).join(" / ");
+
+      if (result.errored) {
+        rows.push([ex.label, addressText, "", "", "", "", "", "", result.errorDetail || "取得に失敗しました"]);
+        continue;
+      }
+
+      const net = result.inflowAmount - result.outflowAmount;
+      rows.push([
+        ex.label,
+        addressText,
+        toXym(result.inflowAmount),
+        result.inflowCount,
+        toXym(result.outflowAmount),
+        result.outflowCount,
+        toXym(net),
+        result.truncated ? "はい" : "いいえ",
+        "",
+      ]);
+    }
+
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    W.utils.downloadCsv(`exchange-flow-analysis-${dateStamp}.csv`, rows);
+    if (statusEl) statusEl.textContent = "CSVファイルをダウンロードしました。";
+  } catch (e) {
+    console.error("exportExchangeFlowCsv error:", e);
+    if (statusEl) statusEl.textContent = "CSVの生成に失敗しました: " + (e.message || e);
+  }
 }
 
 /* ============================================================

@@ -512,7 +512,7 @@ function whaleRowHtml(w, rateMap) {
    大口XYM移動 詳細画面(onchain-whale-detail-page)を描画する
    円・ドル換算(日足終値ベース)の取得を待つため非同期。
 ============================================================ */
-async function renderWhaleDetail() {
+function renderWhaleDetail() {
   const rangeEl = document.getElementById("onchain-whale-detail-range");
   const summaryEl = document.getElementById("onchain-whale-detail-summary");
   const listEl = document.getElementById("onchain-whale-detail-list");
@@ -526,7 +526,7 @@ async function renderWhaleDetail() {
     return;
   }
 
-  const { whales, rangeLabel, truncated } = lastWhaleResult;
+  const { whales, rangeLabel, truncated, rateMap } = lastWhaleResult;
   if (rangeEl) rangeEl.textContent = rangeLabel;
   if (summaryEl) {
     summaryEl.innerHTML = `
@@ -540,15 +540,9 @@ async function renderWhaleDetail() {
       listEl.innerHTML = `<div style="color:#94a3b8;">該当する大口移動はありませんでした</div>`;
       return;
     }
-    listEl.innerHTML = `<div style="color:#94a3b8;">価格情報を取得しています...</div>`;
-
+    // 価格情報(円/ドル換算)は集計実行時に取得済みのものをそのまま使う
+    // (ここで改めてネットワーク取得は行わない)
     const sorted = [...whales].sort((a, b) => Number(b.height) - Number(a.height));
-
-    const unixMsList = sorted
-      .filter((w) => appState.epochAdjustment && w.timestampRaw != null)
-      .map((w) => Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw));
-    const rateMap = await buildHistoricalRateMap(unixMsList);
-
     listEl.innerHTML = sorted.map((w) => whaleRowHtml(w, rateMap)).join("");
   }
 }
@@ -576,87 +570,92 @@ function showWhaleDetail() {
    ・大口XYM移動一覧の明細(時刻・送信元・送信先・金額・円/ドル換算・
      高さ・Explorerハッシュ)
    の2セクションを1つのCSVファイルにまとめる。
-   円・ドル換算は日足終値ベースの過去レート(renderWhaleDetailと同じ
-   考え方)を使うため、非同期関数にしている。
+   円・ドル換算は集計実行時に取得済みのレート(lastOnchainSummary.rateMap)を
+   そのまま使う。ここで改めてネットワーク取得は行わない(ボタン押下から
+   ダウンロードまでを完全に同期処理にし、ユーザー操作起因のダウンロードとして
+   確実にブラウザに認識されるようにするため)。
 ============================================================ */
-async function exportOnchainAnalysisCsv() {
+function exportOnchainAnalysisCsv() {
   const statusEl = document.getElementById("onchain-analysis-status");
 
-  if (!lastOnchainSummary) {
-    if (statusEl) statusEl.textContent = "先に集計を実行してください。";
-    return;
-  }
-
-  const s = lastOnchainSummary;
-  const truncatedText = (v) => (v ? "はい(打ち切りあり)" : "いいえ");
-
-  const rows = [
-    ["オンチェーン分析 集計結果"],
-    ["集計範囲", s.rangeLabel],
-    ["対象ブロック高", `${s.scanFromHeight} 〜 ${s.toHeight}`],
-    ["ジェネシスブロックを除外", s.includesGenesisBlock ? "はい" : "いいえ"],
-    ["平均ブロック生成間隔(秒)", s.avgBlockIntervalSec != null ? s.avgBlockIntervalSec.toFixed(1) : ""],
-    ["XYM送金件数", s.transferCount, "打ち切り", truncatedText(s.transferTruncated)],
-    ["XYM総移動量", Number(s.totalAmountAtomic) / 1_000_000, "打ち切り", truncatedText(s.transferTruncated)],
-    ["モザイク送信件数(XYM含む)", s.mosaicTransferCount, "打ち切り", truncatedText(s.transferTruncated)],
-    ["アクティブアドレス数", s.activeAddressCount, "打ち切り", truncatedText(s.activeTruncated)],
-    ["新規アドレス作成数", s.newAddressTotal, "確認失敗件数", s.newAddressFailCount],
-    ["大口XYM移動件数", s.whaleCount, "打ち切り", truncatedText(s.transferTruncated)],
-    [],
-    ["大口XYM移動一覧"],
-    ["時刻(UTC)", "時刻(JST)", "送信元", "送信先", "金額(XYM)", "円換算", "ドル換算", "高さ", "Explorerハッシュ"],
-  ];
-
-  const sortedWhales = [...s.whales].sort((a, b) => Number(b.height) - Number(a.height));
-  const unixMsList = sortedWhales
-    .filter((w) => appState.epochAdjustment && w.timestampRaw != null)
-    .map((w) => Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw));
-  const rateMap = await buildHistoricalRateMap(unixMsList);
-
-  for (const w of sortedWhales) {
-    let senderAddr = "---";
-    try {
-      senderAddr = w.senderPublicKey ? publicKeyToAddress(w.senderPublicKey) : "---";
-    } catch {
-      senderAddr = "---";
+  try {
+    if (!lastOnchainSummary) {
+      if (statusEl) statusEl.textContent = "先に集計を実行してください。";
+      return;
     }
 
-    let utcText = "";
-    let jstText = "";
-    let jpyValue = "";
-    let usdValue = "";
-    if (appState.epochAdjustment && w.timestampRaw != null) {
-      const unixMs = Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw);
-      const date = new Date(unixMs);
-      utcText = date.toISOString().replace("T", " ").slice(0, 19) + " UTC";
-      jstText =
-        date.toLocaleString("ja-JP", {
-          timeZone: "Asia/Tokyo", hour12: false,
-          year: "numeric", month: "2-digit", day: "2-digit",
-          hour: "2-digit", minute: "2-digit", second: "2-digit",
-        }).replace(/\//g, "-") + " JST";
+    const s = lastOnchainSummary;
+    const truncatedText = (v) => (v ? "はい(打ち切りあり)" : "いいえ");
 
-      const rates = rateMap.get(utcDateKeyFromMs(unixMs));
-      const xymValue = Number(w.amount) / 1_000_000;
-      if (rates?.jpyRate != null) jpyValue = Math.round(xymValue * rates.jpyRate);
-      if (rates?.usdResult?.rate != null) usdValue = (xymValue * rates.usdResult.rate).toFixed(2);
+    const rows = [
+      ["オンチェーン分析 集計結果"],
+      ["集計範囲", s.rangeLabel],
+      ["対象ブロック高", `${s.scanFromHeight} 〜 ${s.toHeight}`],
+      ["ジェネシスブロックを除外", s.includesGenesisBlock ? "はい" : "いいえ"],
+      ["平均ブロック生成間隔(秒)", s.avgBlockIntervalSec != null ? s.avgBlockIntervalSec.toFixed(1) : ""],
+      ["XYM送金件数", s.transferCount, "打ち切り", truncatedText(s.transferTruncated)],
+      ["XYM総移動量", Number(s.totalAmountAtomic) / 1_000_000, "打ち切り", truncatedText(s.transferTruncated)],
+      ["モザイク送信件数(XYM含む)", s.mosaicTransferCount, "打ち切り", truncatedText(s.transferTruncated)],
+      ["アクティブアドレス数", s.activeAddressCount, "打ち切り", truncatedText(s.activeTruncated)],
+      ["新規アドレス作成数", s.newAddressTotal, "確認失敗件数", s.newAddressFailCount],
+      ["大口XYM移動件数", s.whaleCount, "打ち切り", truncatedText(s.transferTruncated)],
+      [],
+      ["大口XYM移動一覧"],
+      ["時刻(UTC)", "時刻(JST)", "送信元", "送信先", "金額(XYM)", "円換算", "ドル換算", "高さ", "Explorerハッシュ"],
+    ];
+
+    const sortedWhales = [...s.whales].sort((a, b) => Number(b.height) - Number(a.height));
+    const rateMap = s.rateMap;
+
+    for (const w of sortedWhales) {
+      let senderAddr = "---";
+      try {
+        senderAddr = w.senderPublicKey ? publicKeyToAddress(w.senderPublicKey) : "---";
+      } catch {
+        senderAddr = "---";
+      }
+
+      let utcText = "";
+      let jstText = "";
+      let jpyValue = "";
+      let usdValue = "";
+      if (appState.epochAdjustment && w.timestampRaw != null) {
+        const unixMs = Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw);
+        const date = new Date(unixMs);
+        utcText = date.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+        jstText =
+          date.toLocaleString("ja-JP", {
+            timeZone: "Asia/Tokyo", hour12: false,
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit",
+          }).replace(/\//g, "-") + " JST";
+
+        const rates = rateMap?.get(utcDateKeyFromMs(unixMs));
+        const xymValue = Number(w.amount) / 1_000_000;
+        if (rates?.jpyRate != null) jpyValue = Math.round(xymValue * rates.jpyRate);
+        if (rates?.usdResult?.rate != null) usdValue = (xymValue * rates.usdResult.rate).toFixed(2);
+      }
+
+      rows.push([
+        utcText,
+        jstText,
+        senderAddr,
+        w.recipientAddress ?? "---",
+        Number(w.amount) / 1_000_000,
+        jpyValue,
+        usdValue,
+        w.height,
+        w.hash ?? "",
+      ]);
     }
 
-    rows.push([
-      utcText,
-      jstText,
-      senderAddr,
-      w.recipientAddress ?? "---",
-      Number(w.amount) / 1_000_000,
-      jpyValue,
-      usdValue,
-      w.height,
-      w.hash ?? "",
-    ]);
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    downloadCsv(`onchain-analysis-${dateStamp}.csv`, rows);
+    if (statusEl) statusEl.textContent = "CSVファイルをダウンロードしました。";
+  } catch (e) {
+    console.error("exportOnchainAnalysisCsv error:", e);
+    if (statusEl) statusEl.textContent = "CSVの生成に失敗しました: " + (e.message || e);
   }
-
-  const dateStamp = new Date().toISOString().slice(0, 10);
-  downloadCsv(`onchain-analysis-${dateStamp}.csv`, rows);
 }
 
 function initOnchainAnalysisInteractions() {
@@ -900,6 +899,18 @@ async function loadOnchainAnalysis(mode, customRange) {
     setText("onchain-mosaic-transfer-count", result.mosaicTransferCount.toLocaleString("ja-JP") + " 件" + suffix);
     setText("onchain-whale-count", result.whales.length.toLocaleString("ja-JP") + " 件" + suffix);
 
+    // 大口移動の円/ドル換算(日足終値ベース)をあらかじめここで取得しておく。
+    // 詳細画面表示・CSV出力のどちらもこのキャッシュ済みMapを再利用することで、
+    // 「CSVダウンロードボタンを押してからネットワーク取得→ダウンロード」という
+    // 流れを避け、ボタン押下時は即座にダウンロードが始まるようにする
+    // (ネットワーク待ちを挟むと、ブラウザによってはユーザー操作起因の
+    //  ダウンロードとして扱われず、ブロックされることがあるため)
+    if (result.whales.length > 0 && statusEl) statusEl.textContent = "大口移動の価格情報を取得中...";
+    const whaleUnixMsList = result.whales
+      .filter((w) => appState.epochAdjustment && w.timestampRaw != null)
+      .map((w) => Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw));
+    const whaleRateMap = await buildHistoricalRateMap(whaleUnixMsList);
+
     // アクティブアドレス数(全トランザクション種別・埋め込み含む、送信元ベース)
     if (statusEl) statusEl.textContent = "アクティブアドレスを集計中...";
     const activeResult = await scanActiveAddresses(scanFromHeight, toHeight, (page) => {
@@ -957,7 +968,7 @@ async function loadOnchainAnalysis(mode, customRange) {
     const rangeLabel = toIsNow ? `${fromText} 〜 現在` : `${fromText} 〜 ${toText}`;
 
     // 大口XYM移動 詳細画面用に保存(クリックされたときに再取得せず表示するため)
-    lastWhaleResult = { whales: result.whales, rangeLabel, truncated: result.truncated };
+    lastWhaleResult = { whales: result.whales, rangeLabel, truncated: result.truncated, rateMap: whaleRateMap };
 
     // CSV出力用に、画面に表示している集計サマリー一式を保存しておく
     lastOnchainSummary = {
@@ -976,6 +987,7 @@ async function loadOnchainAnalysis(mode, customRange) {
       newAddressFailCount,
       whaleCount: result.whales.length,
       whales: result.whales,
+      rateMap: whaleRateMap,
     };
 
     const genesisNote = includesGenesisBlock
