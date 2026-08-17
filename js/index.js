@@ -1142,9 +1142,43 @@ window.addEventListener("load", async () => {
   });
 
   // ============================
-  // データ(アカウント詳細 / Symbolネットワーク統計)
+  // データ・分析(アカウント詳細 / Symbolネットワーク統計 / オンチェーン分析)
+  // ・ログイン後の画面(account-page)、ようこそ画面(welcome-page)の
+  //   どちらからも開けるため、戻る先を覚えておく
   // ============================
+  let dataPageOrigin = accountPage;
+
   document.getElementById("data-btn")?.addEventListener("click", () => {
+    dataPageOrigin = accountPage;
+    showPage(dataPage);
+    loadDataPage();
+  });
+
+  document.getElementById("welcome-data-btn")?.addEventListener("click", async () => {
+    const isTestnet = document.getElementById("welcome-data-network-select")?.value === "testnet";
+    const desiredNetworkType = isTestnet ? NetworkType.TESTNET : NetworkType.MAINNET;
+
+    // ログインしていない状態でこのボタンが押されたときのみ、閲覧用に
+    // ノードへ接続する。前回選んだノードが同じネットワークのままなら
+    // 選び直さず使い回す(ボタンを何度も押すたびに待たせないため)。
+    const canReuseExistingNode =
+      !!appState.NODE && !appState.currentAddress && appState.networkType === desiredNetworkType;
+
+    dataPageOrigin = welcomePage;
+
+    if (!canReuseExistingNode) {
+      setStatus("welcome-data-status", "ノードに接続中...");
+      try {
+        appState.NODE = await selectNode(isTestnet);
+        appState.networkType = desiredNetworkType;
+      } catch (e) {
+        console.error("welcome-data-btn selectNode error:", e);
+        setStatus("welcome-data-status", "ノードへの接続に失敗しました。時間をおいて再度お試しください。", "error");
+        return;
+      }
+    }
+
+    setStatus("welcome-data-status", "", "default");
     showPage(dataPage);
     loadDataPage();
   });
@@ -1181,7 +1215,7 @@ window.addEventListener("load", async () => {
     W.exchangeFlow?.loadExchangeFlowAnalysis("custom", { dateStr, timezone });
   });
 
-  document.getElementById("back-account-data")?.addEventListener("click", () => showPage(accountPage));
+  document.getElementById("back-account-data")?.addEventListener("click", () => showPage(dataPageOrigin));
 
   document.getElementById("menu-namespace")?.addEventListener("click", async () => {
     showPage(namespacePage);
