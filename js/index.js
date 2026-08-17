@@ -95,12 +95,38 @@ const {validateOfflineTxJson,
 
 let QRCode, QRCodeGenerator, firstValueFrom;
 
+// 外部CDNライブラリ(ESモジュール)の読み込み
+// ・QRコードの生成/読み取りに関する機能でのみ必要(バックアップQR・受け取りQR等)。
+//   ようこそ画面の表示やボタンの動作そのものには不要なため、ここでは
+//   await せずバックグラウンドで読み込みを開始するだけにしておく。
+//   こうすることで、CDNが遅い/届かない場合でもアプリ本体の初期化
+//   (ページ切り替えボタンなどのイベント登録)がブロックされない。
+// ・実際にQRコードを使う関数側で ensureQrLibsLoaded() を await し、
+//   読み込みがまだなら待つ/失敗していればエラーとして扱う。
+let qrLibsLoadPromise = null;
+
+function ensureQrLibsLoaded() {
+  if (!qrLibsLoadPromise) {
+    qrLibsLoadPromise = (async () => {
+      const [qrcodeMod, symbolQrMod, rxjsMod] = await Promise.all([
+        import("https://esm.sh/qrcode"),
+        import("https://esm.sh/symbol-qr-library"),
+        import("https://esm.sh/rxjs"),
+      ]);
+      QRCode = qrcodeMod.default;
+      ({ QRCodeGenerator } = symbolQrMod);
+      ({ firstValueFrom } = rxjsMod);
+    })();
+  }
+  return qrLibsLoadPromise;
+}
+
 window.addEventListener("load", async () => {
-  // 外部CDNライブラリ(ESモジュール)は動的importで読み込む
-  // (このスクリプト自体は通常の<script>なので静的importは使えないため)
-  ({ default: QRCode } = await import("https://esm.sh/qrcode"));
-  ({ QRCodeGenerator } = await import("https://esm.sh/symbol-qr-library"));
-  ({ firstValueFrom } = await import("https://esm.sh/rxjs"));
+  // QRコード関連ライブラリの読み込みはバックグラウンドで開始するだけ
+  // (ここでは待たない。失敗してもアプリ本体の起動は継続する)
+  ensureQrLibsLoaded().catch((e) => {
+    console.error("QRコード関連ライブラリの読み込みに失敗しました:", e);
+  });
 
   // ============================
   // ページ取得
@@ -584,6 +610,15 @@ window.addEventListener("load", async () => {
     if (mnemonicImgEl) mnemonicImgEl.textContent = "生成中...";
     qrBackupDataUrl = null;
     qrBackupMnemonicDataUrl = null;
+
+    try {
+      await ensureQrLibsLoaded();
+    } catch (e) {
+      console.error("ensureQrLibsLoaded error:", e);
+      imgEl.textContent = "QRコード生成用ライブラリの読み込みに失敗しました。通信環境をご確認のうえ、再度お試しください。";
+      if (mnemonicImgEl) mnemonicImgEl.textContent = "";
+      return;
+    }
     qrBackupPrivateKeyDownloaded = false;
     qrBackupMnemonicDownloaded = false;
 
@@ -979,6 +1014,14 @@ window.addEventListener("load", async () => {
     qr.innerHTML = "読み込み中...";
 
     try {
+      await ensureQrLibsLoaded();
+    } catch (e) {
+      console.error("ensureQrLibsLoaded error:", e);
+      qr.innerHTML = "QRコード生成用ライブラリの読み込みに失敗しました。";
+      return;
+    }
+
+    try {
       if (!appState.generationHash || !appState.networkType) {
         throw new Error("ネットワーク情報が未取得です");
       }
@@ -1043,6 +1086,14 @@ window.addEventListener("load", async () => {
     qr.innerHTML = "読み込み中...";
 
     try {
+      await ensureQrLibsLoaded();
+    } catch (e) {
+      console.error("ensureQrLibsLoaded error:", e);
+      qr.innerHTML = "QRコード生成用ライブラリの読み込みに失敗しました。";
+      return;
+    }
+
+    try {
       if (!appState.generationHash || !appState.networkType || !appState.facade) {
         throw new Error("ネットワーク情報が未取得です");
       }
@@ -1072,6 +1123,14 @@ window.addEventListener("load", async () => {
     const qr = document.getElementById(elId);
     if (!qr) return;
     qr.innerHTML = "読み込み中...";
+
+    try {
+      await ensureQrLibsLoaded();
+    } catch (e) {
+      console.error("ensureQrLibsLoaded error:", e);
+      qr.innerHTML = "QRコード生成用ライブラリの読み込みに失敗しました。";
+      return;
+    }
 
     try {
       const content = `{symbol:${address}}`;
