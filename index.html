@@ -52,19 +52,26 @@
 
       <hr>
 
+      <!-- ============================================================
+           QRコードでログイン / SSS Extension接続
+      ============================================================ -->
       <p style="font-size:13px;color:#94a3b8;">
-        ニーモニックの新規作成・インポート、秘密鍵のインポートでアカウントを作成してログインします。
+        新規作成時などにダウンロードした「QRコードでログイン」用の画像とパスワードをお持ちの場合は、こちらからログインできます。SSS Extension（ブラウザ拡張機能）をお使いの場合は、右のボタンから接続してログインできます。
       </p>
-      <button id="choose-create-account" class="button-primary">🆕 アカウントを作成する</button>
+      <button id="welcome-qr-login-camera-btn" class="button-primary">📷 QRコードを読み取ってログイン</button>
+      <div style="display:flex;gap:10px;">
+        <button id="welcome-qr-login-file-btn" class="account-hide-btn" type="button" style="flex:1;">🖼 QRコード画像ファイルを選択してログイン</button>
+        <button id="choose-sss" class="button-primary" style="flex:1;">🧩 SSS Extensionと接続する</button>
+      </div>
+      <input type="file" id="welcome-qr-login-file-input" accept="image/*" style="display:none;">
+      <div id="welcome-status"></div>
 
       <hr>
 
       <p style="font-size:13px;color:#94a3b8;">
-        SSS Extension（ブラウザ拡張機能）と接続してログインします。
+        ニーモニックの新規作成・インポート、秘密鍵のインポートでアカウントを作成してログインします。
       </p>
-      <button id="choose-sss" class="button-primary">🧩 SSS Extensionと接続する</button>
-
-      <div id="welcome-status"></div>
+      <button id="choose-create-account" class="button-primary">🆕 アカウントを作成する</button>
 
       <hr>
 
@@ -91,15 +98,6 @@
         オフラインで署名済みのトランザクションファイルをお持ちの場合は、こちらから読み込んでブロードキャストできます（ログイン不要）。
       </p>
       <button id="welcome-offline-broadcast-btn" class="button-primary">📥 オフライン署名データを読み込む</button>
-
-      <hr>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        新規作成時などにダウンロードした「QRコードでログイン」用の画像とパスワードをお持ちの場合は、こちらからログインできます。
-      </p>
-      <button id="welcome-qr-login-camera-btn" class="button-primary">📷 QRコードを読み取ってログイン</button>
-      <button id="welcome-qr-login-file-btn" class="account-hide-btn" type="button">🖼 QRコード画像ファイルを選択してログイン</button>
-      <input type="file" id="welcome-qr-login-file-input" accept="image/*" style="display:none;">
     </div>
   </div>
 
