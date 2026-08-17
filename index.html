@@ -59,10 +59,8 @@
         新規作成時などにダウンロードした「QRコードでログイン」用の画像とパスワードをお持ちの場合は、こちらからログインできます。SSS Extension（ブラウザ拡張機能）をお使いの場合は、右のボタンから接続してログインできます。
       </p>
       <button id="welcome-qr-login-camera-btn" class="button-primary">📷 QRコードを読み取ってログイン</button>
-      <div style="display:flex;gap:10px;">
-        <button id="welcome-qr-login-file-btn" class="account-hide-btn" type="button" style="flex:1;">🖼 QRコード画像ファイルを選択してログイン</button>
-        <button id="choose-sss" class="button-primary" style="flex:1;">🧩 SSS Extensionと接続する</button>
-      </div>
+      <button id="welcome-qr-login-file-btn" class="account-hide-btn" type="button">🖼 QRコード画像ファイルを選択してログイン</button>
+      <button id="choose-sss" class="button-primary">🧩 SSS Extensionと接続する</button>
       <input type="file" id="welcome-qr-login-file-input" accept="image/*" style="display:none;">
       <div id="welcome-status"></div>
 
@@ -147,19 +145,6 @@
 
         <div id="create-new-mnemonic" class="mnemonic-grid" style="user-select: text;">生成中...</div>
         <button id="create-new-mnemonic-copy-btn" class="account-hide-btn" type="button">📋 ニーモニックをコピー</button>
-
-        <div style="margin-top:12px;">
-          <label style="font-size:13px;color:#e5e7eb;display:flex;align-items:flex-start;gap:8px;">
-            <input type="checkbox" id="create-new-exportable-toggle" style="width:auto;margin-top:3px;">
-            <span>このニーモニックを、後で「設定 → バックアップ」からいつでも取り出せるようにする</span>
-          </label>
-          <p style="font-size:12px;color:#f97316;margin-top:4px;">
-            ⚠️ チェックすると、ニーモニックをパスワードで暗号化してこの端末に保存し、
-            いつでも取り出せるようにします(利便性重視。保存先が漏洩した場合のリスクは高くなります)。
-            チェックしない場合、ニーモニックは一切保存されず、この画面を離れたセッションでは
-            二度と表示できなくなります(より安全。秘密鍵のバックアップは引き続き可能です)。
-          </p>
-        </div>
 
         <p><b>秘密鍵（アカウント番号 0）：</b></p>
         <div id="create-new-privatekey" class="input-box" style="word-break:break-all; user-select: text; font-family: monospace; font-size: 12.5px;">生成中...</div>
