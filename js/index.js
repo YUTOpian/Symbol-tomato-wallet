@@ -190,11 +190,13 @@ window.addEventListener("load", async () => {
     const mode = getVaultMode();
     const hasDataEl = document.getElementById("welcome-login-has-data");
     const noDataEl = document.getElementById("welcome-login-no-data");
+    const unlockBtn = document.getElementById("unlock-btn");
     const forgetBtn = document.getElementById("forget-account-btn");
 
     const canPasswordLogin = mode === "encrypted";
     if (hasDataEl) hasDataEl.style.display = canPasswordLogin ? "" : "none";
     if (noDataEl) noDataEl.style.display = canPasswordLogin ? "none" : "";
+    if (unlockBtn) unlockBtn.style.display = canPasswordLogin ? "" : "none";
     if (forgetBtn) forgetBtn.style.display = mode === "none" ? "none" : "";
 
     setStatus("unlock-status", "", "default");
