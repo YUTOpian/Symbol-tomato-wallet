@@ -8,6 +8,7 @@ const {sendTx} = W.transfer;
 const {loadRecentTx, initLiveTx} = W.transactions;
 const {refreshAccount, loadWalletTargetOptions, getSelectedWalletTargetAddress, isWalletTargetSelf, loadMosaicListForAddress} = W.account;const {initWebSocket} = W.ws;
 const {selectNode} = W.nodeSelector;
+const {initSdk} = W.sdk;
 const {showPopup, formatMosaicAmount} = W.utils;
 const {setStatus} = W.ui;
 const {checkHarvestStatus, startHarvest, stopHarvest, sendDelegationRequestOnly, loadHarvestNodeCandidates, loadHarvestTargetOptions, loadHarvestHistory, loadHarvestRewards} = W.harvest;
@@ -1218,20 +1219,29 @@ window.addEventListener("load", async () => {
     const desiredNetworkType = isTestnet ? NetworkType.TESTNET : NetworkType.MAINNET;
 
     // ログインしていない状態でこのボタンが押されたときのみ、閲覧用に
-    // ノードへ接続する。前回選んだノードが同じネットワークのままなら
-    // 選び直さず使い回す(ボタンを何度も押すたびに待たせないため)。
-    const canReuseExistingNode =
-      !!appState.NODE && !appState.currentAddress && appState.networkType === desiredNetworkType;
+    // ノード接続・SDK初期化(facade / epochAdjustment)を行う。
+    // オンチェーン分析・取引所フロー分析にはfacadeとepochAdjustmentが
+    // 必要なため、NODEを設定するだけでは不十分で、ログイン時と同じ
+    // initSdk()での初期化が要る。
+    // 前回と同じネットワークで、かつ既に初期化済みならそのまま使い回す
+    // (ボタンを何度も押すたびに待たせないため)。
+    const canReuseExisting =
+      !!appState.NODE &&
+      !appState.currentAddress &&
+      appState.isSdkReady &&
+      appState.networkType === desiredNetworkType;
 
     dataPageOrigin = welcomePage;
 
-    if (!canReuseExistingNode) {
+    if (!canReuseExisting) {
       setStatus("welcome-data-status", "ノードに接続中...");
       try {
         appState.NODE = await selectNode(isTestnet);
-        appState.networkType = desiredNetworkType;
+        setStatus("welcome-data-status", "初期化中...");
+        await initSdk();
       } catch (e) {
-        console.error("welcome-data-btn selectNode error:", e);
+        console.error("welcome-data-btn init error:", e);
+        appState.isSdkReady = false;
         setStatus("welcome-data-status", "ノードへの接続に失敗しました。時間をおいて再度お試しください。", "error");
         return;
       }
