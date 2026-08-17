@@ -76,6 +76,18 @@
       <hr>
 
       <p style="font-size:13px;color:#94a3b8;">
+        ログインせずに、Symbolネットワークの統計情報やオンチェーン分析だけを見たい場合はこちら。
+      </p>
+      <select id="welcome-data-network-select" class="input-box">
+        <option value="mainnet">Mainnet</option>
+        <option value="testnet">Testnet</option>
+      </select>
+      <button id="welcome-data-btn" class="button-primary">📊 データ・分析を見る</button>
+      <div id="welcome-data-status"></div>
+
+      <hr>
+
+      <p style="font-size:13px;color:#94a3b8;">
         オフラインで署名済みのトランザクションファイルをお持ちの場合は、こちらから読み込んでブロードキャストできます（ログイン不要）。
       </p>
       <button id="welcome-offline-broadcast-btn" class="button-primary">📥 オフライン署名データを読み込む</button>
@@ -304,7 +316,7 @@
         <button id="receive-btn" class="button-primary">受け取り</button>
         <button id="send-btn" class="button-primary">送金</button>
         <button id="advanced-btn" class="button-primary">高度機能</button>
-        <button id="data-btn" class="button-primary">📊 データ</button>
+        <button id="data-btn" class="button-primary">📊 データ・分析</button>
       </div>
 
       <hr>
@@ -736,11 +748,11 @@
   </div>
 
   <!-- ============================================================
-       データ(アカウント詳細 / Symbolネットワーク統計)
+       データ・分析(アカウント詳細 / Symbolネットワーク統計 / オンチェーン分析)
   ============================================================ -->
   <div id="data-page" class="page">
     <div class="card">
-      <h2>データ</h2>
+      <h2>データ・分析</h2>
       <button id="back-account-data" class="button-primary">← 戻る</button>
 
       <h3>アカウントに関して</h3>
