@@ -323,7 +323,6 @@ window.addEventListener("load", async () => {
     const mnemonicPhrase = document.getElementById("create-new-mnemonic").dataset.mnemonic;
     const networkChoice = document.getElementById("create-new-network-select").value;
     const networkType = networkChoice === "testnet" ? NetworkType.TESTNET : NetworkType.MAINNET;
-    const exportable = !!document.getElementById("create-new-exportable-toggle")?.checked;
 
     if (!mnemonicPhrase) {
       setStatus("create-new-status", "ニーモニックの生成が完了していません。", "error");
@@ -336,7 +335,7 @@ window.addEventListener("load", async () => {
 
     setStatus("create-new-status", "作成中...");
     try {
-      await loginWithMnemonic(mnemonicPhrase, networkType, 0, exportable);
+      await loginWithMnemonic(mnemonicPhrase, networkType, 0, false);
       setStatus("create-new-status", "", "default");
       showPage(passwordSetupPage);
     } catch (e) {
