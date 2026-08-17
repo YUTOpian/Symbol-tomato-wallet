@@ -40,7 +40,6 @@
           以前このアプリでパスワードを設定してアカウントを保存しています。そのパスワードを入力してください。
         </p>
         <input id="unlock-password-input" class="input-box" type="password" placeholder="パスワード">
-        <button id="unlock-btn" class="button-primary">ログイン</button>
       </div>
       <div id="welcome-login-no-data" style="display:none;">
         <p style="font-size:13px;color:#94a3b8;">
@@ -48,7 +47,10 @@
         </p>
       </div>
       <div id="unlock-status"></div>
-      <button id="forget-account-btn" class="button-primary" type="button" style="display:none;">🗑 この端末に保存されているアカウントデータを削除する</button>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        <button id="unlock-btn" class="button-primary" style="display:none;">ログイン</button>
+        <button id="forget-account-btn" class="button-primary" type="button" style="display:none;">🗑 この端末に保存されているアカウントデータを削除する</button>
+      </div>
 
       <hr>
 
