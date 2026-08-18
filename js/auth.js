@@ -135,51 +135,6 @@ async function verifyVaultPassword(password) {
   return true;
 }
 
-/* ============================================================
-   保存済みボールト(暗号化済み)を復号し、アドレスなど「閲覧のみ」に
-   必要な最小限の情報だけを取り出す。
-   unlockVault()と異なり、セッション鍵(sessionKey/sessionSalt)の設定や
-   switchToAccount()(ノード接続・ログイン状態への遷移)は一切行わない。
-   ようこそ画面の「データ・分析を見る」プレビューから、ログインせずに
-   保存済みアカウントの重要度・保有ネームスペースだけを覗き見るために使う。
-============================================================ */
-async function peekVaultAccounts(password) {
-  const raw = localStorage.getItem(VAULT_KEY);
-  if (!raw) {
-    throw new Error("保存されたアカウントがありません。");
-  }
-
-  const vault = JSON.parse(raw);
-  if (!vault.encrypted) {
-    throw new Error("パスワードが設定されていません。");
-  }
-
-  const salt = base64ToBytes(vault.salt);
-  const iv = base64ToBytes(vault.iv);
-  const key = await deriveKeyFromPassword(password, salt);
-
-  let plainBuf;
-  try {
-    plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, base64ToBytes(vault.cipher));
-  } catch {
-    throw new Error("パスワードが正しくありません。");
-  }
-
-  const payload = JSON.parse(new TextDecoder().decode(plainBuf));
-  const accounts = payload.accounts || [];
-  const activeAccount =
-    accounts.find((a) => a.id === payload.activeAccountId) || accounts[0] || null;
-
-  if (!activeAccount || !activeAccount.address) {
-    throw new Error("保存されたアカウントのアドレスが見つかりません。");
-  }
-
-  return {
-    address: activeAccount.address,
-    networkType: payload.networkType,
-  };
-}
-
 /*
   秘密鍵の取得。SSS Extension由来のアカウントは秘密鍵をこのアプリが
   一切扱わない設計のため、対象外。
@@ -1063,7 +1018,6 @@ window.W.auth = {
   deriveFromMnemonic,
   canUseBackupFeature,
   verifyVaultPassword,
-  peekVaultAccounts,
   getPrivateKeyForAccount,
   getVerifiedMnemonicForAccount,
   getAccounts,
