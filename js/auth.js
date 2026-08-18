@@ -15,6 +15,12 @@ const {setText} = W.ui;
 const {requestTxConfirmation, formatTxDeadline, TxCancelledError, TxOfflineExportedError} = W.txConfirm;
 
 const VAULT_KEY = "walletVault";
+// アドレスとネットワーク種別だけを平文で保存する、プレビュー専用の補助キー。
+// アドレス単体は公開情報であり、これが見えても秘密鍵/ニーモニックへの
+// 影響はない(QRコードでログインのペイロード内アドレスと同じ考え方)。
+// ようこそ画面の「データ・分析」プレビューで、パスワード入力なしでも
+// 保存済みアカウントの重要度・保有ネームスペースを表示できるようにするために使う。
+const VAULT_PREVIEW_KEY = "walletVaultPreview";
 
 // 現在ログインに使ったニーモニック(セッション中のみメモリ保持、保存はしない)
 // これがあれば「アカウント追加」時に毎回ニーモニックを打ち直さずに済む
@@ -736,8 +742,49 @@ function hasVault() {
 function clearVault() {
   localStorage.removeItem(VAULT_KEY);
   sessionStorage.removeItem(VAULT_KEY);
+  localStorage.removeItem(VAULT_PREVIEW_KEY);
   sessionSalt = null;
   sessionKey = null;
+}
+
+/*
+  アドレス・ネットワーク種別だけを平文で書き出す(プレビュー専用)。
+  persistAccounts()の都度、暗号化/平文どちらの保存方式でも呼ぶ。
+  アクティブなアカウントのアドレスが分からなければ何もしない。
+*/
+function savePreviewMeta() {
+  const activeAccount =
+    appState.accounts.find((a) => a.id === appState.activeAccountId) || appState.accounts[0];
+
+  if (!activeAccount?.address || appState.networkType == null) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      VAULT_PREVIEW_KEY,
+      JSON.stringify({ address: activeAccount.address, networkType: appState.networkType })
+    );
+  } catch (e) {
+    console.warn("プレビュー用アドレスの保存に失敗しました", e);
+  }
+}
+
+/*
+  保存済みプレビュー情報(アドレス・ネットワーク種別のみ、パスワード不要)を取得する。
+  秘密鍵・ニーモニックなど機微な情報は一切含まない。
+  無ければnull(古い保存データにまだこの情報が無い場合や、何も保存されていない場合)。
+*/
+function getVaultPreview() {
+  try {
+    const raw = localStorage.getItem(VAULT_PREVIEW_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.address || parsed.networkType == null) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 /*
@@ -780,6 +827,9 @@ async function persistAccounts() {
   } else {
     sessionStorage.setItem(VAULT_KEY, JSON.stringify(payload));
   }
+
+  // アドレス・ネットワーク種別だけは常に平文でも書き出しておく(プレビュー用)
+  savePreviewMeta();
 }
 
 function restoreAccountsPayload(payload) {
@@ -807,6 +857,12 @@ async function restorePlainVault() {
 
   const payload = JSON.parse(raw);
   const targetId = restoreAccountsPayload(payload);
+
+  // 暗号化ボールトと同様、古い保存データにはまだプレビュー用アドレスが
+  // 無いことがあるため、この機会に書き出しておく
+  appState.activeAccountId = targetId;
+  savePreviewMeta();
+
   await switchToAccount(targetId);
 }
 
@@ -842,6 +898,16 @@ async function unlockVault(password) {
   sessionKey = key;
 
   const targetId = restoreAccountsPayload(payload);
+
+  // 古い保存データ(この機能追加より前に保存されたもの)には、まだ
+  // プレビュー用の平文アドレスが無いことがあるため、パスワードログインが
+  // 成功したこのタイミングで書き出しておく(次回からはパスワード無しで
+  // プレビューできるようにするため)。switchToAccount側で改めて正しく
+  // 設定されるが、savePreviewMeta()がアクティブアカウントを特定できるよう
+  // ここで先に設定しておく。
+  appState.activeAccountId = targetId;
+  savePreviewMeta();
+
   await switchToAccount(targetId);
 }
 
@@ -1090,6 +1156,7 @@ window.W.auth = {
   setAccountHidden,
   getVaultMode,
   hasVault,
+  getVaultPreview,
   clearVault,
   restorePlainVault,
   saveVault,
