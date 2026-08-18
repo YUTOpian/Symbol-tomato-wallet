@@ -925,6 +925,7 @@ body {
 
 .account-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
@@ -971,6 +972,12 @@ body {
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.account-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .account-hide-btn:hover {
