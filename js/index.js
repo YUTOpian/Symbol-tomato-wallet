@@ -23,7 +23,6 @@ const {connectWithSSS,
   loginWithPrivateKey,
   loginAsReadOnly,
   getVaultMode,
-  getVaultPreview,
   restorePlainVault,
   unlockVault,
   saveVault,
@@ -41,7 +40,6 @@ const {connectWithSSS,
   switchNetwork,
   canUseBackupFeature,
   verifyVaultPassword,
-  peekVaultAccounts,
   getPrivateKeyForAccount,
   getVerifiedMnemonicForAccount,
   announceOfflineTx,} = W.auth;
@@ -1211,8 +1209,26 @@ window.addEventListener("load", async () => {
   // ============================
   let dataPageOrigin = accountPage;
 
+  // ようこそ画面(未ログイン状態のプレビュー)からの表示かどうかで、
+  // 「アカウントに関して」セクションの見出し・表示項目を切り替える。
+  // ようこそ画面からは自分自身のアカウントではなく閲覧用ノードへの
+  // 接続情報を見せる位置づけのため、文言を「接続先について」に変え、
+  // 個人のアカウントに紐づく重要度・保有ルートネームスペースは表示しない。
+  function setDataPageAccountSectionMode(isWelcomePreview) {
+    const sectionTitle = document.getElementById("data-account-section-title");
+    const nodeTitle = document.getElementById("data-account-node-title");
+    const importanceCard = document.getElementById("data-account-importance-card");
+    const namespacesCard = document.getElementById("data-account-namespaces-card");
+
+    if (sectionTitle) sectionTitle.textContent = isWelcomePreview ? "接続先について" : "アカウントに関して";
+    if (nodeTitle) nodeTitle.textContent = isWelcomePreview ? "接続先ノード" : "アカウントの接続先ノード";
+    if (importanceCard) importanceCard.style.display = isWelcomePreview ? "none" : "";
+    if (namespacesCard) namespacesCard.style.display = isWelcomePreview ? "none" : "";
+  }
+
   document.getElementById("data-btn")?.addEventListener("click", () => {
     dataPageOrigin = accountPage;
+    setDataPageAccountSectionMode(false);
     showPage(dataPage);
     loadDataPage();
   });
@@ -1241,6 +1257,12 @@ window.addEventListener("load", async () => {
 
     dataPageOrigin = welcomePage;
 
+    // ようこそ画面からのプレビューでは、個人のアカウントに紐づく
+    // 重要度・保有ルートネームスペースは表示しない(setDataPageAccountSectionMode
+    // で非表示にする)ため、保存済みアカウントのプレビュー解錠やパスワード
+    // 入力による復号は不要。ネットワーク統計・ノード情報のみを表示する。
+    appState.currentAddress = null;
+
     if (!canReuseExisting) {
       setStatus("welcome-data-status", "ノードに接続中...");
       try {
@@ -1255,55 +1277,8 @@ window.addEventListener("load", async () => {
       }
     }
 
-    // この端末にアカウントデータが保存されていれば、まずパスワード不要の
-    // プレビュー用アドレス(getVaultPreview。秘密鍵/ニーモニックを含まない、
-    // アドレスとネットワーク種別だけの平文情報)を使って重要度・保有
-    // ネームスペースを表示する。これにより、パスワード欄が空のままでも
-    // インポート済みのアカウントがあればそのまま確認できる。
-    //
-    // 古い保存データ等でプレビュー用アドレスがまだ無い場合のみ、
-    // 従来通りようこそ画面のログインパスワード欄の入力を使ってフォールバック
-    // する(それも無ければ、理由をメッセージで示してネットワーク統計のみ表示)。
-    appState.currentAddress = null;
-    let accountPreviewNote = "";
-
-    if (getVaultMode() !== "none") {
-      const preview = getVaultPreview();
-
-      if (preview?.address && preview.networkType === desiredNetworkType) {
-        appState.currentAddress = new appState.sdkSymbol.Address(preview.address);
-      } else if (preview?.address) {
-        accountPreviewNote =
-          "ℹ️ 保存済みアカウントは選択したネットワーク（" +
-          (isTestnet ? "Testnet" : "Mainnet") +
-          "）と異なるため、アカウント情報は表示できません（ネットワーク統計のみ表示します）。";
-      } else if (getVaultMode() === "encrypted") {
-        // プレビュー用アドレスが未生成の古い保存データ向けフォールバック
-        const previewPassword = document.getElementById("unlock-password-input")?.value;
-
-        if (!previewPassword) {
-          accountPreviewNote =
-            "ℹ️ 保存済みアカウントの重要度・保有ネームスペースも見るには、上の「パスワード」欄にログインパスワードを入力してからこのボタンを押してください（ネットワーク統計のみ先に表示します）。";
-        } else {
-          try {
-            const peeked = await peekVaultAccounts(previewPassword);
-            if (peeked?.address && peeked.networkType === desiredNetworkType) {
-              appState.currentAddress = new appState.sdkSymbol.Address(peeked.address);
-            } else if (peeked?.address) {
-              accountPreviewNote =
-                "ℹ️ 保存済みアカウントは選択したネットワーク（" +
-                (isTestnet ? "Testnet" : "Mainnet") +
-                "）と異なるため、アカウント情報は表示できません（ネットワーク統計のみ表示します）。";
-            }
-          } catch (e) {
-            console.warn("welcome-data-btn: 保存済みアカウントの復号に失敗しました(ネットワーク統計のみ表示します):", e);
-            accountPreviewNote = "⚠️ パスワードが正しくないため、アカウント情報は表示できません（ネットワーク統計のみ表示します）。";
-          }
-        }
-      }
-    }
-
-    setStatus("welcome-data-status", accountPreviewNote, accountPreviewNote.startsWith("⚠️") ? "error" : "default");
+    setStatus("welcome-data-status", "");
+    setDataPageAccountSectionMode(true);
     showPage(dataPage);
     loadDataPage();
   });
