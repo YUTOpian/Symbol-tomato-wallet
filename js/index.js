@@ -1260,24 +1260,40 @@ window.addEventListener("load", async () => {
     // アドレスだけを復号する(ログイン状態には遷移しない・セッションは
     // 張らない)。これにより、ログインしなくても保存済みアカウントの
     // 重要度・保有ルートネームスペースをデータ・分析画面で確認できる。
-    // パスワード未入力/誤りの場合は、従来通りネットワーク統計のみの
-    // プレビューにフォールバックする(エラーにはしない)。
+    //
+    // パスワード欄が空、またはパスワードが誤っている/ネットワークが
+    // 異なる場合は、これまで無言でネットワーク統計のみの表示に
+    // フォールバックしていたため、「保存済みアカウントはあるのに
+    // 重要度・ネームスペースが出ない」ように見える不具合になっていた。
+    // 何が起きているかが分かるよう、必ず状況をメッセージで示す。
     appState.currentAddress = null;
+    let accountPreviewNote = "";
+
     if (getVaultMode() === "encrypted") {
       const previewPassword = document.getElementById("unlock-password-input")?.value;
-      if (previewPassword) {
+
+      if (!previewPassword) {
+        accountPreviewNote =
+          "ℹ️ 保存済みアカウントの重要度・保有ネームスペースも見るには、上の「パスワード」欄にログインパスワードを入力してからこのボタンを押してください（ネットワーク統計のみ先に表示します）。";
+      } else {
         try {
           const peeked = await peekVaultAccounts(previewPassword);
           if (peeked?.address && peeked.networkType === desiredNetworkType) {
             appState.currentAddress = new appState.sdkSymbol.Address(peeked.address);
+          } else if (peeked?.address) {
+            accountPreviewNote =
+              "ℹ️ 保存済みアカウントは選択したネットワーク（" +
+              (isTestnet ? "Testnet" : "Mainnet") +
+              "）と異なるため、アカウント情報は表示できません（ネットワーク統計のみ表示します）。";
           }
         } catch (e) {
           console.warn("welcome-data-btn: 保存済みアカウントの復号に失敗しました(ネットワーク統計のみ表示します):", e);
+          accountPreviewNote = "⚠️ パスワードが正しくないため、アカウント情報は表示できません（ネットワーク統計のみ表示します）。";
         }
       }
     }
 
-    setStatus("welcome-data-status", "", "default");
+    setStatus("welcome-data-status", accountPreviewNote, accountPreviewNote.startsWith("⚠️") ? "error" : "default");
     showPage(dataPage);
     loadDataPage();
   });
