@@ -2895,11 +2895,6 @@ window.addEventListener("load", async () => {
     const isSss = appState.authMode === "sss";
     const isReadOnly = appState.isReadOnly;
 
-    const mnemonicAddItem = document.getElementById("menu-add-mnemonic");
-    const privatekeyAddItem = document.getElementById("menu-add-privatekey");
-    if (mnemonicAddItem) mnemonicAddItem.style.display = (isSss || isReadOnly) ? "none" : "";
-    if (privatekeyAddItem) privatekeyAddItem.style.display = (isSss || isReadOnly) ? "none" : "";
-
     // 読み取り専用モード: 送金手数料の設定は署名を伴う操作がないため不要
     const feeItem = document.getElementById("menu-fee-settings");
     if (feeItem) feeItem.style.display = isReadOnly ? "none" : "";
@@ -3042,19 +3037,6 @@ window.addEventListener("load", async () => {
     if (!btn) return;
     await setAccountHidden(btn.dataset.id, false);
     renderHiddenAccountList();
-  });
-
-  // ============================
-  // アカウント追加(設定・アカウント切替の両方から使う共通画面)
-  // ============================
-  document.getElementById("menu-add-mnemonic")?.addEventListener("click", () => {
-    document.getElementById("add-mnemonic-index").value = nextMnemonicAccountIndex();
-    resetMnemonicInputGrid("add-mnemonic-input-grid");
-    showPage(addAccountMnemonicPage);
-  });
-
-  document.getElementById("menu-add-privatekey")?.addEventListener("click", () => {
-    showPage(addAccountPrivatekeyPage);
   });
 
   // ============================
