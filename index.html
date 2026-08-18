@@ -740,21 +740,21 @@
       <h2>データ・分析</h2>
       <button id="back-account-data" class="button-primary">← 戻る</button>
 
-      <h3>アカウントに関して</h3>
+      <h3 id="data-account-section-title">アカウントに関して</h3>
       <div class="data-card-grid">
         <div class="data-card">
           <div class="data-card-label">接続ネットワーク</div>
           <div id="data-account-network" class="data-card-value">---</div>
         </div>
-        <div class="data-card">
+        <div class="data-card" id="data-account-importance-card">
           <div class="data-card-label">重要度</div>
           <div id="data-account-importance" class="data-card-value">---</div>
         </div>
         <div class="data-card data-card-wide">
-          <div class="data-card-title">アカウントの接続先ノード</div>
+          <div class="data-card-title" id="data-account-node-title">アカウントの接続先ノード</div>
           <div id="data-account-node" class="data-card-mono">---</div>
         </div>
-        <div class="data-card data-card-wide">
+        <div class="data-card data-card-wide" id="data-account-namespaces-card">
           <div class="data-card-title">保有ルートネームスペース</div>
           <div id="data-account-namespaces" class="data-card-chips">読み込み中...</div>
         </div>
