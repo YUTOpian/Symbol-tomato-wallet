@@ -1101,10 +1101,11 @@ const INFLATION_RECEIPT_TYPE = 20803;   // Inflation（インフレ報酬）
 
 function normalizeReceiptAddress(addr) {
   if (!addr || typeof addr !== "string") return null;
-  if (addr.length === 39) return addr.toUpperCase();
-  if (addr.length === 48 && /^[0-9A-Fa-f]+$/.test(addr) && appState.sdkSymbol) {
+  const trimmed = addr.trim();
+  if (trimmed.length === 39) return trimmed.toUpperCase();
+  if (trimmed.length === 48 && /^[0-9A-Fa-f]+$/.test(trimmed) && appState.sdkSymbol) {
     try {
-      return new appState.sdkSymbol.Address(hexToBytes(addr)).toString();
+      return new appState.sdkSymbol.Address(hexToBytes(trimmed)).toString();
     } catch {
       return null;
     }
@@ -1298,12 +1299,24 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
           inflationText = toText(harvesterInflationAtomic);
           feeText = toText(harvesterFeeAtomic);
           feeIsZero = harvesterFeeAtomic === 0n;
+
+          // ノード報酬の行:
+          // ・beneficiaryAddressが判明していれば、それに基づいて表示する(従来通り)。
+          // ・kind==="node"(委任ハーベスティングで自分のリモート鍵が使われた
+          //   ブロック)は、委任先ノードのbeneficiary設定状況にかかわらず、
+          //   「委任先ノードの取り分」の行を必ず表示する。
+          //   以前はbeneficiaryAddressが取得できない(未設定 or 解析失敗)場合に
+          //   行ごと消えてしまい、委任した分のノード報酬が全く見えなくなる
+          //   バグがあったため、その場合は0円として明示する。
           if (beneficiaryAddress) {
             nodeRewardText = toText(nodeRewardAtomic);
             nodeRewardLabel =
               beneficiaryAddress === myAddress
                 ? "ノード報酬(自分のノードのbeneficiary取り分)"
                 : "ノード報酬(委任先ノードの取り分・自分には入りません)";
+          } else if (item.__harvestKind === "node") {
+            nodeRewardText = toText(0n);
+            nodeRewardLabel = "ノード報酬(委任先ノードの取り分・自分には入りません)";
           }
         } catch (e) {
           console.warn("ハーベスト報酬レシート取得失敗:", height, e);
