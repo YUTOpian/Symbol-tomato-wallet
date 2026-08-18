@@ -135,6 +135,51 @@ async function verifyVaultPassword(password) {
   return true;
 }
 
+/* ============================================================
+   保存済みボールト(暗号化済み)を復号し、アドレスなど「閲覧のみ」に
+   必要な最小限の情報だけを取り出す。
+   unlockVault()と異なり、セッション鍵(sessionKey/sessionSalt)の設定や
+   switchToAccount()(ノード接続・ログイン状態への遷移)は一切行わない。
+   ようこそ画面の「データ・分析を見る」プレビューから、ログインせずに
+   保存済みアカウントの重要度・保有ネームスペースだけを覗き見るために使う。
+============================================================ */
+async function peekVaultAccounts(password) {
+  const raw = localStorage.getItem(VAULT_KEY);
+  if (!raw) {
+    throw new Error("保存されたアカウントがありません。");
+  }
+
+  const vault = JSON.parse(raw);
+  if (!vault.encrypted) {
+    throw new Error("パスワードが設定されていません。");
+  }
+
+  const salt = base64ToBytes(vault.salt);
+  const iv = base64ToBytes(vault.iv);
+  const key = await deriveKeyFromPassword(password, salt);
+
+  let plainBuf;
+  try {
+    plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, base64ToBytes(vault.cipher));
+  } catch {
+    throw new Error("パスワードが正しくありません。");
+  }
+
+  const payload = JSON.parse(new TextDecoder().decode(plainBuf));
+  const accounts = payload.accounts || [];
+  const activeAccount =
+    accounts.find((a) => a.id === payload.activeAccountId) || accounts[0] || null;
+
+  if (!activeAccount || !activeAccount.address) {
+    throw new Error("保存されたアカウントのアドレスが見つかりません。");
+  }
+
+  return {
+    address: activeAccount.address,
+    networkType: payload.networkType,
+  };
+}
+
 /*
   秘密鍵の取得。SSS Extension由来のアカウントは秘密鍵をこのアプリが
   一切扱わない設計のため、対象外。
@@ -951,6 +996,7 @@ function resetSessionState() {
 
   appState.authMode = null;
   appState.isReadOnly = false;
+  appState.readOnlyFromLogin = false;
   appState.currentPubKey = null;
   appState.currentAddress = null;
   appState.localPrivateKeyHex = null;
@@ -967,20 +1013,19 @@ function resetSessionState() {
 
 /* ============================================================
    ログアウト
-   保存済みアカウント(パスワード付きボールト)はこの端末に残したまま、
-   セッション状態だけをリセットする(lockSessionと同じ効果)。
-   次回はようこそ画面のログインフォームで同じパスワードを入力すれば
-   再度ログインできる。保存データそのものを消したい場合は、
-   ようこそ画面の「アカウントデータを削除する」ボタン(clearVault)を使う。
+   保存済みアカウント(パスワード付きボールト)も削除するため、
+   次回は自動ログインできず、必ずSSS接続かニーモニック/秘密鍵の
+   再入力が必要になる
 ============================================================ */
 function logout() {
-  lockSession();
+  clearVault();
+  resetSessionState();
 }
 
 /* ============================================================
    ロック
-   保存済みボールト(localStorage)は削除しない。
-   次回はパスワード入力(ようこそ画面のログインフォーム)だけで復帰できる。
+   ログアウトと違い、保存済みボールト(localStorage)は削除しない。
+   次回はパスワード入力(ロック解除画面)だけで復帰できる。
    新規作成 / ニーモニックインポートでログインした場合(authMode==="local")
    のみ使う想定。
 ============================================================ */
@@ -1018,6 +1063,7 @@ window.W.auth = {
   deriveFromMnemonic,
   canUseBackupFeature,
   verifyVaultPassword,
+  peekVaultAccounts,
   getPrivateKeyForAccount,
   getVerifiedMnemonicForAccount,
   getAccounts,

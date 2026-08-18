@@ -163,7 +163,7 @@ async function updateNodeInfoPriceDisplay() {
   }
 
   if (usdResult.rate != null) {
-    const usdText = usdResult.rate.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+    const usdText = usdResult.rate.toLocaleString("en-US", { minimumFractionDigits: 6, maximumFractionDigits: 6 });
     lines.push(`${usdText}ドル / XYM (${usdResult.source})`);
   }
 

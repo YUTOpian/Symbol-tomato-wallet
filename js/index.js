@@ -40,6 +40,7 @@ const {connectWithSSS,
   switchNetwork,
   canUseBackupFeature,
   verifyVaultPassword,
+  peekVaultAccounts,
   getPrivateKeyForAccount,
   getVerifiedMnemonicForAccount,
   announceOfflineTx,} = W.auth;
@@ -1226,9 +1227,14 @@ window.addEventListener("load", async () => {
     // initSdk()での初期化が要る。
     // 前回と同じネットワークで、かつ既に初期化済みならそのまま使い回す
     // (ボタンを何度も押すたびに待たせないため)。
+    // ※ 判定には appState.currentAddress ではなく authMode/isReadOnly を使う。
+    //   下記のプレビュー用アドレス解決でも appState.currentAddress を
+    //   一時的に設定するため、currentAddress の有無では「本当にログイン
+    //   済みかどうか」を区別できないため。
     const canReuseExisting =
       !!appState.NODE &&
-      !appState.currentAddress &&
+      !appState.authMode &&
+      !appState.isReadOnly &&
       appState.isSdkReady &&
       appState.networkType === desiredNetworkType;
 
@@ -1245,6 +1251,29 @@ window.addEventListener("load", async () => {
         appState.isSdkReady = false;
         setStatus("welcome-data-status", "ノードへの接続に失敗しました。時間をおいて再度お試しください。", "error");
         return;
+      }
+    }
+
+    // 「QRコードでログイン」などでこの端末にパスワード付きで保存された
+    // アカウントがあり、かつようこそ画面のログインパスワード欄に
+    // パスワードが入力されている場合は、それを使って保存済みアカウントの
+    // アドレスだけを復号する(ログイン状態には遷移しない・セッションは
+    // 張らない)。これにより、ログインしなくても保存済みアカウントの
+    // 重要度・保有ルートネームスペースをデータ・分析画面で確認できる。
+    // パスワード未入力/誤りの場合は、従来通りネットワーク統計のみの
+    // プレビューにフォールバックする(エラーにはしない)。
+    appState.currentAddress = null;
+    if (getVaultMode() === "encrypted") {
+      const previewPassword = document.getElementById("unlock-password-input")?.value;
+      if (previewPassword) {
+        try {
+          const peeked = await peekVaultAccounts(previewPassword);
+          if (peeked?.address && peeked.networkType === desiredNetworkType) {
+            appState.currentAddress = new appState.sdkSymbol.Address(peeked.address);
+          }
+        } catch (e) {
+          console.warn("welcome-data-btn: 保存済みアカウントの復号に失敗しました(ネットワーク統計のみ表示します):", e);
+        }
       }
     }
 
@@ -1285,7 +1314,15 @@ window.addEventListener("load", async () => {
     W.exchangeFlow?.loadExchangeFlowAnalysis("custom", { dateStr, timezone });
   });
 
-  document.getElementById("back-account-data")?.addEventListener("click", () => showPage(dataPageOrigin));
+  document.getElementById("back-account-data")?.addEventListener("click", () => {
+    // ようこそ画面のプレビュー(ログインなし)から開いていた場合、
+    // データ・分析画面用に一時的に設定したcurrentAddressを消しておく
+    // (ログイン状態と誤認されないようにするため)
+    if (dataPageOrigin === welcomePage && !appState.authMode && !appState.isReadOnly) {
+      appState.currentAddress = null;
+    }
+    showPage(dataPageOrigin);
+  });
 
   document.getElementById("menu-namespace")?.addEventListener("click", async () => {
     showPage(namespacePage);
