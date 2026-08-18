@@ -673,6 +673,22 @@ async function setAccountHidden(id, hidden) {
 }
 
 /* ============================================================
+   アカウントのラベル変更(表示名のみ。秘密鍵・アドレスには影響しない)
+============================================================ */
+async function renameAccount(id, newLabel) {
+  const acc = appState.accounts.find((a) => a.id === id);
+  if (!acc) return;
+
+  const trimmed = (newLabel ?? "").trim();
+  if (!trimmed) {
+    throw new Error("ラベルを入力してください。");
+  }
+
+  acc.label = trimmed;
+  await persistAccounts();
+}
+
+/* ============================================================
    暗号化ボールト (パスワード設定時のみ使用)
    AES-GCM + PBKDF2(210,000回)でアカウント一覧を暗号化してlocalStorageへ
    (SSS由来のアカウントは秘密鍵を持たないため保存対象外)
@@ -1154,6 +1170,7 @@ window.W.auth = {
   addNextAccountFromCurrentMnemonic,
   addAccountFromPrivateKey,
   setAccountHidden,
+  renameAccount,
   getVaultMode,
   hasVault,
   getVaultPreview,

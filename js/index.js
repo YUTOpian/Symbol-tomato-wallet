@@ -33,6 +33,8 @@ const {connectWithSSS,
   deriveFromMnemonic,
   switchToAccount,
   setAccountHidden,
+  renameAccount,
+  getAccounts,
   addAccountFromMnemonic,
   addAccountFromPrivateKey,
   addNextAccountFromCurrentMnemonic,
@@ -2985,6 +2987,21 @@ window.addEventListener("load", async () => {
   });
 
   document.getElementById("account-switcher-list")?.addEventListener("click", async e => {
+    const renameBtn = e.target.closest('[data-action="rename"]');
+    if (renameBtn) {
+      const id = renameBtn.dataset.id;
+      const acc = getAccounts().find((a) => a.id === id);
+      const newLabel = prompt("新しいラベルを入力してください", acc?.label ?? "");
+      if (newLabel === null) return; // キャンセル
+      try {
+        await renameAccount(id, newLabel);
+        renderAccountSwitcherList();
+      } catch (err) {
+        alert(err.message || "ラベルの変更に失敗しました。");
+      }
+      return;
+    }
+
     const hideBtn = e.target.closest('[data-action="hide"]');
     if (hideBtn) {
       const id = hideBtn.dataset.id;
@@ -3033,6 +3050,21 @@ window.addEventListener("load", async () => {
   });
 
   document.getElementById("hidden-account-list")?.addEventListener("click", async e => {
+    const renameBtn = e.target.closest('[data-action="rename"]');
+    if (renameBtn) {
+      const id = renameBtn.dataset.id;
+      const acc = getAccounts().find((a) => a.id === id);
+      const newLabel = prompt("新しいラベルを入力してください", acc?.label ?? "");
+      if (newLabel === null) return; // キャンセル
+      try {
+        await renameAccount(id, newLabel);
+        renderHiddenAccountList();
+      } catch (err) {
+        alert(err.message || "ラベルの変更に失敗しました。");
+      }
+      return;
+    }
+
     const btn = e.target.closest('[data-action="unhide"]');
     if (!btn) return;
     await setAccountHidden(btn.dataset.id, false);

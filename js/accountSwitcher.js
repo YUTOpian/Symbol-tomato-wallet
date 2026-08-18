@@ -49,7 +49,10 @@ function renderAccountSwitcherList() {
         <div class="account-row-label">${a.label}${a.id === appState.activeAccountId ? " ✅" : ""}</div>
         <div class="account-row-sub">${sourceLabel(a.source)} ・ ${shortAddr(a.address)}</div>
       </div>
-      <button class="account-hide-btn" data-action="hide" data-id="${a.id}">非表示</button>
+      <div class="account-row-actions">
+        <button class="account-hide-btn" data-action="rename" data-id="${a.id}">✏️ ラベル編集</button>
+        <button class="account-hide-btn" data-action="hide" data-id="${a.id}">非表示</button>
+      </div>
     </div>
   `
     )
@@ -78,7 +81,10 @@ function renderHiddenAccountList() {
         <div class="account-row-label">${a.label}</div>
         <div class="account-row-sub">${sourceLabel(a.source)} ・ ${shortAddr(a.address)}</div>
       </div>
-      <button class="account-hide-btn" data-action="unhide" data-id="${a.id}">再表示</button>
+      <div class="account-row-actions">
+        <button class="account-hide-btn" data-action="rename" data-id="${a.id}">✏️ ラベル編集</button>
+        <button class="account-hide-btn" data-action="unhide" data-id="${a.id}">再表示</button>
+      </div>
     </div>
   `
     )
