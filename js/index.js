@@ -188,6 +188,22 @@ window.addEventListener("load", async () => {
     if (page === welcomePage) {
       updateWelcomeLoginSection();
     }
+
+    // アカウント画面を表示するたびに、現在アクティブなアカウントのラベルを
+    // 最新の状態に更新する(アカウント切替・ラベル編集・ログイン直後など、
+    // どの経路で来てもここで必ず反映されるようにする)
+    if (page === accountPage) {
+      updateAccountLabelDisplay();
+    }
+  }
+
+  // 現在アクティブなアカウントのラベルをアカウント画面に表示する
+  function updateAccountLabelDisplay() {
+    const labelEl = document.getElementById("account-label-display");
+    if (!labelEl) return;
+
+    const account = appState.accounts.find((a) => a.id === appState.activeAccountId);
+    labelEl.textContent = account?.label || "---";
   }
 
   // 保存済みアカウントデータの有無に応じて、ようこそ画面のログイン欄を出し分ける
