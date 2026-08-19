@@ -9,7 +9,7 @@ const {loadRecentTx, initLiveTx} = W.transactions;
 const {refreshAccount, loadWalletTargetOptions, getSelectedWalletTargetAddress, isWalletTargetSelf, loadMosaicListForAddress} = W.account;const {initWebSocket} = W.ws;
 const {selectNode} = W.nodeSelector;
 const {initSdk} = W.sdk;
-const {showPopup, formatMosaicAmount} = W.utils;
+const {showPopup, formatMosaicAmount, downloadJson} = W.utils;
 const {setStatus} = W.ui;
 const {checkHarvestStatus, startHarvest, stopHarvest, sendDelegationRequestOnly, loadHarvestNodeCandidates, loadHarvestTargetOptions, loadHarvestHistory, loadHarvestRewards} = W.harvest;
 const {showCurrentNode,
@@ -218,14 +218,17 @@ window.addEventListener("load", async () => {
     if (sendBtn) sendBtn.style.display = appState.isReadOnly ? "none" : "";
     if (advancedBtn) advancedBtn.style.display = appState.isReadOnly ? "none" : "";
 
-    // 「アドレス帳」「セーブ」は、SSS Extension接続時(秘密鍵を扱えない)・
-    // 読み取り専用モード(秘密鍵もアカウントエントリ自体もない)のいずれでも
-    // 意味を持たない(特にセーブは秘密鍵の埋め込みが前提のため)ので隠す
+    // 「アドレス帳」「アカウント状態のセーブ/ロード」は、SSS Extension接続時
+    // (秘密鍵を扱えない)・読み取り専用モード(秘密鍵もアカウントエントリ自体
+    // もない)のいずれでも意味を持たない(特にセーブ/ロードは秘密鍵の
+    // 埋め込み・復号が前提のため)ので隠す
     const addressBookBtn = document.getElementById("address-book-btn");
-    const stateSaveBtn = document.getElementById("state-save-btn");
+    const stateSaveMenuBtn = document.getElementById("menu-state-save");
+    const stateLoadMenuBtn = document.getElementById("menu-state-load");
     const hideAccountExtras = appState.isReadOnly || appState.authMode === "sss";
     if (addressBookBtn) addressBookBtn.style.display = hideAccountExtras ? "none" : "";
-    if (stateSaveBtn) stateSaveBtn.style.display = hideAccountExtras ? "none" : "";
+    if (stateSaveMenuBtn) stateSaveMenuBtn.style.display = hideAccountExtras ? "none" : "";
+    if (stateLoadMenuBtn) stateLoadMenuBtn.style.display = hideAccountExtras ? "none" : "";
   }
 
   function goHome() {
@@ -809,20 +812,31 @@ window.addEventListener("load", async () => {
   // ============================
 
   // パスワード入力ダイアログ。Promise<string|null>で解決する(nullはキャンセル)。
-  function requestQrLoginPassword(addressHint) {
+  function requestQrLoginPassword(addressHint, opts = {}) {
+    const {
+      titleText = "QRコードのパスワード",
+      descText = "このQRコードを作成したときに設定したパスワードを入力してください。",
+      okLabel = "ログイン",
+    } = opts;
+
     return new Promise((resolve) => {
       const dialog = document.getElementById("qr-login-password-dialog");
       const input = document.getElementById("qr-login-password-input");
       const addressEl = document.getElementById("qr-login-password-address");
+      const titleEl = document.getElementById("qr-login-password-title");
+      const descEl = document.getElementById("qr-login-password-desc");
       const okBtn = document.getElementById("qr-login-password-ok-btn");
       const cancelBtn = document.getElementById("qr-login-password-cancel-btn");
 
       if (!dialog || typeof dialog.showModal !== "function") {
-        const pw = prompt("QRコードのパスワードを入力してください");
+        const pw = prompt("パスワードを入力してください");
         resolve(pw || null);
         return;
       }
 
+      if (titleEl) titleEl.textContent = titleText;
+      if (descEl) descEl.textContent = descText;
+      if (okBtn) okBtn.textContent = okLabel;
       if (addressEl) addressEl.textContent = addressHint ? `対象アドレス: ${addressHint}` : "";
       if (input) input.value = "";
       setStatus("qr-login-password-status", "", "default");
@@ -1487,26 +1501,31 @@ window.addEventListener("load", async () => {
   });
 
   // ============================
-  // アカウントの状態をセーブ(QRコード化)
-  // 現在のログイン用QRコード(バックアップと同じ仕組み)に、アカウント名と
-  // アドレス帳の内容を平文フィールドとして追加して埋め込む。
+  // アカウントの状態をセーブ/ロード(JSONファイル)
+  // 現在のログイン用データ(バックアップと同じ仕組み)に、アカウント名と
+  // アドレス帳の内容を平文フィールドとして追加してJSONファイルに書き出す。
+  // QRコードだとアドレス帳の件数によっては容量オーバーで読み取れなくなる
+  // おそれがあるため、こちらはファイルでの保存/読み込みにしている
+  // (アカウントへのログインそのものは、引き続き「QRコードでログイン」機能を使う)。
   // ============================
-  let stateSavePrivateKeyDataUrl = null;
-  let stateSaveMnemonicDataUrl = null;
+  let stateSavePrivateKeyPayload = null;
+  let stateSaveMnemonicPayload = null;
 
   function resetStateSaveUI() {
-    stateSavePrivateKeyDataUrl = null;
-    stateSaveMnemonicDataUrl = null;
+    stateSavePrivateKeyPayload = null;
+    stateSaveMnemonicPayload = null;
     const pwInput = document.getElementById("state-save-password-input");
     if (pwInput) pwInput.value = "";
     setStatus("state-save-password-status", "", "default");
     setStatus("state-save-status", "", "default");
     document.getElementById("state-save-result").style.display = "none";
-    document.getElementById("state-save-privatekey-image").textContent = "---";
-    document.getElementById("state-save-mnemonic-image").textContent = "---";
+    document.getElementById("state-save-privatekey-status").textContent = "---";
+    document.getElementById("state-save-mnemonic-status").textContent = "---";
+    document.getElementById("state-save-privatekey-download-btn").disabled = true;
+    document.getElementById("state-save-mnemonic-download-btn").disabled = true;
   }
 
-  document.getElementById("state-save-btn")?.addEventListener("click", () => {
+  document.getElementById("menu-state-save")?.addEventListener("click", () => {
     resetStateSaveUI();
     const canUse = canUseBackupFeature();
     document.getElementById("state-save-no-password-notice").style.display = canUse ? "none" : "block";
@@ -1516,7 +1535,7 @@ window.addEventListener("load", async () => {
 
   document.getElementById("back-state-save")?.addEventListener("click", () => {
     resetStateSaveUI();
-    showPage(accountPage);
+    showPage(settingsPage);
   });
 
   document.getElementById("state-save-goto-password-setup-btn")?.addEventListener("click", () => {
@@ -1552,18 +1571,6 @@ window.addEventListener("load", async () => {
       return;
     }
 
-    try {
-      await ensureQrLibsLoaded();
-    } catch (e) {
-      console.error("ensureQrLibsLoaded error:", e);
-      setStatus(
-        "state-save-password-status",
-        "QRコード生成用ライブラリの読み込みに失敗しました。通信環境をご確認のうえ、再度お試しください。",
-        "error"
-      );
-      return;
-    }
-
     setStatus("state-save-password-status", "", "default");
     document.getElementById("state-save-result").style.display = "block";
 
@@ -1571,32 +1578,31 @@ window.addEventListener("load", async () => {
     const addressBookPlain = exportAddressBookPlain();
 
     // 秘密鍵版(SSS以外の全アカウント種別で作成可能)
-    const pkImgEl = document.getElementById("state-save-privatekey-image");
-    pkImgEl.textContent = "生成中...";
+    const pkStatusEl = document.getElementById("state-save-privatekey-status");
+    const pkDownloadBtn = document.getElementById("state-save-privatekey-download-btn");
+    pkStatusEl.textContent = "生成中...";
     try {
       const privateKeyHex = getPrivateKeyForAccount(account);
       const payload = await W.qrLogin.buildQrLoginPayload(privateKeyHex, address, pw, "privateKey");
       payload.accountLabel = account.label;
       payload.addressBook = addressBookPlain;
 
-      // アカウント名・アドレス帳の分だけ通常のログイン用QRコードよりデータ量が
-      // 多くなるため、width(固定ピクセル幅)ではなくscale(1モジュールあたりの
-      // ピクセル数)を指定する。widthのままだとデータ量が多いときにモジュールが
-      // 細かくなりすぎて読み取れなくなるため。
-      stateSavePrivateKeyDataUrl = await QRCode.toDataURL(JSON.stringify(payload), { scale: 6, margin: 4 });
-      pkImgEl.innerHTML = `<img src="${stateSavePrivateKeyDataUrl}" alt="アカウント状態QR(秘密鍵版)" style="max-width:100%;">`;
+      stateSavePrivateKeyPayload = payload;
+      pkStatusEl.textContent = "✅ 準備ができました。";
+      pkDownloadBtn.disabled = false;
     } catch (e) {
       console.error("state-save(秘密鍵版) error:", e);
-      pkImgEl.textContent = "QRコードの生成に失敗しました。";
+      pkStatusEl.textContent = "ファイルの生成に失敗しました。";
     }
 
     // ニーモニック版(ニーモニック由来のアカウントで、かつ今のセッション中に
     // ニーモニックが取得できる場合のみ作成する)
-    const mnemonicImgEl = document.getElementById("state-save-mnemonic-image");
+    const mnemonicStatusEl = document.getElementById("state-save-mnemonic-status");
+    const mnemonicDownloadBtn = document.getElementById("state-save-mnemonic-download-btn");
     if (account.source !== "mnemonic") {
-      mnemonicImgEl.textContent = "このアカウントはニーモニック由来ではないため、ニーモニック版は作成できません。";
+      mnemonicStatusEl.textContent = "このアカウントはニーモニック由来ではないため、ニーモニック版は作成できません。";
     } else {
-      mnemonicImgEl.textContent = "生成中...";
+      mnemonicStatusEl.textContent = "生成中...";
       try {
         const mnemonicPhrase = await getVerifiedMnemonicForAccount(account);
         const mnemonicPayload = await W.qrLogin.buildQrLoginPayload(
@@ -1609,11 +1615,12 @@ window.addEventListener("load", async () => {
         mnemonicPayload.accountLabel = account.label;
         mnemonicPayload.addressBook = addressBookPlain;
 
-        stateSaveMnemonicDataUrl = await QRCode.toDataURL(JSON.stringify(mnemonicPayload), { scale: 6, margin: 4 });
-        mnemonicImgEl.innerHTML = `<img src="${stateSaveMnemonicDataUrl}" alt="アカウント状態QR(ニーモニック版)" style="max-width:100%;">`;
+        stateSaveMnemonicPayload = mnemonicPayload;
+        mnemonicStatusEl.textContent = "✅ 準備ができました。";
+        mnemonicDownloadBtn.disabled = false;
       } catch (e) {
         console.warn("state-save(ニーモニック版) スキップ理由:", e);
-        mnemonicImgEl.textContent = e.message || "ニーモニック版QRコードの生成に失敗しました。";
+        mnemonicStatusEl.textContent = e.message || "ニーモニック版ファイルの生成に失敗しました。";
       }
     }
 
@@ -1621,33 +1628,138 @@ window.addEventListener("load", async () => {
   });
 
   document.getElementById("state-save-privatekey-download-btn")?.addEventListener("click", () => {
-    if (!stateSavePrivateKeyDataUrl) {
-      setStatus("state-save-status", "QRコードがまだ生成されていません。", "error");
+    if (!stateSavePrivateKeyPayload) {
+      setStatus("state-save-status", "ファイルがまだ生成されていません。", "error");
       return;
     }
     const address = appState.currentAddress?.toString() || "account";
-    const a = document.createElement("a");
-    a.href = stateSavePrivateKeyDataUrl;
-    a.download = `symbol-account-state-privatekey-${address}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    showPopup("QRコードをダウンロードしました");
+    downloadJson(`symbol-account-state-privatekey-${address}.json`, stateSavePrivateKeyPayload);
+    showPopup("JSONファイルをダウンロードしました");
   });
 
   document.getElementById("state-save-mnemonic-download-btn")?.addEventListener("click", () => {
-    if (!stateSaveMnemonicDataUrl) {
-      setStatus("state-save-status", "QRコードがまだ生成されていません。", "error");
+    if (!stateSaveMnemonicPayload) {
+      setStatus("state-save-status", "ファイルがまだ生成されていません。", "error");
       return;
     }
     const address = appState.currentAddress?.toString() || "account";
-    const a = document.createElement("a");
-    a.href = stateSaveMnemonicDataUrl;
-    a.download = `symbol-account-state-mnemonic-${address}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    showPopup("QRコードをダウンロードしました");
+    downloadJson(`symbol-account-state-mnemonic-${address}.json`, stateSaveMnemonicPayload);
+    showPopup("JSONファイルをダウンロードしました");
+  });
+
+  /*
+    読み取ったJSONファイルの生テキストを検証・復号し、ログイン(状態の復旧)まで行う。
+    handleQrLoginText(QRコードでログイン)とほぼ同じ処理だが、
+      ・入力元がQRコードではなくJSONファイルであること
+      ・設定画面(ログイン後の画面)から実行されること
+    が異なるため、別関数として用意している。
+  */
+  async function handleAccountStateLoadText(text) {
+    const statusId = "account-state-status";
+
+    const payload = W.qrLogin.parseQrLoginPayloadText(text);
+    if (!payload) {
+      setStatus(statusId, "対応形式のファイルではありません(アカウントの状態をセーブして作成したJSONファイルかご確認ください)。", "error");
+      return;
+    }
+
+    const hadExistingData = getVaultMode() !== "none";
+    if (hadExistingData) {
+      if (!confirm(
+        "この端末に保存されている現在のアカウント情報を削除し、読み込んだファイルのアカウントに置き換えます。\n" +
+        "（ニーモニックや秘密鍵をお持ちであれば、現在のアカウントの資産自体がなくなることはありません）\n\n" +
+        "続けてよろしいですか？"
+      )) {
+        return;
+      }
+    }
+
+    const password = await requestQrLoginPassword(payload.address, {
+      titleText: "アカウント状態ファイルのパスワード",
+      descText: "このファイルを作成したときに設定したパスワードを入力してください。",
+      okLabel: "読み込む",
+    });
+    if (password == null) return; // キャンセル
+
+    setStatus(statusId, "ファイルを復号しています...");
+
+    try {
+      const decrypted = await W.qrLogin.decryptQrLoginPayload(payload, password);
+      const address = decrypted.address;
+
+      let networkType;
+      if (address[0] === "N") {
+        networkType = NetworkType.MAINNET;
+      } else if (address[0] === "T") {
+        networkType = NetworkType.TESTNET;
+      } else {
+        throw new Error("ファイル内のアドレス形式が正しくありません。");
+      }
+
+      if (hadExistingData) {
+        clearVault();
+      }
+
+      setStatus(statusId, "ログイン中...");
+
+      if (decrypted.kind === "mnemonic") {
+        // ニーモニック版: このセッションでニーモニックそのものを復元するため、
+        // 以降このアカウントの「バックアップを表示」も使えるようexportable=trueにする
+        await loginWithMnemonic(decrypted.mnemonicPhrase, networkType, decrypted.accountIndex ?? 0, true);
+      } else {
+        await loginWithPrivateKey(decrypted.privateKeyHex, networkType, "アカウント状態ロード");
+      }
+
+      if (appState.currentAddress?.toString() !== address) {
+        console.warn("アカウント状態ロード: 復号結果から導出されるアドレスがファイル内のアドレスと一致しません", {
+          expected: address,
+          actual: appState.currentAddress?.toString(),
+        });
+      }
+
+      // 平文フィールドとして含まれる accountLabel / addressBook を復元する
+      if (typeof payload.accountLabel === "string" && payload.accountLabel.trim()) {
+        try {
+          await renameAccount(appState.activeAccountId, payload.accountLabel);
+        } catch (e) {
+          console.warn("アカウント状態ロード: アカウント名の復元に失敗しました", e);
+        }
+      }
+      if (Array.isArray(payload.addressBook)) {
+        // アドレス帳はこのファイルの内容で上書き(置き換え)する
+        replaceAddressBook(payload.addressBook);
+      }
+
+      // 今回入力したパスワードを、そのままこの端末の保存パスワードとしても使う
+      await saveVault(password);
+
+      setStatus(statusId, "", "default");
+      showPopup("アカウントの状態を復元しました");
+      goHome();
+    } catch (e) {
+      console.error("アカウント状態ロード error:", e);
+      setStatus(statusId, e.message || "アカウントの状態の読み込みに失敗しました。", "error");
+    }
+  }
+
+  const stateLoadFileInput = document.getElementById("state-load-file-input");
+  document.getElementById("menu-state-load")?.addEventListener("click", () => {
+    setStatus("account-state-status", "", "default");
+    stateLoadFileInput?.click();
+  });
+  stateLoadFileInput?.addEventListener("change", async () => {
+    const file = stateLoadFileInput.files?.[0];
+    stateLoadFileInput.value = "";
+    if (!file) return;
+
+    setStatus("account-state-status", "ファイルを読み込んでいます...");
+    try {
+      const text = await file.text();
+      await handleAccountStateLoadText(text);
+    } catch (e) {
+      console.error("state-load file read error:", e);
+      setStatus("account-state-status", e.message || "ファイルの読み込みに失敗しました。", "error");
+    }
   });
 
   document.getElementById("menu-namespace")?.addEventListener("click", async () => {

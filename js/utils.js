@@ -200,6 +200,23 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
+// ============================================================
+// JSONファイルの書き出し
+// (「アカウントの状態をセーブ」機能など、QRコードでは容量オーバーの
+//  おそれがある大きめのデータをファイルとして書き出す場面で使う)
+// ============================================================
+function downloadJson(filename, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 window.W.utils = {
   hexToBytes,
   showPopup,
@@ -210,7 +227,8 @@ window.W.utils = {
   getSSSStatusHtml,
   renderNodeInfoHtml,
   csvEscapeCell,
-  downloadCsv
+  downloadCsv,
+  downloadJson
 };
 
 })();
