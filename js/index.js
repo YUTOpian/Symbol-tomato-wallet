@@ -49,6 +49,12 @@ const {updateSwitcherVisibility,
   renderAccountSwitcherList,
   renderHiddenAccountList,
   nextMnemonicAccountIndex,} = W.accountSwitcher;
+const {getAddressBook,
+  upsertAddressBookEntry,
+  deleteAddressBookEntry,
+  renderAddressBookList,
+  exportAddressBookPlain,
+  replaceAddressBook,} = W.addressBook;
 const {loadOwnedNamespaces,
   populateParentNamespaceSelect,
   registerRootNamespace,
@@ -154,6 +160,8 @@ window.addEventListener("load", async () => {
   const addAccountMenuPage = document.getElementById("add-account-menu-page");
   const addAccountMnemonicPage = document.getElementById("add-account-mnemonic-page");
   const addAccountPrivatekeyPage = document.getElementById("add-account-privatekey-page");
+  const addressBookPage = document.getElementById("address-book-page");
+  const stateSavePage = document.getElementById("state-save-page");
   const advancedPage = document.getElementById("advanced-page");
   const dataPage = document.getElementById("data-page");
   const namespacePage = document.getElementById("namespace-page");
@@ -209,6 +217,15 @@ window.addEventListener("load", async () => {
     const advancedBtn = document.getElementById("advanced-btn");
     if (sendBtn) sendBtn.style.display = appState.isReadOnly ? "none" : "";
     if (advancedBtn) advancedBtn.style.display = appState.isReadOnly ? "none" : "";
+
+    // 「アドレス帳」「セーブ」は、SSS Extension接続時(秘密鍵を扱えない)・
+    // 読み取り専用モード(秘密鍵もアカウントエントリ自体もない)のいずれでも
+    // 意味を持たない(特にセーブは秘密鍵の埋め込みが前提のため)ので隠す
+    const addressBookBtn = document.getElementById("address-book-btn");
+    const stateSaveBtn = document.getElementById("state-save-btn");
+    const hideAccountExtras = appState.isReadOnly || appState.authMode === "sss";
+    if (addressBookBtn) addressBookBtn.style.display = hideAccountExtras ? "none" : "";
+    if (stateSaveBtn) stateSaveBtn.style.display = hideAccountExtras ? "none" : "";
   }
 
   function goHome() {
@@ -900,6 +917,22 @@ window.addEventListener("load", async () => {
         });
       }
 
+      // 「アカウントの状態をセーブ」で作られたQRコードの場合、平文フィールドとして
+      // accountLabel / addressBook が含まれている(これらは秘匿情報ではないため
+      // 暗号化対象外)。通常のバックアップQR(アカウント作成時に作ったもの)には
+      // 含まれないため、その場合は何もしない。
+      if (typeof payload.accountLabel === "string" && payload.accountLabel.trim()) {
+        try {
+          await renameAccount(appState.activeAccountId, payload.accountLabel);
+        } catch (e) {
+          console.warn("QRログイン: アカウント名の復元に失敗しました", e);
+        }
+      }
+      if (Array.isArray(payload.addressBook)) {
+        // アドレス帳はこのQRコードの内容で上書き(置き換え)する
+        replaceAddressBook(payload.addressBook);
+      }
+
       // 今回入力したパスワードを、そのままこの端末の保存パスワードとしても使う
       await saveVault(password);
 
@@ -1325,6 +1358,292 @@ window.addEventListener("load", async () => {
       appState.currentAddress = null;
     }
     showPage(dataPageOrigin);
+  });
+
+  // ============================
+  // アドレス帳
+  // ============================
+  document.getElementById("address-book-btn")?.addEventListener("click", () => {
+    renderAddressBookList();
+    showPage(addressBookPage);
+  });
+
+  document.getElementById("back-address-book")?.addEventListener("click", () => {
+    showPage(accountPage);
+  });
+
+  // 追加/編集ダイアログ(id=nullなら新規追加)
+  let addressBookEditingId = null;
+
+  function openAddressBookEditDialog(entry) {
+    const dialog = document.getElementById("address-book-edit-dialog");
+    if (!dialog || typeof dialog.showModal !== "function") return;
+
+    addressBookEditingId = entry?.id ?? null;
+    document.getElementById("address-book-edit-title").textContent = entry ? "アドレスを編集" : "アドレスを追加";
+    document.getElementById("address-book-edit-label-input").value = entry?.label ?? "";
+    document.getElementById("address-book-edit-address-input").value = entry?.address ?? "";
+    setStatus("address-book-edit-status", "", "default");
+
+    dialog.showModal();
+  }
+
+  document.getElementById("address-book-add-btn")?.addEventListener("click", () => {
+    openAddressBookEditDialog(null);
+  });
+
+  document.getElementById("address-book-edit-cancel-btn")?.addEventListener("click", () => {
+    document.getElementById("address-book-edit-dialog")?.close();
+  });
+
+  document.getElementById("address-book-edit-dialog")?.addEventListener("cancel", (e) => {
+    // Escキーでの終了はキャンセル扱い(入力内容は破棄してよい)
+  });
+
+  // QRコード読み取り(カメラ) — qrScanner.jsのアドレス専用スキャナをそのまま利用
+  // (Symbol Wallet形式・EXYM Wallet形式のアドレスQRに対応済み)
+  document.getElementById("address-book-edit-qr-btn")?.addEventListener("click", () => {
+    setStatus("address-book-edit-status", "", "default");
+    W.qrScanner?.openQrScanModal({
+      onAddress: (address) => {
+        document.getElementById("address-book-edit-address-input").value = address;
+        setStatus("address-book-edit-status", "✅ QRコードからアドレスを読み取りました。", "success");
+      },
+      onError: () => {
+        setStatus("address-book-edit-status", "カメラを起動できませんでした。カメラへのアクセスを許可してください。", "error");
+      },
+    });
+  });
+
+  // QRコード読み取り(画像ファイル)
+  const addressBookQrFileInput = document.getElementById("address-book-edit-qr-file-input");
+  document.getElementById("address-book-edit-qr-file-btn")?.addEventListener("click", () => {
+    addressBookQrFileInput?.click();
+  });
+  addressBookQrFileInput?.addEventListener("change", async () => {
+    const file = addressBookQrFileInput.files?.[0];
+    addressBookQrFileInput.value = "";
+    if (!file) return;
+
+    setStatus("address-book-edit-status", "画像を解析しています...");
+    try {
+      const text = await W.qrScanner.decodeQrFromImageFile(file);
+      if (!text) {
+        setStatus("address-book-edit-status", "画像からQRコードを読み取れませんでした。", "error");
+        return;
+      }
+      const address = await W.qrScanner.parseAddressFromQrText(text);
+      if (!address) {
+        setStatus("address-book-edit-status", "対応形式のアドレスQRコードが見つかりませんでした。", "error");
+        return;
+      }
+      document.getElementById("address-book-edit-address-input").value = address;
+      setStatus("address-book-edit-status", "✅ QRコードからアドレスを読み取りました。", "success");
+    } catch (e) {
+      console.error("addressBook decodeQrFromImageFile error:", e);
+      setStatus("address-book-edit-status", e.message || "画像の読み込みに失敗しました。", "error");
+    }
+  });
+
+  document.getElementById("address-book-edit-save-btn")?.addEventListener("click", () => {
+    const label = document.getElementById("address-book-edit-label-input").value;
+    const address = document.getElementById("address-book-edit-address-input").value;
+
+    try {
+      upsertAddressBookEntry({ id: addressBookEditingId, label, address });
+      document.getElementById("address-book-edit-dialog")?.close();
+      renderAddressBookList();
+      showPopup("アドレス帳を保存しました");
+    } catch (e) {
+      setStatus("address-book-edit-status", e.message || "保存に失敗しました。", "error");
+    }
+  });
+
+  // 一覧側の操作(コピー/編集/削除)
+  document.getElementById("address-book-list")?.addEventListener("click", (e) => {
+    const copyBtn = e.target.closest('[data-action="copy"]');
+    if (copyBtn) {
+      const entry = getAddressBook().find((a) => a.id === copyBtn.dataset.id);
+      if (entry) {
+        navigator.clipboard.writeText(entry.address);
+        showPopup("アドレスをコピーしました");
+      }
+      return;
+    }
+
+    const editBtn = e.target.closest('[data-action="edit"]');
+    if (editBtn) {
+      const entry = getAddressBook().find((a) => a.id === editBtn.dataset.id);
+      if (entry) openAddressBookEditDialog(entry);
+      return;
+    }
+
+    const deleteBtn = e.target.closest('[data-action="delete"]');
+    if (deleteBtn) {
+      if (!confirm("このアドレスをアドレス帳から削除します。よろしいですか？")) return;
+      deleteAddressBookEntry(deleteBtn.dataset.id);
+      renderAddressBookList();
+    }
+  });
+
+  // ============================
+  // アカウントの状態をセーブ(QRコード化)
+  // 現在のログイン用QRコード(バックアップと同じ仕組み)に、アカウント名と
+  // アドレス帳の内容を平文フィールドとして追加して埋め込む。
+  // ============================
+  let stateSavePrivateKeyDataUrl = null;
+  let stateSaveMnemonicDataUrl = null;
+
+  function resetStateSaveUI() {
+    stateSavePrivateKeyDataUrl = null;
+    stateSaveMnemonicDataUrl = null;
+    const pwInput = document.getElementById("state-save-password-input");
+    if (pwInput) pwInput.value = "";
+    setStatus("state-save-password-status", "", "default");
+    setStatus("state-save-status", "", "default");
+    document.getElementById("state-save-result").style.display = "none";
+    document.getElementById("state-save-privatekey-image").textContent = "---";
+    document.getElementById("state-save-mnemonic-image").textContent = "---";
+  }
+
+  document.getElementById("state-save-btn")?.addEventListener("click", () => {
+    resetStateSaveUI();
+    const canUse = canUseBackupFeature();
+    document.getElementById("state-save-no-password-notice").style.display = canUse ? "none" : "block";
+    document.getElementById("state-save-password-step").style.display = canUse ? "block" : "none";
+    showPage(stateSavePage);
+  });
+
+  document.getElementById("back-state-save")?.addEventListener("click", () => {
+    resetStateSaveUI();
+    showPage(accountPage);
+  });
+
+  document.getElementById("state-save-goto-password-setup-btn")?.addEventListener("click", () => {
+    showPage(passwordSetupPage);
+  });
+
+  document.getElementById("state-save-password-confirm-btn")?.addEventListener("click", async () => {
+    const pw = document.getElementById("state-save-password-input").value;
+    if (!pw) {
+      setStatus("state-save-password-status", "パスワードを入力してください。", "error");
+      return;
+    }
+
+    const account = appState.accounts.find((a) => a.id === appState.activeAccountId);
+    if (!account) {
+      setStatus("state-save-password-status", "アカウント情報が見つかりません。", "error");
+      return;
+    }
+    if (account.source === "sss") {
+      setStatus("state-save-password-status", "SSS Extension接続のアカウントではこの機能は使用できません。", "error");
+      return;
+    }
+
+    setStatus("state-save-password-status", "確認中...");
+
+    try {
+      // なりすまし防止のため、バックアップ表示と同様にパスワードを確認する
+      // (アカウントの切り替えやログイン状態には一切影響しない)
+      await verifyVaultPassword(pw);
+    } catch (e) {
+      console.error("state-save verifyVaultPassword error:", e);
+      setStatus("state-save-password-status", e.message || "パスワードが正しくありません。", "error");
+      return;
+    }
+
+    try {
+      await ensureQrLibsLoaded();
+    } catch (e) {
+      console.error("ensureQrLibsLoaded error:", e);
+      setStatus(
+        "state-save-password-status",
+        "QRコード生成用ライブラリの読み込みに失敗しました。通信環境をご確認のうえ、再度お試しください。",
+        "error"
+      );
+      return;
+    }
+
+    setStatus("state-save-password-status", "", "default");
+    document.getElementById("state-save-result").style.display = "block";
+
+    const address = appState.currentAddress.toString();
+    const addressBookPlain = exportAddressBookPlain();
+
+    // 秘密鍵版(SSS以外の全アカウント種別で作成可能)
+    const pkImgEl = document.getElementById("state-save-privatekey-image");
+    pkImgEl.textContent = "生成中...";
+    try {
+      const privateKeyHex = getPrivateKeyForAccount(account);
+      const payload = await W.qrLogin.buildQrLoginPayload(privateKeyHex, address, pw, "privateKey");
+      payload.accountLabel = account.label;
+      payload.addressBook = addressBookPlain;
+
+      stateSavePrivateKeyDataUrl = await QRCode.toDataURL(JSON.stringify(payload), { width: 220, margin: 4 });
+      pkImgEl.innerHTML = `<img src="${stateSavePrivateKeyDataUrl}" alt="アカウント状態QR(秘密鍵版)" style="max-width:100%;">`;
+    } catch (e) {
+      console.error("state-save(秘密鍵版) error:", e);
+      pkImgEl.textContent = "QRコードの生成に失敗しました。";
+    }
+
+    // ニーモニック版(ニーモニック由来のアカウントで、かつ今のセッション中に
+    // ニーモニックが取得できる場合のみ作成する)
+    const mnemonicImgEl = document.getElementById("state-save-mnemonic-image");
+    if (account.source !== "mnemonic") {
+      mnemonicImgEl.textContent = "このアカウントはニーモニック由来ではないため、ニーモニック版は作成できません。";
+    } else {
+      mnemonicImgEl.textContent = "生成中...";
+      try {
+        const mnemonicPhrase = await getVerifiedMnemonicForAccount(account);
+        const mnemonicPayload = await W.qrLogin.buildQrLoginPayload(
+          mnemonicPhrase,
+          address,
+          pw,
+          "mnemonic",
+          { accountIndex: account.accountIndex ?? 0 }
+        );
+        mnemonicPayload.accountLabel = account.label;
+        mnemonicPayload.addressBook = addressBookPlain;
+
+        stateSaveMnemonicDataUrl = await QRCode.toDataURL(JSON.stringify(mnemonicPayload), { width: 220, margin: 4 });
+        mnemonicImgEl.innerHTML = `<img src="${stateSaveMnemonicDataUrl}" alt="アカウント状態QR(ニーモニック版)" style="max-width:100%;">`;
+      } catch (e) {
+        console.warn("state-save(ニーモニック版) スキップ理由:", e);
+        mnemonicImgEl.textContent = e.message || "ニーモニック版QRコードの生成に失敗しました。";
+      }
+    }
+
+    document.getElementById("state-save-password-input").value = "";
+  });
+
+  document.getElementById("state-save-privatekey-download-btn")?.addEventListener("click", () => {
+    if (!stateSavePrivateKeyDataUrl) {
+      setStatus("state-save-status", "QRコードがまだ生成されていません。", "error");
+      return;
+    }
+    const address = appState.currentAddress?.toString() || "account";
+    const a = document.createElement("a");
+    a.href = stateSavePrivateKeyDataUrl;
+    a.download = `symbol-account-state-privatekey-${address}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showPopup("QRコードをダウンロードしました");
+  });
+
+  document.getElementById("state-save-mnemonic-download-btn")?.addEventListener("click", () => {
+    if (!stateSaveMnemonicDataUrl) {
+      setStatus("state-save-status", "QRコードがまだ生成されていません。", "error");
+      return;
+    }
+    const address = appState.currentAddress?.toString() || "account";
+    const a = document.createElement("a");
+    a.href = stateSaveMnemonicDataUrl;
+    a.download = `symbol-account-state-mnemonic-${address}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showPopup("QRコードをダウンロードしました");
   });
 
   document.getElementById("menu-namespace")?.addEventListener("click", async () => {
