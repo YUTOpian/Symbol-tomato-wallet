@@ -1205,6 +1205,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
         let feeText = "---";
         let nodeRewardText = null;
         let nodeRewardLabel = null;
+        let nodeRewardGoesToSelf = false;
 
         let feeIsZero = false;
         try {
@@ -1314,9 +1315,11 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
               beneficiaryAddress === myAddress
                 ? "ノード報酬(自分のノードのbeneficiary取り分)"
                 : "ノード報酬(委任先ノードの取り分・自分には入りません)";
+            nodeRewardGoesToSelf = beneficiaryAddress === myAddress;
           } else if (item.__harvestKind === "node") {
             nodeRewardText = toText(0n);
             nodeRewardLabel = "ノード報酬(委任先ノードの取り分・自分には入りません)";
+            nodeRewardGoesToSelf = false;
           }
         } catch (e) {
           console.warn("ハーベスト報酬レシート取得失敗:", height, e);
@@ -1326,7 +1329,7 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
           ? Number(appState.epochAdjustment) * 1000 + Number(item.block.timestamp)
           : null;
 
-        return { height, totalText, inflationText, feeText, feeIsZero, nodeRewardText, nodeRewardLabel, timeMs, kind: item.__harvestKind };
+        return { height, totalText, inflationText, feeText, feeIsZero, nodeRewardText, nodeRewardLabel, nodeRewardGoesToSelf, timeMs, kind: item.__harvestKind };
       })
     );
 
@@ -1345,7 +1348,9 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
         if (!r.feeIsZero) {
           cards.push(rewardCardHtml("トランザクション手数料報酬", r.feeText, r));
         }
-        if (r.nodeRewardText) {
+        // 委任先ノードの取り分(自分には入らない報酬)は表示しない。
+        // 自分のノードのbeneficiary取り分(=実際に自分の残高に反映される分)のみ表示する。
+        if (r.nodeRewardText && r.nodeRewardGoesToSelf) {
           cards.push(rewardCardHtml(r.nodeRewardLabel, r.nodeRewardText, r));
         }
         return cards;
