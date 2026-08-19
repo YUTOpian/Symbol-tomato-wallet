@@ -98,7 +98,6 @@ const {loadAccountRestrictions,
   OPERATION_TYPE_OPTIONS,
   MOSAIC_RESTRICTION_TYPE_OPTIONS,} = W.restriction;
 const {validateOfflineTxJson,
-  broadcastOfflineTx,
   checkAlreadyBroadcastStatus,
   getPageIdForKind,} = W.offline;
 
@@ -173,7 +172,6 @@ window.addEventListener("load", async () => {
   const restrictionMenuPage = document.getElementById("restriction-menu-page");
   const restrictionAccountPage = document.getElementById("restriction-account-page");
   const restrictionMosaicdefPage = document.getElementById("restriction-mosaicdef-page");
-  const offlineBroadcastPage = document.getElementById("offline-broadcast-page");
 
   // ============================
   // ページ切替
@@ -2641,16 +2639,12 @@ window.addEventListener("load", async () => {
       }
     }
 
-    // トランザクションの種類に応じて適切な画面へ遷移する
-    // (対応する画面が無い/未ログインの場合は汎用アナウンス画面にフォールバック)
+    // 種類に対応する画面があれば、確認後の見た目が自然になるよう遷移しておく
+    // (確認ダイアログ自体はモーダル表示なので、遷移しなくても動作はする)
     const targetPageId = appState.currentAddress ? getPageIdForKind(json.kind) : null;
     const targetPage = targetPageId ? document.getElementById(targetPageId) : null;
-
     if (targetPage) {
       showPage(targetPage);
-    } else {
-      openOfflineBroadcastPage();
-      return;
     }
 
     // いつもの確認画面(オフラインボタンは表示しない)を出し、確認後にアナウンスする
@@ -2670,147 +2664,89 @@ window.addEventListener("load", async () => {
   });
 
   // ============================
-  // オフライン署名データの読み込み・ブロードキャスト(ログイン不要)
+  // オフライン署名データの読み込み・ブロードキャスト(ようこそ画面・ログイン不要)
+  // 画面遷移は行わず、ファイルを選んだらその場で確認ポップアップを表示し、
+  // ブロードキャストが完了したらボタン直下に追跡カードを表示する。
+  // この追跡カードは「tx-tracking」のようにlocalStorageへ永続化する対象では
+  // ないため、ページを離れる/リロードすると消える(仕様通り)。
   // ============================
-  let offlineBroadcastJson = null;
+  document.getElementById("welcome-offline-broadcast-btn")?.addEventListener("click", () => {
+    document.getElementById("welcome-offline-broadcast-file-input")?.click();
+  });
 
-  function openOfflineBroadcastPage() {
-    offlineBroadcastJson = null;
-    document.getElementById("offline-broadcast-file").value = "";
-    document.getElementById("offline-broadcast-preview").style.display = "none";
-    setStatus("offline-broadcast-status", "", "default");
-    showPage(offlineBroadcastPage);
-  }
-
-  document.getElementById("welcome-offline-broadcast-btn")?.addEventListener("click", openOfflineBroadcastPage);
-
-  document.getElementById("offline-broadcast-file")?.addEventListener("change", async e => {
+  document.getElementById("welcome-offline-broadcast-file-input")?.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
+    e.target.value = ""; // 同じファイルを連続で選び直しても change が発火するようにする
     if (!file) return;
 
-    const nodeInput = document.getElementById("offline-broadcast-node");
+    setStatus("welcome-offline-broadcast-status", "ファイルを読み込んでいます...");
 
     let json;
     try {
       const text = await file.text();
       json = validateOfflineTxJson(JSON.parse(text));
-      offlineBroadcastJson = json;
     } catch (err) {
-      console.error("offline broadcast file parse error:", err);
-      offlineBroadcastJson = null;
-      document.getElementById("offline-broadcast-preview").style.display = "none";
-      setStatus("offline-broadcast-status", err.message || "ファイルの読み込みに失敗しました。", "error");
+      console.error("welcome offline broadcast parse error:", err);
+      setStatus("welcome-offline-broadcast-status", err.message || "ファイルの読み込みに失敗しました。", "error");
       return;
     }
 
-    document.getElementById("offline-broadcast-network").textContent = json.network ?? "---";
-    document.getElementById("offline-broadcast-type").textContent = json.typeLabel ?? "---";
-    document.getElementById("offline-broadcast-hash").textContent = json.hash ?? "---";
-    document.getElementById("offline-broadcast-signer").textContent = json.signerPublicKey ?? "---";
-    document.getElementById("offline-broadcast-preview").style.display = "block";
-    setStatus("offline-broadcast-status", "ノードを自動選択中...", "default");
-
     const isTestnet = json.network === "TEST_NET";
-    const submitBtn = document.getElementById("offline-broadcast-submit");
-    if (submitBtn) submitBtn.disabled = false;
 
+    setStatus("welcome-offline-broadcast-status", "ノードに接続中...");
     let nodeUrl;
     try {
       nodeUrl = await selectNode(isTestnet);
-      nodeInput.value = nodeUrl;
-      setStatus("offline-broadcast-status", "既に送信済みでないか確認中...", "default");
+    } catch (err) {
+      console.error("welcome offline broadcast node select error:", err);
+      setStatus("welcome-offline-broadcast-status", "ノードへの接続に失敗しました。時間をおいて再度お試しください。", "error");
+      return;
+    }
 
+    try {
       const existingStatus = await checkAlreadyBroadcastStatus(json.hash, nodeUrl);
       if (existingStatus === "confirmed" || existingStatus === "unconfirmed") {
-        alert("署名済みです。このトランザクションは既にブロックチェーンへ送信・承認済みのため読み込めません。");
         setStatus(
-          "offline-broadcast-status",
-          `❌ 既に送信済みです（状態: ${existingStatus}）。二重送信になるためブロードキャストできません。`,
+          "welcome-offline-broadcast-status",
+          `❌ このトランザクションは既にブロックチェーンへ送信・承認済みです（状態: ${existingStatus}）。`,
           "error"
         );
-        if (submitBtn) submitBtn.disabled = true;
         return;
       }
-    } catch (nodeErr) {
-      // ノードが自動選択できない場合は、この画面のまま手動入力→手動送信フローに留まる
-      console.warn("ノード自動選択に失敗しました。手動で入力してください。", nodeErr);
-      setStatus("offline-broadcast-status", "ノードの自動選択に失敗しました。手動で入力してください。", "error");
-      return;
+    } catch (err) {
+      console.warn("事前確認に失敗しました。続行します。", err);
     }
 
-    // ------------------------------------------------------------
-    // ログイン中の「オフライン署名データを読み込む」と同様に、
-    // 種類(kind)に応じた適切な画面へ遷移し、共通の確認ダイアログを
-    // 経てアナウンスする(対応する画面が無い場合のみ、この汎用画面で
-    // 手動ブロードキャストするフローに留まる)
-    // ------------------------------------------------------------
-    const targetPageId = getPageIdForKind(json.kind);
-    const targetPage = targetPageId ? document.getElementById(targetPageId) : null;
-
-    if (!targetPage) {
-      setStatus("offline-broadcast-status", "ノードを自動選択しました。必要であれば変更できます。", "success");
-      return;
-    }
-
+    // アナウンスにはappState.NODEを使う(ログイン不要のため、ここで一時的に設定する)
     appState.NODE = nodeUrl;
-    showPage(targetPage);
+    setStatus("welcome-offline-broadcast-status", "", "default");
 
     try {
       const hash = await announceOfflineTx(json);
+      setStatus("welcome-offline-broadcast-status", "", "default");
       showPopup("✅ ノードへ送信しました");
+
+      // 送金であれば「モザイク」「数量」の内容を追跡カードにも表示する
+      const mosaicDetail = json.details?.find((d) => d.label === "モザイク");
+      const amountDetail = json.details?.find((d) => d.label === "数量");
+      const mosaicLabel = mosaicDetail ? mosaicDetail.value.replace(/\s*\([0-9A-Fa-f]+\)\s*$/, "") : "";
+      const amountText = amountDetail ? `${amountDetail.value} 数量` : "";
+
       trackOutgoingTransaction({
         hash,
+        containerId: "welcome-offline-tx-tracking",
         label: `${json.typeLabel || "オフライントランザクション"}の追跡`,
         recipient: json.recipient,
+        mosaicLabel,
+        amountText,
       });
-      offlineBroadcastJson = null;
     } catch (err) {
       if (err?.cancelled) {
-        showPage(offlineBroadcastPage);
-        setStatus("offline-broadcast-status", "キャンセルしました。", "default");
+        setStatus("welcome-offline-broadcast-status", "キャンセルしました。", "default");
         return;
       }
-      console.error("announceOfflineTx error:", err);
-      showPage(offlineBroadcastPage);
-      setStatus("offline-broadcast-status", err.message || "アナウンスに失敗しました。", "error");
-    }
-  });
-
-  document.getElementById("offline-broadcast-submit")?.addEventListener("click", async () => {
-    const nodeUrl = document.getElementById("offline-broadcast-node").value.trim();
-
-    if (!offlineBroadcastJson) {
-      setStatus("offline-broadcast-status", "ファイルを選択してください。", "error");
-      return;
-    }
-    if (!nodeUrl) {
-      setStatus("offline-broadcast-status", "ノードURLを入力してください。", "error");
-      return;
-    }
-
-    setStatus("offline-broadcast-status", "既に送信済みでないか再確認中...");
-    try {
-      const existingStatus = await checkAlreadyBroadcastStatus(offlineBroadcastJson.hash, nodeUrl);
-      if (existingStatus === "confirmed" || existingStatus === "unconfirmed") {
-        alert("署名済みです。このトランザクションは既にブロックチェーンへ送信・承認済みのため読み込めません。");
-        setStatus(
-          "offline-broadcast-status",
-          `❌ 既に送信済みです（状態: ${existingStatus}）。二重送信になるためブロードキャストできません。`,
-          "error"
-        );
-        return;
-      }
-    } catch (e) {
-      console.warn("事前確認に失敗しました。続行します。", e);
-    }
-
-    setStatus("offline-broadcast-status", "アナウンス中...");
-    try {
-      await broadcastOfflineTx(offlineBroadcastJson, nodeUrl);
-      setStatus("offline-broadcast-status", `✅ ノードへ送信しました。Hash: ${offlineBroadcastJson.hash}`, "success");
-    } catch (e) {
-      console.error("broadcastOfflineTx error:", e);
-      setStatus("offline-broadcast-status", e.message || "アナウンスに失敗しました。", "error");
+      console.error("welcome announceOfflineTx error:", err);
+      setStatus("welcome-offline-broadcast-status", err.message || "アナウンスに失敗しました。", "error");
     }
   });
 
@@ -3763,7 +3699,6 @@ window.addEventListener("load", async () => {
   document.getElementById("back-advanced-restriction-menu")?.addEventListener("click", () => showPage(advancedPage));
   document.getElementById("back-restriction-menu-account")?.addEventListener("click", () => showPage(restrictionMenuPage));
   document.getElementById("back-restriction-menu-mosaic-top")?.addEventListener("click", () => showPage(restrictionMenuPage));
-  document.getElementById("back-offline-broadcast")?.addEventListener("click", () => showPage(welcomePage));
 
   // ============================
   // タブ切替
