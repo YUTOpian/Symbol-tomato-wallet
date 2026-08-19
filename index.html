@@ -303,7 +303,6 @@
         <button id="advanced-btn" class="button-primary">高度機能</button>
         <button id="data-btn" class="button-primary">📊 データ・分析</button>
         <button id="address-book-btn" class="button-primary">📖 アドレス帳</button>
-        <button id="state-save-btn" class="button-primary">💾 セーブ</button>
       </div>
 
       <hr>
@@ -364,10 +363,14 @@
 
   <!-- ============================================================
        アカウントの状態をセーブ(QRコード化)
-       アカウント名・アドレス帳の内容を、ログイン用QRコード(秘密鍵版/
-       ニーモニック版)にあわせて埋め込む。読み込むとログインできるうえ、
-       アカウント名・アドレス帳も復元される(アカウント作成時に作った
-       QRコードを、より新しい内容で上書きするようなイメージ)。
+       アカウント名・アドレス帳の内容を、ログイン用データ(秘密鍵版/
+       ニーモニック版)にあわせてJSONファイルとして書き出す。読み込むと
+       ログインできるうえ、アカウント名・アドレス帳も復元される
+       (アカウント作成時に作ったQRコードを、より新しい内容で
+       上書きするようなイメージ)。
+       ※ QRコードだとアドレス帳の件数によっては容量オーバーで読み取れなく
+       なる場合があるため、こちらはJSONファイルでの保存/読み込みにしている。
+       (ログインそのものは、引き続き「QRコードでログイン」機能を使う)
   ============================================================ -->
   <div id="state-save-page" class="page">
     <div class="card">
@@ -376,10 +379,11 @@
 
       <p style="font-size:13px;color:#94a3b8;">
         現在のログイン情報(秘密鍵/ニーモニック)に、アカウント名とアドレス帳の
-        内容をあわせてQRコードに保存します。このQRコードとパスワードがあれば、
-        別の端末でもこのアカウントにログインでき、アカウント名・アドレス帳も
-        復元されます(読み込んだ端末のアドレス帳は、このQRコードの内容で
-        上書きされます)。
+        内容をあわせてJSONファイルに保存します。このファイルとパスワードが
+        あれば、別の端末でもこのアカウントの状態を復旧でき(設定画面の
+        「アカウントの状態をロード」から読み込みます)、アカウント名・
+        アドレス帳も復元されます(読み込んだ端末のアドレス帳は、このファイルの
+        内容で上書きされます)。
       </p>
       <p style="font-size:12px;color:#f97316;">
         ⚠️ ニーモニックや秘密鍵と同じく、資産へのアクセスそのものです。
@@ -398,22 +402,22 @@
       <div id="state-save-password-step" style="display:none;margin-top:16px;">
         <label style="font-size:13px;color:#94a3b8;">パスワードを入力してください</label>
         <input id="state-save-password-input" class="input-box" type="password" placeholder="パスワード">
-        <button id="state-save-password-confirm-btn" class="button-primary" style="margin-top:10px;">確認してQRコードを生成</button>
+        <button id="state-save-password-confirm-btn" class="button-primary" style="margin-top:10px;">確認してJSONファイルを生成</button>
         <div id="state-save-password-status" style="font-size:12px;margin-top:6px;"></div>
       </div>
 
       <!-- 生成結果 -->
       <div id="state-save-result" style="display:none;margin-top:16px;">
         <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
-          <div style="flex:1;min-width:200px;text-align:center;">
+          <div style="flex:1;min-width:200px;">
             <div style="font-weight:bold;margin-bottom:6px;">ニーモニック版</div>
-            <div id="state-save-mnemonic-image" style="min-height:40px;">---</div>
-            <button id="state-save-mnemonic-download-btn" class="account-hide-btn" type="button" style="margin-top:8px;">💾 ダウンロード</button>
+            <div id="state-save-mnemonic-status" style="font-size:13px;color:#94a3b8;min-height:20px;">---</div>
+            <button id="state-save-mnemonic-download-btn" class="account-hide-btn" type="button" style="margin-top:8px;" disabled>💾 JSONファイルをダウンロード</button>
           </div>
-          <div style="flex:1;min-width:200px;text-align:center;">
+          <div style="flex:1;min-width:200px;">
             <div style="font-weight:bold;margin-bottom:6px;">秘密鍵版</div>
-            <div id="state-save-privatekey-image" style="min-height:40px;">---</div>
-            <button id="state-save-privatekey-download-btn" class="account-hide-btn" type="button" style="margin-top:8px;">💾 ダウンロード</button>
+            <div id="state-save-privatekey-status" style="font-size:13px;color:#94a3b8;min-height:20px;">---</div>
+            <button id="state-save-privatekey-download-btn" class="account-hide-btn" type="button" style="margin-top:8px;" disabled>💾 JSONファイルをダウンロード</button>
           </div>
         </div>
       </div>
@@ -568,6 +572,14 @@
         <button id="menu-backup" class="settings-menu-item">
           🗝️ バックアップ(ニーモニック・秘密鍵)
         </button>
+        <button id="menu-state-save" class="settings-menu-item">
+          💾 アカウント状態をセーブ
+        </button>
+        <button id="menu-state-load" class="settings-menu-item">
+          📥 アカウント状態をロード
+        </button>
+        <input type="file" id="state-load-file-input" accept="application/json,.json" style="display:none;">
+        <div id="account-state-status" style="font-size:12px;margin-top:4px;"></div>
         <button id="logout-btn" class="settings-menu-item">
           🚪 ログアウト
         </button>
@@ -1879,9 +1891,9 @@
 ============================================================ -->
 <dialog id="qr-login-password-dialog">
   <div class="card">
-    <h2>QRコードのパスワード</h2>
+    <h2 id="qr-login-password-title">QRコードのパスワード</h2>
     <p id="qr-login-password-address" style="font-size:12px;color:#94a3b8;word-break:break-all;"></p>
-    <p style="font-size:13px;color:#94a3b8;">
+    <p id="qr-login-password-desc" style="font-size:13px;color:#94a3b8;">
       このQRコードを作成したときに設定したパスワードを入力してください。
     </p>
 
