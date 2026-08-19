@@ -1280,7 +1280,6 @@ window.addEventListener("load", async () => {
     setDataPageAccountSectionMode(false);
     showPage(dataPage);
     loadDataPage();
-    loadXymMonthlyReturns();
   });
 
   document.getElementById("welcome-data-btn")?.addEventListener("click", async () => {
@@ -1331,36 +1330,6 @@ window.addEventListener("load", async () => {
     setDataPageAccountSectionMode(true);
     showPage(dataPage);
     loadDataPage();
-    loadXymMonthlyReturns();
-  });
-
-  // ============================
-  // XYM 月次のリターン (%)
-  // ============================
-  let xymMonthlyReturnsCurrency = "jpy";
-
-  function updateXymMonthlyReturnsCurrencyButtons() {
-    const jpyBtn = document.getElementById("xym-monthly-returns-jpy-btn");
-    const usdBtn = document.getElementById("xym-monthly-returns-usd-btn");
-    if (jpyBtn) jpyBtn.style.opacity = xymMonthlyReturnsCurrency === "jpy" ? "1" : "0.5";
-    if (usdBtn) usdBtn.style.opacity = xymMonthlyReturnsCurrency === "usd" ? "1" : "0.5";
-  }
-
-  function loadXymMonthlyReturns() {
-    updateXymMonthlyReturnsCurrencyButtons();
-    W.xymMonthlyReturns?.loadXymMonthlyReturnsTable(xymMonthlyReturnsCurrency);
-  }
-
-  document.getElementById("xym-monthly-returns-jpy-btn")?.addEventListener("click", () => {
-    if (xymMonthlyReturnsCurrency === "jpy") return;
-    xymMonthlyReturnsCurrency = "jpy";
-    loadXymMonthlyReturns();
-  });
-
-  document.getElementById("xym-monthly-returns-usd-btn")?.addEventListener("click", () => {
-    if (xymMonthlyReturnsCurrency === "usd") return;
-    xymMonthlyReturnsCurrency = "usd";
-    loadXymMonthlyReturns();
   });
 
   document.getElementById("onchain-analysis-run-rolling-btn")?.addEventListener("click", () => {
