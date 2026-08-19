@@ -302,6 +302,8 @@
         <button id="send-btn" class="button-primary">送金</button>
         <button id="advanced-btn" class="button-primary">高度機能</button>
         <button id="data-btn" class="button-primary">📊 データ・分析</button>
+        <button id="address-book-btn" class="button-primary">📖 アドレス帳</button>
+        <button id="state-save-btn" class="button-primary">💾 セーブ</button>
       </div>
 
       <hr>
@@ -334,6 +336,89 @@
       <div id="harvest-reward-content" style="display:none;">
         <div id="harvest-reward-list">読み込み中...</div>
       </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       アドレス帳画面
+       アドレスとラベルの一覧・追加・編集・削除・コピー。
+       手入力のほか、Symbol Wallet/EXYM Wallet形式のQRコード読み取りにも対応。
+  ============================================================ -->
+  <div id="address-book-page" class="page">
+    <div class="card">
+      <h2>📖 アドレス帳</h2>
+      <button id="back-address-book" class="button-primary">← 戻る</button>
+
+      <p style="font-size:13px;color:#94a3b8;">
+        よく使うアドレスをラベル付きで保存しておけます。この端末に保存され、
+        「アカウントの状態をセーブ」からQRコードに含めることもできます。
+      </p>
+
+      <div id="address-book-list">読み込み中...</div>
+
+      <hr>
+
+      <button id="address-book-add-btn" class="button-primary">＋ アドレスを追加</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       アカウントの状態をセーブ(QRコード化)
+       アカウント名・アドレス帳の内容を、ログイン用QRコード(秘密鍵版/
+       ニーモニック版)にあわせて埋め込む。読み込むとログインできるうえ、
+       アカウント名・アドレス帳も復元される(アカウント作成時に作った
+       QRコードを、より新しい内容で上書きするようなイメージ)。
+  ============================================================ -->
+  <div id="state-save-page" class="page">
+    <div class="card">
+      <h2>💾 アカウントの状態をセーブ</h2>
+      <button id="back-state-save" class="button-primary">← 戻る</button>
+
+      <p style="font-size:13px;color:#94a3b8;">
+        現在のログイン情報(秘密鍵/ニーモニック)に、アカウント名とアドレス帳の
+        内容をあわせてQRコードに保存します。このQRコードとパスワードがあれば、
+        別の端末でもこのアカウントにログインでき、アカウント名・アドレス帳も
+        復元されます(読み込んだ端末のアドレス帳は、このQRコードの内容で
+        上書きされます)。
+      </p>
+      <p style="font-size:12px;color:#f97316;">
+        ⚠️ ニーモニックや秘密鍵と同じく、資産へのアクセスそのものです。
+        安全な場所に保管し、第三者に見られないようにしてください。
+      </p>
+
+      <!-- パスワード未設定の場合の案内 -->
+      <div id="state-save-no-password-notice" style="display:none;margin-top:16px;">
+        <p style="font-size:13px;color:#94a3b8;">
+          この機能を使うには、なりすまし防止のため先にパスワードを設定する必要があります。
+        </p>
+        <button id="state-save-goto-password-setup-btn" class="button-primary">パスワードを設定する</button>
+      </div>
+
+      <!-- パスワード確認 -->
+      <div id="state-save-password-step" style="display:none;margin-top:16px;">
+        <label style="font-size:13px;color:#94a3b8;">パスワードを入力してください</label>
+        <input id="state-save-password-input" class="input-box" type="password" placeholder="パスワード">
+        <button id="state-save-password-confirm-btn" class="button-primary" style="margin-top:10px;">確認してQRコードを生成</button>
+        <div id="state-save-password-status" style="font-size:12px;margin-top:6px;"></div>
+      </div>
+
+      <!-- 生成結果 -->
+      <div id="state-save-result" style="display:none;margin-top:16px;">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
+          <div style="flex:1;min-width:200px;text-align:center;">
+            <div style="font-weight:bold;margin-bottom:6px;">ニーモニック版</div>
+            <div id="state-save-mnemonic-image" style="min-height:40px;">---</div>
+            <button id="state-save-mnemonic-download-btn" class="account-hide-btn" type="button" style="margin-top:8px;">💾 ダウンロード</button>
+          </div>
+          <div style="flex:1;min-width:200px;text-align:center;">
+            <div style="font-weight:bold;margin-bottom:6px;">秘密鍵版</div>
+            <div id="state-save-privatekey-image" style="min-height:40px;">---</div>
+            <button id="state-save-privatekey-download-btn" class="account-hide-btn" type="button" style="margin-top:8px;">💾 ダウンロード</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="state-save-status" style="margin-top:10px;"></div>
     </div>
   </div>
 
@@ -1739,6 +1824,34 @@
 </div>
 
 <!-- ============================================================
+     アドレス帳: 追加/編集ダイアログ
+============================================================ -->
+<dialog id="address-book-edit-dialog">
+  <div class="card">
+    <h2 id="address-book-edit-title">アドレスを追加</h2>
+
+    <label style="font-size:13px;color:#94a3b8;">ラベル</label>
+    <input id="address-book-edit-label-input" class="input-box" placeholder="例: 取引所の入金アドレス">
+
+    <label style="font-size:13px;color:#94a3b8;">アドレス</label>
+    <input id="address-book-edit-address-input" class="input-box" placeholder="NXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX">
+
+    <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+      <button id="address-book-edit-qr-btn" class="account-hide-btn" type="button">📷 QRコードを読み取る</button>
+      <button id="address-book-edit-qr-file-btn" class="account-hide-btn" type="button">🖼 QR画像を選択</button>
+    </div>
+    <input type="file" id="address-book-edit-qr-file-input" accept="image/*" style="display:none;">
+
+    <div id="address-book-edit-status" style="font-size:12px;margin-top:6px;"></div>
+
+    <div class="confirm-tx-actions">
+      <button id="address-book-edit-cancel-btn" class="account-hide-btn" type="button">キャンセル</button>
+      <button id="address-book-edit-save-btn" class="button-primary" type="button">保存</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ============================================================
      トランザクション確認ダイアログ(共通)
      送金・ネームスペース登録・モザイク作成・マルチシグ提案など、
      ノードへブロードキャストする直前に必ずこの画面を経由する。
@@ -1825,6 +1938,7 @@
 <script src="js/ws.js"></script>
 <script src="js/account.js"></script>
 <script src="js/accountSwitcher.js"></script>
+<script src="js/addressBook.js"></script>
 <script src="js/nodeSelector.js"></script>
 <script src="js/sdk.js"></script>
 <script src="js/transactions.js"></script>
