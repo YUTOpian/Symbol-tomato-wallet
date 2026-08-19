@@ -98,6 +98,9 @@
         オフラインで署名済みのトランザクションファイルをお持ちの場合は、こちらから読み込んでブロードキャストできます（ログイン不要）。
       </p>
       <button id="welcome-offline-broadcast-btn" class="button-primary">📥 オフライン署名データを読み込む</button>
+      <input type="file" id="welcome-offline-broadcast-file-input" accept=".json,application/json" style="display:none;">
+      <div id="welcome-offline-broadcast-status" style="font-size:12px;margin-top:6px;"></div>
+      <div id="welcome-offline-tx-tracking" style="margin-top:10px;"></div>
     </div>
   </div>
 
@@ -1798,40 +1801,10 @@
   </div>
 
   <!-- ============================================================
-       オフライン署名データの読み込み・ブロードキャスト(ログイン不要)
+       オフライン署名データの読み込み・ブロードキャストは、ようこそ画面の
+       「オフライン署名データを読み込む」ボタンから、画面遷移なしで直接
+       行うようにしたため、専用画面は廃止した。
   ============================================================ -->
-  <div id="offline-broadcast-page" class="page">
-    <div class="card">
-      <h2>オフライン署名データの読み込み</h2>
-      <button id="back-offline-broadcast" class="button-primary">← 戻る</button>
-
-      <p style="font-size:13px;color:#94a3b8;">
-        署名済みのJSONファイルを選択すると内容を確認できます。ここでは秘密鍵は一切扱わず、
-        ノードへの送信（ブロードキャスト）のみを行います。
-      </p>
-
-      <p><b>署名済みJSONファイル：</b></p>
-      <input id="offline-broadcast-file" class="input-box" type="file" accept=".json,application/json">
-
-      <div id="offline-broadcast-preview" style="display:none;">
-        <hr>
-        <h3>内容の確認</h3>
-        <div class="harvest-history-item">
-          <div>ネットワーク: <span id="offline-broadcast-network"></span></div>
-          <div>種類: <span id="offline-broadcast-type"></span></div>
-          <div>Hash: <span id="offline-broadcast-hash" style="word-break:break-all;"></span></div>
-          <div>署名者公開鍵: <span id="offline-broadcast-signer" style="word-break:break-all;"></span></div>
-        </div>
-
-        <p><b>ブロードキャスト先ノードURL：</b></p>
-        <input id="offline-broadcast-node" class="input-box" placeholder="例: https://xxx.xxx.jp:3001">
-
-        <button id="offline-broadcast-submit" class="button-primary">ノードへアナウンスする</button>
-      </div>
-
-      <div id="offline-broadcast-status"></div>
-    </div>
-  </div>
 
 </div>
 
