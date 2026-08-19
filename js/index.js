@@ -1579,7 +1579,11 @@ window.addEventListener("load", async () => {
       payload.accountLabel = account.label;
       payload.addressBook = addressBookPlain;
 
-      stateSavePrivateKeyDataUrl = await QRCode.toDataURL(JSON.stringify(payload), { width: 220, margin: 4 });
+      // アカウント名・アドレス帳の分だけ通常のログイン用QRコードよりデータ量が
+      // 多くなるため、width(固定ピクセル幅)ではなくscale(1モジュールあたりの
+      // ピクセル数)を指定する。widthのままだとデータ量が多いときにモジュールが
+      // 細かくなりすぎて読み取れなくなるため。
+      stateSavePrivateKeyDataUrl = await QRCode.toDataURL(JSON.stringify(payload), { scale: 6, margin: 4 });
       pkImgEl.innerHTML = `<img src="${stateSavePrivateKeyDataUrl}" alt="アカウント状態QR(秘密鍵版)" style="max-width:100%;">`;
     } catch (e) {
       console.error("state-save(秘密鍵版) error:", e);
@@ -1605,7 +1609,7 @@ window.addEventListener("load", async () => {
         mnemonicPayload.accountLabel = account.label;
         mnemonicPayload.addressBook = addressBookPlain;
 
-        stateSaveMnemonicDataUrl = await QRCode.toDataURL(JSON.stringify(mnemonicPayload), { width: 220, margin: 4 });
+        stateSaveMnemonicDataUrl = await QRCode.toDataURL(JSON.stringify(mnemonicPayload), { scale: 6, margin: 4 });
         mnemonicImgEl.innerHTML = `<img src="${stateSaveMnemonicDataUrl}" alt="アカウント状態QR(ニーモニック版)" style="max-width:100%;">`;
       } catch (e) {
         console.warn("state-save(ニーモニック版) スキップ理由:", e);
