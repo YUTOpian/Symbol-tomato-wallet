@@ -1069,6 +1069,10 @@ window.addEventListener("load", async () => {
         // アドレス帳はこのQRコードの内容で上書き(置き換え)する
         replaceAddressBook(payload.addressBook);
       }
+      if (Array.isArray(payload.addressLookupHistory)) {
+        // アドレス照会履歴もこのQRコードの内容で上書き(置き換え)する
+        saveAddressLookupHistory(payload.addressLookupHistory);
+      }
 
       // 今回入力したパスワードを、そのままこの端末の保存パスワードとしても使う
       await saveVault(password);
@@ -1430,8 +1434,9 @@ window.addEventListener("load", async () => {
   });
 
   document.getElementById("welcome-data-btn")?.addEventListener("click", async () => {
-    const isTestnet = document.getElementById("welcome-data-network-select")?.value === "testnet";
-    const desiredNetworkType = isTestnet ? NetworkType.TESTNET : NetworkType.MAINNET;
+    // ネットワーク(Mainnet/Testnet)は右上の設定(ネットワーク切り替え)で
+    // 選んだものをそのまま使う。まだ選ばれていなければMainnetを既定とする。
+    const desiredNetworkType = appState.networkType === NetworkType.TESTNET ? NetworkType.TESTNET : NetworkType.MAINNET;
 
     // ログインしていない状態でこのボタンが押されたときのみ、閲覧用に
     // ノード接続・SDK初期化(facade / epochAdjustment)を行う。
@@ -1462,7 +1467,7 @@ window.addEventListener("load", async () => {
     if (!canReuseExisting) {
       setStatus("welcome-data-status", "ノードに接続中...");
       try {
-        appState.NODE = await selectNode(isTestnet);
+        appState.NODE = await selectNode(desiredNetworkType === NetworkType.TESTNET);
         setStatus("welcome-data-status", "初期化中...");
         await initSdk();
       } catch (e) {
@@ -1723,6 +1728,7 @@ window.addEventListener("load", async () => {
 
     const address = appState.currentAddress.toString();
     const addressBookPlain = exportAddressBookPlain();
+    const addressLookupHistoryPlain = loadAddressLookupHistory();
 
     // 秘密鍵版(SSS以外の全アカウント種別で作成可能)
     const pkStatusEl = document.getElementById("state-save-privatekey-status");
@@ -1733,6 +1739,7 @@ window.addEventListener("load", async () => {
       const payload = await W.qrLogin.buildQrLoginPayload(privateKeyHex, address, pw, "privateKey");
       payload.accountLabel = account.label;
       payload.addressBook = addressBookPlain;
+      payload.addressLookupHistory = addressLookupHistoryPlain;
 
       stateSavePrivateKeyPayload = payload;
       pkStatusEl.textContent = "✅ 準備ができました。";
@@ -1761,6 +1768,7 @@ window.addEventListener("load", async () => {
         );
         mnemonicPayload.accountLabel = account.label;
         mnemonicPayload.addressBook = addressBookPlain;
+        mnemonicPayload.addressLookupHistory = addressLookupHistoryPlain;
 
         stateSaveMnemonicPayload = mnemonicPayload;
         mnemonicStatusEl.textContent = "✅ 準備ができました。";
@@ -1864,7 +1872,7 @@ window.addEventListener("load", async () => {
         });
       }
 
-      // 平文フィールドとして含まれる accountLabel / addressBook を復元する
+      // 平文フィールドとして含まれる accountLabel / addressBook / addressLookupHistory を復元する
       if (typeof payload.accountLabel === "string" && payload.accountLabel.trim()) {
         try {
           await renameAccount(appState.activeAccountId, payload.accountLabel);
@@ -1875,6 +1883,10 @@ window.addEventListener("load", async () => {
       if (Array.isArray(payload.addressBook)) {
         // アドレス帳はこのファイルの内容で上書き(置き換え)する
         replaceAddressBook(payload.addressBook);
+      }
+      if (Array.isArray(payload.addressLookupHistory)) {
+        // アドレス照会履歴もこのファイルの内容で上書き(置き換え)する
+        saveAddressLookupHistory(payload.addressLookupHistory);
       }
 
       // 今回入力したパスワードを、そのままこの端末の保存パスワードとしても使う
@@ -3481,9 +3493,17 @@ window.addEventListener("load", async () => {
   // ============================
   // 設定メニュー
   // ============================
-  document.getElementById("settings-btn")?.addEventListener("click", () => {
+
+  // 設定画面をどこから開いたか(戻る際・ログアウトボタンの表示制御に使う)
+  let settingsPageOrigin = accountPage;
+
+  function openSettingsPage(originPage) {
+    settingsPageOrigin = originPage;
+
     const isSss = appState.authMode === "sss";
     const isReadOnly = appState.isReadOnly;
+    // ようこそ画面からログイン前にこのページを開いた場合(未ログイン)
+    const isLoggedIn = !!appState.authMode || isReadOnly;
 
     // 読み取り専用モード: 送金手数料の設定は署名を伴う操作がないため不要
     const feeItem = document.getElementById("menu-fee-settings");
@@ -3502,10 +3522,34 @@ window.addEventListener("load", async () => {
     // SSS Extension由来のアカウントは、そもそも秘密鍵・ニーモニックを
     // このアプリが一切扱わない(扱えない)ため、バックアップ機能自体を
     // メニューから隠す。読み取り専用モードも秘密鍵を持たないため同様。
+    // 未ログイン(ようこそ画面から)の場合も、対象アカウントが存在しないため同様に隠す。
     const backupItem = document.getElementById("menu-backup");
-    if (backupItem) backupItem.style.display = (isSss || isReadOnly) ? "none" : "";
+    if (backupItem) backupItem.style.display = (isSss || isReadOnly || !isLoggedIn) ? "none" : "";
+
+    // 「アカウント状態をセーブ」も対象アカウントが必要なため、未ログイン時は隠す。
+    // 「アカウント状態をロード」はこの画面から直接ログインまで行えるため、
+    // 未ログインでも表示する(SSS接続中・読み取り専用モード中は、既存の
+    // updateReadOnlyUiVisibilityと同じ理由で引き続き隠す)。
+    const stateSaveMenuBtn = document.getElementById("menu-state-save");
+    const stateLoadMenuBtn = document.getElementById("menu-state-load");
+    const hideAccountExtras = isSss || isReadOnly;
+    if (stateSaveMenuBtn) stateSaveMenuBtn.style.display = (hideAccountExtras || !isLoggedIn) ? "none" : "";
+    if (stateLoadMenuBtn) stateLoadMenuBtn.style.display = hideAccountExtras ? "none" : "";
+
+    // ようこそ画面(未ログイン)から開いた場合は、ログアウトする対象が
+    // 存在しないため「ログアウト」ボタンを隠す。
+    const logoutBtn = document.getElementById("logout-btn");
+    if (logoutBtn) logoutBtn.style.display = originPage === welcomePage ? "none" : "";
 
     showPage(settingsPage);
+  }
+
+  document.getElementById("settings-btn")?.addEventListener("click", () => {
+    openSettingsPage(accountPage);
+  });
+
+  document.getElementById("welcome-settings-btn")?.addEventListener("click", () => {
+    openSettingsPage(welcomePage);
   });
 
   document.getElementById("menu-node-settings")?.addEventListener("click", async () => {
@@ -3897,7 +3941,7 @@ window.addEventListener("load", async () => {
   });
   document.getElementById("back-account-receive")?.addEventListener("click", () => showPage(accountPage));
   document.getElementById("back-account-harvest")?.addEventListener("click", () => showPage(advancedPage));
-  document.getElementById("back-account-settings")?.addEventListener("click", () => showPage(accountPage));
+  document.getElementById("back-account-settings")?.addEventListener("click", () => showPage(settingsPageOrigin));
   document.getElementById("back-settings-node")?.addEventListener("click", () => showPage(settingsPage));
   document.getElementById("back-settings-fee")?.addEventListener("click", () => showPage(settingsPage));
   document.getElementById("back-settings-network")?.addEventListener("click", () => showPage(settingsPage));

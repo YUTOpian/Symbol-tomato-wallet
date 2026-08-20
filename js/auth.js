@@ -391,11 +391,23 @@ async function switchNetwork(networkType) {
   if (appState.authMode === "sss") {
     throw new Error("SSS Extension接続アカウントではネットワークを切り替えられません");
   }
-  if (!appState.localPrivateKeyHex) {
-    throw new Error("アカウントが未接続です");
-  }
   if (appState.networkType === networkType) {
     return; // 既に同じネットワーク
+  }
+
+  // ------------------------------------------------------------
+  // 未ログイン状態(ようこそ画面から設定画面を開いた場合など)での
+  // ネットワーク切り替え: アカウント・鍵は一切扱わず、以降「データ・分析を
+  // 見る」「アドレスを照会する」などで使うネットワーク/ノードの
+  // 「好み」を設定するだけにとどめる。
+  // ------------------------------------------------------------
+  if (!appState.localPrivateKeyHex) {
+    closeWebSocket();
+    appState.networkType = networkType;
+    const isTestnetPreview = networkType === NetworkType.TESTNET;
+    appState.NODE = await selectNode(isTestnetPreview);
+    await initSdk();
+    return;
   }
 
   closeWebSocket();
