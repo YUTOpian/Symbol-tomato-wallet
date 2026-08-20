@@ -109,19 +109,11 @@ function isSSSConnected() {
   return !!(window.SSS && window.SSS.activePublicKey);
 }
 
-function getSSSStatusHtml() {
-  return isSSSConnected()
-    ? `<span style="color:#4ade80;">🟢 SSS Extensionと連携中</span>`
-    : `<span style="color:#f87171;">🔴 SSS Extensionと未連携</span>`;
-}
-
 // ============================================================
 // #node-info 表示用 共通HTML生成
-// ネットワーク表記（Mainnet/Testnet）＋使用ノード＋SSS連携状態を
+// ネットワーク表記（Mainnet/Testnet）＋使用ノードを
 // 常にまとめて表示するための共通関数
 // （ノード切替時にも表記が消えないようにする）
-// ニーモニックログイン中(authMode === "local")はSSSと無関係なので
-// SSS連携状態は表示しない
 // ============================================================
 
 const NODE_INFO_PRICE_ELEMENT_ID = "node-info-price";
@@ -132,7 +124,6 @@ function renderNodeInfoHtml({ isTestnet, nodeOrigin, note = "" }) {
     `${isTestnet ? "🟡 Testnet" : "🟢 Mainnet"}` +
     `</div>` +
     (note ? `${note}<br>` : "") +
-    (appState.authMode === "local" ? "" : getSSSStatusHtml()) +
     `<div id="${NODE_INFO_PRICE_ELEMENT_ID}" style="font-size:13px;margin-top:4px;color:#cbd5e1;">価格取得中...</div>`
   );
 
@@ -224,7 +215,6 @@ window.W.utils = {
   formatMosaicAmount,
   hexToUint8Array,
   isSSSConnected,
-  getSSSStatusHtml,
   renderNodeInfoHtml,
   csvEscapeCell,
   downloadCsv,

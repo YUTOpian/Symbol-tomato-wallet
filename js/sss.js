@@ -14,7 +14,6 @@ const {refreshAccount, initLiveBalanceRefresh} = W.account;
 const {initLiveHarvestStatusRefresh} = W.harvest;
 const {loadRecentTx, initLiveTx} = W.transactions;
 const {initWebSocket} = W.ws;
-const {getSSSStatusHtml} = W.utils;
 
 /* ------------------------------------------------------
    ネットワーク名表示
@@ -41,8 +40,6 @@ async function internalConnect(isAuto) {
       if (!isAuto) {
         setStatus("sss-status", "SSS Extension が見つかりません。", "error");
       }
-      const infoEl = document.getElementById("node-info");
-      if (infoEl) infoEl.innerHTML = getSSSStatusHtml();
       return;
     }
 
@@ -56,8 +53,6 @@ async function internalConnect(isAuto) {
       if (!isAuto) {
         setStatus("sss-status", "SSSでアカウントを選択してください。", "error");
       }
-      const infoEl = document.getElementById("node-info");
-      if (infoEl) infoEl.innerHTML = getSSSStatusHtml();
       return;
     }
 
