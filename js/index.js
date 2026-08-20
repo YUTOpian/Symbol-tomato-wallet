@@ -557,8 +557,109 @@ window.addEventListener("load", async () => {
   // ============================
   // アドレス照会(閲覧専用・秘密鍵不要・パスワード不要)
   // ============================
+
+  // 過去に照会したアドレスの履歴(この端末にのみ保存。秘匿情報ではないため平文でよい)
+  const ADDRESS_LOOKUP_HISTORY_KEY = "addressLookupHistoryV1";
+  const ADDRESS_LOOKUP_HISTORY_MAX = 20;
+
+  function loadAddressLookupHistory() {
+    try {
+      const raw = localStorage.getItem(ADDRESS_LOOKUP_HISTORY_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.warn("アドレス照会履歴の読み込みに失敗しました", e);
+      return [];
+    }
+  }
+
+  function saveAddressLookupHistory(list) {
+    try {
+      localStorage.setItem(ADDRESS_LOOKUP_HISTORY_KEY, JSON.stringify(list.slice(0, ADDRESS_LOOKUP_HISTORY_MAX)));
+    } catch (e) {
+      console.warn("アドレス照会履歴の保存に失敗しました", e);
+    }
+  }
+
+  // 照会成功時に履歴の先頭へ追加する(既にあれば一旦外して先頭に付け直す)
+  function addAddressLookupHistory(address) {
+    const normalized = (address || "").trim().toUpperCase();
+    if (!normalized) return;
+    const list = loadAddressLookupHistory().filter((a) => a !== normalized);
+    list.unshift(normalized);
+    saveAddressLookupHistory(list);
+  }
+
+  function removeAddressLookupHistory(address) {
+    const list = loadAddressLookupHistory().filter((a) => a !== address);
+    saveAddressLookupHistory(list);
+    renderAddressLookupHistory();
+  }
+
+  function clearAddressLookupHistory() {
+    saveAddressLookupHistory([]);
+    renderAddressLookupHistory();
+  }
+
+  function shortAddressForHistory(addr) {
+    return addr && addr.length > 16 ? `${addr.slice(0, 6)}...${addr.slice(-6)}` : addr || "---";
+  }
+
+  function renderAddressLookupHistory() {
+    const el = document.getElementById("address-lookup-history");
+    if (!el) return;
+
+    const list = loadAddressLookupHistory();
+
+    if (list.length === 0) {
+      el.innerHTML = "";
+      return;
+    }
+
+    el.innerHTML =
+      `<div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 6px;">` +
+      `<span style="font-size:12px;color:#94a3b8;">過去に照会したアドレス</span>` +
+      `<button class="account-hide-btn" data-action="clear-history" type="button" style="margin:0;">履歴を全て削除</button>` +
+      `</div>` +
+      list
+        .map(
+          (addr) => `
+      <div class="account-row">
+        <div class="account-row-main" data-action="lookup-history" data-address="${addr}">
+          <div class="account-row-label">${shortAddressForHistory(addr)}</div>
+        </div>
+        <div class="account-row-actions">
+          <button class="account-hide-btn" data-action="delete-history" data-address="${addr}">🗑 削除</button>
+        </div>
+      </div>
+    `
+        )
+        .join("");
+  }
+
+  // 「照会する」ボタン・履歴クリックの両方から共通で使う
+  async function performAddressLookup(addressInput) {
+    if (!addressInput) {
+      setStatus("address-lookup-status", "アドレスを入力してください。", "error");
+      return;
+    }
+
+    setStatus("address-lookup-status", "照会中...");
+    try {
+      await loginAsReadOnly(addressInput);
+      addAddressLookupHistory(addressInput);
+      document.getElementById("address-lookup-input").value = "";
+      setStatus("address-lookup-status", "", "default");
+      goHome();
+    } catch (e) {
+      console.error("loginAsReadOnly error:", e);
+      setStatus("address-lookup-status", e.message || "照会に失敗しました。", "error");
+    }
+  }
+
   document.getElementById("welcome-address-lookup-btn")?.addEventListener("click", () => {
     setStatus("address-lookup-status", "", "default");
+    renderAddressLookupHistory();
     showPage(addressLookupPage);
   });
 
@@ -579,23 +680,30 @@ window.addEventListener("load", async () => {
     });
   });
 
-  document.getElementById("address-lookup-submit-btn")?.addEventListener("click", async () => {
-    const addressInput = document.getElementById("address-lookup-input").value.trim();
+  document.getElementById("address-lookup-submit-btn")?.addEventListener("click", () => {
+    performAddressLookup(document.getElementById("address-lookup-input").value.trim());
+  });
 
-    if (!addressInput) {
-      setStatus("address-lookup-status", "アドレスを入力してください。", "error");
+  document.getElementById("address-lookup-history")?.addEventListener("click", (e) => {
+    const clearBtn = e.target.closest('[data-action="clear-history"]');
+    if (clearBtn) {
+      if (confirm("過去に照会したアドレスの履歴をすべて削除します。よろしいですか？")) {
+        clearAddressLookupHistory();
+      }
       return;
     }
 
-    setStatus("address-lookup-status", "照会中...");
-    try {
-      await loginAsReadOnly(addressInput);
-      document.getElementById("address-lookup-input").value = "";
-      setStatus("address-lookup-status", "", "default");
-      goHome();
-    } catch (e) {
-      console.error("loginAsReadOnly error:", e);
-      setStatus("address-lookup-status", e.message || "照会に失敗しました。", "error");
+    const deleteBtn = e.target.closest('[data-action="delete-history"]');
+    if (deleteBtn) {
+      removeAddressLookupHistory(deleteBtn.dataset.address);
+      return;
+    }
+
+    const row = e.target.closest('[data-action="lookup-history"]');
+    if (row) {
+      const address = row.dataset.address;
+      document.getElementById("address-lookup-input").value = address;
+      performAddressLookup(address);
     }
   });
 
