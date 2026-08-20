@@ -24,7 +24,15 @@
   ============================================================ -->
   <div id="welcome-page" class="page active">
     <div class="card">
+    <div class="card-title-row">
       <h2>ようこそ</h2>
+      <button id="welcome-settings-btn" class="settings-gear-btn" title="設定" aria-label="設定">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </div>
 
         <p style="font-size:13px;color:#94a3b8;">
         ログイン方法を選んでください。
@@ -84,11 +92,8 @@
 
       <p style="font-size:13px;color:#94a3b8;">
         ログインせずに、Symbolネットワークの統計情報やオンチェーン分析だけを見たい場合はこちら。
+        ネットワーク(Mainnet/Testnet)は右上の設定から切り替えられます。
       </p>
-      <select id="welcome-data-network-select" class="input-box">
-        <option value="mainnet">Mainnet</option>
-        <option value="testnet">Testnet</option>
-      </select>
       <button id="welcome-data-btn" class="button-primary">📊 データ・分析を見る</button>
       <div id="welcome-data-status"></div>
 
