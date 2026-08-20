@@ -7,6 +7,7 @@
 
 const {appState, getXymMosaicIdHex} = W.config;
 const {signAndAnnounceTx} = W.auth;
+const {validateExchangeRecipient} = W.exchangeAddressRules;
 
 // mosaic文字列(ネームスペース名 or 16進ID) → divisibility のキャッシュ
 const divisibilityCache = {};
@@ -168,6 +169,18 @@ async function sendMultiTransfer(rows) {
 
     const divisibility = await resolveDivisibility(mosaicField);
     const unresolvedMosaicIdValue = resolveUnresolvedMosaicIdValue(mosaicField);
+
+    /*
+      取引所(bitbank・Zaif)の入金アドレス宛てチェック
+      (メッセージ必須・XYM以外のモザイク送金不可)
+      ・mosaicFieldはネームスペース名の場合もあるため、実際に解決された
+        モザイクID(unresolvedMosaicIdValue)を16進化して判定する
+    */
+    const resolvedMosaicIdHex = unresolvedMosaicIdValue.toString(16).toUpperCase().padStart(16, "0");
+    const exchangeError = validateExchangeRecipient(address, resolvedMosaicIdHex, row.message);
+    if (exchangeError) {
+      throw new Error(`${i + 1}行目: ${exchangeError}`);
+    }
 
     const mosaics =
       amount > 0

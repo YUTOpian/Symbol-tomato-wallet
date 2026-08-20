@@ -4,6 +4,7 @@
 // index.js
 
 const {appState, NetworkType, getXymMosaicIdHex} = W.config;
+const {getExchangeNameForAddress, validateExchangeRecipient} = W.exchangeAddressRules;
 const {sendTx} = W.transfer;
 const {loadRecentTx, initLiveTx} = W.transactions;
 const {refreshAccount, loadWalletTargetOptions, getSelectedWalletTargetAddress, isWalletTargetSelf, loadMosaicListForAddress} = W.account;const {initWebSocket} = W.ws;
@@ -1048,6 +1049,7 @@ window.addEventListener("load", async () => {
     cameFromMosaicList = false;
     if (backSendBtn) backSendBtn.textContent = "← モザイク選択へ戻る";
     showPage(transferPage);
+    updateTransferSendButtonState();
   });
 
   // ============================
@@ -1063,7 +1065,30 @@ window.addEventListener("load", async () => {
     cameFromMosaicList = true;
     if (backSendBtn) backSendBtn.textContent = "← 戻る";
     showPage(transferPage);
+    updateTransferSendButtonState();
   });
+
+  // ----------------------------------------------------------
+  // 取引所(bitbank・Zaif)の入金アドレス宛てチェック(ライブ検証)
+  // 宛先アドレスを入力しても、入金メッセージが無い(またはXYM以外の
+  // モザイクを選択している)間は送金ボタンを押せないようにする。
+  // ----------------------------------------------------------
+  function updateTransferSendButtonState() {
+    const btn = document.getElementById("btn-transfer");
+    if (!btn) return;
+
+    const recipientRaw = document.getElementById("tx-recipient")?.value.trim() ?? "";
+    const messageText = document.getElementById("tx-message")?.value ?? "";
+    const selectedMosaicId = document.getElementById("selected-mosaic-id")?.value ?? "";
+
+    const exchangeError = validateExchangeRecipient(recipientRaw, selectedMosaicId, messageText);
+
+    btn.disabled = !!exchangeError;
+    setStatus("tx-exchange-status", exchangeError || "", exchangeError ? "error" : "default");
+  }
+
+  document.getElementById("tx-recipient")?.addEventListener("input", updateTransferSendButtonState);
+  document.getElementById("tx-message")?.addEventListener("input", updateTransferSendButtonState);
 
   // ============================
   // 送金実行
@@ -1936,7 +1961,30 @@ window.addEventListener("load", async () => {
 
   document.getElementById("multisig-send-from-select")?.addEventListener("change", (e) => {
     loadMultisigSendMosaicOptions(e.target.value);
+    updateMultisigSendButtonState();
   });
+
+  // ----------------------------------------------------------
+  // 取引所(bitbank・Zaif)の入金アドレス宛てチェック(ライブ検証)
+  // ----------------------------------------------------------
+  function updateMultisigSendButtonState() {
+    const btn = document.getElementById("submit-multisig-send-btn");
+    if (!btn) return;
+
+    const mosaicSelectEl = document.getElementById("multisig-send-mosaic-select");
+    const mosaicIdHex = mosaicSelectEl?.value || "";
+    const recipientRaw = document.getElementById("multisig-send-recipient")?.value.trim() ?? "";
+    const messageText = document.getElementById("multisig-send-message")?.value ?? "";
+
+    const exchangeError = validateExchangeRecipient(recipientRaw, mosaicIdHex, messageText);
+
+    btn.disabled = !!exchangeError;
+    setStatus("multisig-send-exchange-status", exchangeError || "", exchangeError ? "error" : "default");
+  }
+
+  document.getElementById("multisig-send-recipient")?.addEventListener("input", updateMultisigSendButtonState);
+  document.getElementById("multisig-send-message")?.addEventListener("input", updateMultisigSendButtonState);
+  document.getElementById("multisig-send-mosaic-select")?.addEventListener("change", updateMultisigSendButtonState);
 
   function activateMultisigTab(tab) {
     document.querySelectorAll("#multisig-page .tab-btn").forEach(btn => {
@@ -2090,11 +2138,53 @@ window.addEventListener("load", async () => {
     }));
   }
 
+  // ----------------------------------------------------------
+  // 取引所(bitbank・Zaif)の入金アドレス宛てチェック(ライブ検証)
+  // ・mosaic欄はネームスペース名の場合もあり、その解決にはネットワーク通信が
+  //   必要なため、ここでは簡易判定(未入力/"symbol.xym"/XYMの16進ID のいずれか
+  //   ならXYM扱い)にとどめる。最終的な正確なチェックはmultisend.js側
+  //   (実際に解決されたモザイクIDを使う)で行われる。
+  // ----------------------------------------------------------
+  function updateMultisendSubmitButtonState() {
+    const btn = document.getElementById("multisend-submit-btn");
+    if (!btn) return;
+
+    const xymId = getXymMosaicIdHex().toUpperCase();
+    const rows = Array.from(document.querySelectorAll(".multisend-row"));
+    const problems = [];
+
+    rows.forEach((row, i) => {
+      const address = row.querySelector(".ms-address")?.value ?? "";
+      const mosaicRaw = (row.querySelector(".ms-mosaic")?.value ?? "").trim();
+      const message = row.querySelector(".ms-message")?.value ?? "";
+
+      const exchangeName = getExchangeNameForAddress(address);
+      if (!exchangeName) return;
+
+      const isXym = !mosaicRaw || mosaicRaw.toLowerCase() === "symbol.xym" || mosaicRaw.toUpperCase() === xymId;
+      if (!isXym) {
+        problems.push(`${i + 1}行目: ${exchangeName}の入金アドレスへはXYM以外のモザイクを送れません。`);
+        return;
+      }
+      if (!message.trim()) {
+        problems.push(`${i + 1}行目: ${exchangeName}の入金アドレスへ送る場合は入金メッセージが必要です。`);
+      }
+    });
+
+    btn.disabled = problems.length > 0;
+    setStatus("multisend-exchange-status", problems.join(" / "), problems.length > 0 ? "error" : "default");
+  }
+
+  // 行内の入力(アドレス・モザイク・メッセージ)はすべてこのイベント委任で拾う
+  // (動的に追加される行にも自動的に効く)
+  document.getElementById("multisend-rows")?.addEventListener("input", updateMultisendSubmitButtonState);
+
   document.getElementById("menu-multisend")?.addEventListener("click", () => {
     clearMultisendRows();
     renderMultisendRow();
     setStatus("multisend-status", "", "default");
     setStatus("multisend-csv-status", "", "default");
+    updateMultisendSubmitButtonState();
     showPage(multisendListPage);
   });
 
@@ -2122,6 +2212,7 @@ window.addEventListener("load", async () => {
       clearMultisendRows();
       rows.forEach(r => renderMultisendRow(r));
       setStatus("multisend-csv-status", `CSVから${rows.length}件読み込みました。内容を確認してください。`, "success");
+      updateMultisendSubmitButtonState();
     } catch (err) {
       console.error("CSV parse error:", err);
       setStatus("multisend-csv-status", "CSVの読み込みに失敗しました。", "error");
@@ -2134,12 +2225,14 @@ window.addEventListener("load", async () => {
       return;
     }
     renderMultisendRow();
+    updateMultisendSubmitButtonState();
   });
 
   document.getElementById("multisend-rows")?.addEventListener("click", e => {
     const btn = e.target.closest('[data-action="remove-row"]');
     if (!btn) return;
     btn.closest(".multisend-row")?.remove();
+    updateMultisendSubmitButtonState();
   });
 
   document.getElementById("multisend-check-btn")?.addEventListener("click", async () => {

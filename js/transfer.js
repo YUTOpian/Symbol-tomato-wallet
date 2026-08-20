@@ -11,6 +11,7 @@ const {getRecipientPublicKey} = W.account;
 const {hexToBytes} = W.utils;
 const {signAndAnnounceTx, encryptMessageLocally} = W.auth;
 const {trackOutgoingTransaction} = W.txStatusTracker;
+const {validateExchangeRecipient} = W.exchangeAddressRules;
 
 async function sendTx() {
   /*
@@ -44,6 +45,16 @@ async function sendTx() {
 
   if (!recipientRaw || amountStr === "") {
     setStatus("tx-status", "アドレスと金額は必須です。", "error");
+    return;
+  }
+
+  /*
+    取引所(bitbank・Zaif)の入金アドレス宛てチェック
+    (メッセージ必須・XYM以外のモザイク送金不可)
+  */
+  const exchangeError = validateExchangeRecipient(recipientRaw, selectedMosaicId, messageText);
+  if (exchangeError) {
+    setStatus("tx-status", exchangeError, "error");
     return;
   }
 

@@ -17,6 +17,7 @@ const {appState, getXymMosaicIdHex} = W.config;
 const {signTxOnly, signAndAnnounceTx, cosignTransactionHash, estimateFeeFromTx} = W.auth;
 const {hexToBytes} = W.utils;
 const {requestTxConfirmation, formatTxDeadline, TxCancelledError} = W.txConfirm;
+const {validateExchangeRecipient} = W.exchangeAddressRules;
 
 const HASH_LOCK_AMOUNT = 10_000_000n; // 10 XYM (microXYM)
 
@@ -323,6 +324,15 @@ async function fetchMultisigMosaicOptions(multisigAddress) {
 ============================================================ */
 async function sendFromMultisig({ multisigAddress, recipientAddress, mosaicIdHex, divisibility, amount, message }) {
   const { descriptors, models } = appState.sdkSymbol;
+
+  /*
+    取引所(bitbank・Zaif)の入金アドレス宛てチェック
+    (メッセージ必須・XYM以外のモザイク送金不可)
+  */
+  const exchangeError = validateExchangeRecipient(recipientAddress, mosaicIdHex, message);
+  if (exchangeError) {
+    throw new Error(exchangeError);
+  }
 
   // 送金元(マルチシグアカウント)の公開鍵を取得
   const accountInfo = await fetch(new URL("/accounts/" + multisigAddress, appState.NODE)).then((r) =>
