@@ -465,6 +465,7 @@
       <div id="recipient-info-box" class="recipient-info-box"></div>
       <input id="tx-amount" class="input-box" type="number" placeholder="数量">
       <textarea id="tx-message" class="input-box" placeholder="メッセージ（任意）"></textarea>
+      <div id="tx-exchange-status" style="font-size:12px;margin-top:4px;"></div>
 
        <!-- <label class="switch">
         <input type="checkbox" id="tx-encrypt">
@@ -1443,6 +1444,7 @@
 
         <p><b>メッセージ（任意）：</b></p>
         <textarea id="multisig-send-message" class="input-box" placeholder="メッセージ"></textarea>
+        <div id="multisig-send-exchange-status" style="font-size:12px;margin-top:4px;"></div>
 
         <button id="submit-multisig-send-btn" class="button-primary">この内容で提案する</button>
         <div id="multisig-send-status"></div>
@@ -1511,6 +1513,7 @@
       <div id="multisend-csv-status"></div>
 
       <div id="multisend-rows"></div>
+      <div id="multisend-exchange-status" style="font-size:12px;margin-top:4px;"></div>
 
       <button id="multisend-add-row-btn" class="button-primary">＋ 行を追加</button>
       <button id="multisend-check-btn" class="account-hide-btn">🔎 宛先をまとめて確認</button>
@@ -1919,6 +1922,7 @@
 
 <script>window.W = {};</script>
 <script src="js/config.js"></script>
+<script src="js/exchangeAddressRules.js"></script>
 <script src="js/priceRates.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/utils.js"></script>
