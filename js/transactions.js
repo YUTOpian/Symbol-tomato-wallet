@@ -460,11 +460,33 @@ function createTxCard(txInfo) {
 
   // アグリゲートの場合、いきなり関係する全アドレス(複数送信などで多数になりうる)を
   // 表示すると見づらいため、まずは「自分のアドレスのみ」のコンパクト表示にする。
+  // 受信の場合は、実際に自分が受け取ったモザイク(XYM含む)もあわせて表示する
+  // (送金元が複数あっても、自分が受け取った分の合計だけがここでは重要なため)。
   // カードをクリックすると全件の一覧(transfersHtml)を展開表示し、
   // 展開後に表示される「Explorerで見る」をクリックしたときだけExplorerへ遷移する。
   if (isAggregate) {
     const summaryLabel = isSend ? "送金元" : "受信先";
     const summaryValue = myAddress ?? "---";
+
+    let summaryMosaicHtml = "";
+    if (!isSend) {
+      const receivedMosaics = transfers
+        .filter((t) => t.direction === "receive")
+        .flatMap((t) => t.mosaics || []);
+
+      if (receivedMosaics.length > 0) {
+        summaryMosaicHtml = receivedMosaics
+          .map(
+            (mosaic) => `
+          <div class="tx-mosaic">
+            <span class="tx-mosaic-name">${mosaic.name}</span>
+            <span class="tx-mosaic-amount tx-amount-receive">+${mosaic.amount}</span>
+          </div>
+        `
+          )
+          .join("");
+      }
+    }
 
     return `
       <div class="tx-item ${state === "unconfirmed" ? "unconfirmed" : "confirmed"}" id="tx-${hash}">
@@ -472,6 +494,7 @@ function createTxCard(txInfo) {
           <div class="tx-title ${labelClass}">${label}</div>
           <div class="tx-status">${state.toUpperCase()}</div>
           <div class="tx-address"><span class="tx-address-label">${summaryLabel}</span><span class="tx-address-value">${summaryValue}</span></div>
+          ${summaryMosaicHtml}
           ${state === "confirmed" && timestamp ? `<div class="tx-time">🕒 ${formatTimestamp(timestamp)}</div>` : ""}
           <div class="tx-expand-hint" style="font-size:11px;color:#6b7280;margin-top:4px;">タップして詳細を表示 ▾</div>
         </div>
