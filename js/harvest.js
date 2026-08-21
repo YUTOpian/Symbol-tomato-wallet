@@ -627,7 +627,8 @@ async function loadHarvestHistory(targetAddress) {
       return;
     }
 
-    el.innerHTML = items.map((item) => {
+    el.innerHTML = ""; // ローディング表示を消し、1件目から順に追加していく
+    for (const item of items) {
       const block = item.block;
       const height = block.height;
 
@@ -641,14 +642,14 @@ async function loadHarvestHistory(targetAddress) {
         dateStr = new Date(unixMs).toLocaleString("ja-JP", { hour12: false });
       }
 
-      return `
+      el.insertAdjacentHTML("beforeend", `
         <div class="harvest-history-item">
           <div>${harvestKindBadgeHtml(item.__harvestKind)}</div>
           <div class="harvest-reward-amount">獲得手数料(概算): ${feeXym} XYM</div>
           <div class="harvest-reward-time">高さ: ${height} ・ ${dateStr}</div>
         </div>
-      `;
-    }).join("");
+      `);
+    }
   } catch (e) {
     console.error("loadHarvestHistory error:", e);
     el.textContent = "履歴取得エラー";
@@ -1197,142 +1198,6 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
     ]);
     const usdRate = usdResult?.rate ?? null;
 
-    const rows = await Promise.all(
-      blocks.map(async (item) => {
-        const height = item.block.height;
-        let totalText = "---";
-        let inflationText = "---";
-        let feeText = "---";
-        let nodeRewardText = null;
-        let nodeRewardLabel = null;
-        let nodeRewardGoesToSelf = false;
-
-        let feeIsZero = false;
-        try {
-          // ブロック一覧(/blocks?signerPublicKey=)の応答は beneficiaryAddress や
-          // totalFee(meta)を含まないことがあるため、ブロック高ごとに詳細を
-          // 個別取得して確実に得る
-          const [blockRes, stRes] = await Promise.all([
-            fetch(`${appState.NODE}/blocks/${height}`),
-            fetch(`${appState.NODE}/statements/transaction?${new URLSearchParams({ height: String(height), pageSize: 50 })}`),
-          ]);
-          const blockJson = await blockRes.json();
-          const b = blockJson.block ?? {};
-          const meta = blockJson.meta ?? {};
-
-          const stJson = await stRes.json();
-          const statementItems = stJson.data ?? [];
-          const receipts = statementItems.flatMap((entry) => entry.statement?.receipts ?? []);
-
-          const toText = (atomic) =>
-            formatMosaicAmount(atomic, 6) + " XYM" + formatFiatSuffix(Number(atomic) / 1_000_000, jpyRate, usdRate);
-
-          // ------------------------------------------------------------
-          // Symbolのブロック報酬は「トランザクション手数料 + インフレ発行分」の
-          // 1つのプールとしてまとめて計算され、そのプールが
-          //   ・ネットワーク手数料シンク(harvestNetworkPercentage %)
-          //   ・委任先ノードのbeneficiary(harvestBeneficiaryPercentage %)
-          //   ・ハーベスター本人(残り)
-          // の3者にHarvest_Fee(type=8515)レシートとして配分される。
-          // Inflation(type=20803)レシートには宛先アドレスが存在せず、
-          // 「このブロックで新規発行された総額」を示すだけなので、
-          // 個別アドレス宛のインフレ報酬をレシートから直接読み取ることはできない。
-          // そのため、まず「プール総額」→「自分の受取総額」→「その中の
-          // ノード取り分」を求め、最後にプール内の手数料:インフレ比率を使って
-          // 案分することで、自分の取り分の中の内訳を算出する。
-          // ------------------------------------------------------------
-          const feeTotalBlock = BigInt(meta.totalFee ?? 0); // このブロックの実際の取引手数料合計
-          const inflationTotalBlock = receipts
-            .filter((r) => Number(r.type) === INFLATION_RECEIPT_TYPE)
-            .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n); // このブロックの新規発行総額
-          const poolTotal = feeTotalBlock + inflationTotalBlock; // 分配前のプール総額
-
-          // 自分のアドレス宛のHarvest_Feeレシート合計(=自分が実際に受け取った額。
-          // beneficiary=自分自身の場合はノード取り分もここに混ざって入っている)
-          const myReceivedAtomic = receipts
-            .filter((r) => Number(r.type) === HARVEST_FEE_RECEIPT_TYPE)
-            .filter((r) => normalizeReceiptAddress(r.targetAddress) === myAddress)
-            .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
-
-          const beneficiaryAddress = !isZeroAddressHex(b.beneficiaryAddress)
-            ? normalizeReceiptAddress(b.beneficiaryAddress)
-            : null;
-
-          let nodeRewardAtomic = 0n;
-          let harvesterCutAtomic = myReceivedAtomic;
-
-          if (beneficiaryAddress && beneficiaryAddress !== myAddress) {
-            // beneficiaryが自分とは別アドレス
-            // → 自分の受取額(myReceivedAtomic)は最初から自分の取り分のみで、
-            //   ノード取り分は混ざっていない。そのアドレス宛のレシートを
-            //   別途合算すれば、それがそのままノード取り分(参考情報)になる。
-            nodeRewardAtomic = receipts
-              .filter((r) => Number(r.type) === HARVEST_FEE_RECEIPT_TYPE)
-              .filter((r) => normalizeReceiptAddress(r.targetAddress) === beneficiaryAddress)
-              .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
-          } else if (beneficiaryAddress && beneficiaryAddress === myAddress && poolTotal > 0n) {
-            // beneficiaryが自分自身と同じアドレス(自分のノードで自分自身を
-            // beneficiaryに設定している場合)
-            // → ノード取り分・ハーベスター取り分の両方が同じ宛先の別レシートとして
-            //   記録されており、宛先だけでは区別できない。
-            //   ネットワーク設定のharvestBeneficiaryPercentageから
-            //   プール総額に対するノード取り分を計算し、自分の受取額から差し引く。
-            nodeRewardAtomic = (poolTotal * BigInt(Math.round(beneficiaryPct * 100))) / 10000n;
-            harvesterCutAtomic = myReceivedAtomic - nodeRewardAtomic;
-          }
-
-          // ハーベスター取り分(自分の純粋な報酬)を、プール内の手数料:インフレ比率で案分する
-          let harvesterFeeAtomic = 0n;
-          let harvesterInflationAtomic = 0n;
-          if (poolTotal > 0n && harvesterCutAtomic > 0n) {
-            harvesterInflationAtomic = (harvesterCutAtomic * inflationTotalBlock) / poolTotal;
-            harvesterFeeAtomic = harvesterCutAtomic - harvesterInflationAtomic;
-          }
-
-          // 報酬合計:
-          // ・beneficiaryが自分自身の場合 → ノード取り分も実際に自分の残高に
-          //   反映されるので、合計に含める(= myReceivedAtomicと一致する)
-          // ・beneficiaryが自分とは別アドレスの場合 → そのお金は自分には
-          //   入らないため、合計には含めない
-          const totalAtomic = harvesterFeeAtomic + harvesterInflationAtomic + nodeRewardAtomic * (beneficiaryAddress === myAddress ? 1n : 0n);
-
-          totalText = toText(totalAtomic);
-          inflationText = toText(harvesterInflationAtomic);
-          feeText = toText(harvesterFeeAtomic);
-          feeIsZero = harvesterFeeAtomic === 0n;
-
-          // ノード報酬の行:
-          // ・beneficiaryAddressが判明していれば、それに基づいて表示する(従来通り)。
-          // ・kind==="node"(委任ハーベスティングで自分のリモート鍵が使われた
-          //   ブロック)は、委任先ノードのbeneficiary設定状況にかかわらず、
-          //   「委任先ノードの取り分」の行を必ず表示する。
-          //   以前はbeneficiaryAddressが取得できない(未設定 or 解析失敗)場合に
-          //   行ごと消えてしまい、委任した分のノード報酬が全く見えなくなる
-          //   バグがあったため、その場合は0円として明示する。
-          if (beneficiaryAddress) {
-            nodeRewardText = toText(nodeRewardAtomic);
-            nodeRewardLabel =
-              beneficiaryAddress === myAddress
-                ? "ノード報酬(自分のノードのbeneficiary取り分)"
-                : "ノード報酬(委任先ノードの取り分・自分には入りません)";
-            nodeRewardGoesToSelf = beneficiaryAddress === myAddress;
-          } else if (item.__harvestKind === "node") {
-            nodeRewardText = toText(0n);
-            nodeRewardLabel = "ノード報酬(委任先ノードの取り分・自分には入りません)";
-            nodeRewardGoesToSelf = false;
-          }
-        } catch (e) {
-          console.warn("ハーベスト報酬レシート取得失敗:", height, e);
-        }
-
-        const timeMs = item.block.timestamp && appState.epochAdjustment
-          ? Number(appState.epochAdjustment) * 1000 + Number(item.block.timestamp)
-          : null;
-
-        return { height, totalText, inflationText, feeText, feeIsZero, nodeRewardText, nodeRewardLabel, nodeRewardGoesToSelf, timeMs, kind: item.__harvestKind };
-      })
-    );
-
     const rewardCardHtml = (label, amountText, r) => `
       <div class="harvest-history-item">
         <div>${harvestKindBadgeHtml(r.kind)}</div>
@@ -1342,20 +1207,164 @@ async function loadHarvestRewards(elId = "harvest-reward-list", { pageSize = 20,
       </div>
     `;
 
-    el.innerHTML = rows
-      .flatMap((r) => {
-        const cards = [rewardCardHtml("インフレ報酬", r.inflationText, r)];
-        if (!r.feeIsZero) {
-          cards.push(rewardCardHtml("トランザクション手数料報酬", r.feeText, r));
+    const rowToCardsHtml = (r) => {
+      const cards = [rewardCardHtml("インフレ報酬", r.inflationText, r)];
+      if (!r.feeIsZero) {
+        cards.push(rewardCardHtml("トランザクション手数料報酬", r.feeText, r));
+      }
+      // 委任先ノードの取り分(自分には入らない報酬)は表示しない。
+      // 自分のノードのbeneficiary取り分(=実際に自分の残高に反映される分)のみ表示する。
+      if (r.nodeRewardText && r.nodeRewardGoesToSelf) {
+        cards.push(rewardCardHtml(r.nodeRewardLabel, r.nodeRewardText, r));
+      }
+      return cards.join("");
+    };
+
+    // ------------------------------------------------------------
+    // ブロックごとに個別取得・計算を行う(1ブロックあたり詳細取得+
+    // レシート取得の2リクエストが必要で、全ブロック分をまとめて待つと
+    // 表示までが遅く感じられるため、1件ずつ計算が終わり次第、即座に
+    // 画面へ追加していく)
+    // ------------------------------------------------------------
+    async function computeRewardRow(item) {
+      const height = item.block.height;
+      let totalText = "---";
+      let inflationText = "---";
+      let feeText = "---";
+      let nodeRewardText = null;
+      let nodeRewardLabel = null;
+      let nodeRewardGoesToSelf = false;
+
+      let feeIsZero = false;
+      try {
+        // ブロック一覧(/blocks?signerPublicKey=)の応答は beneficiaryAddress や
+        // totalFee(meta)を含まないことがあるため、ブロック高ごとに詳細を
+        // 個別取得して確実に得る
+        const [blockRes, stRes] = await Promise.all([
+          fetch(`${appState.NODE}/blocks/${height}`),
+          fetch(`${appState.NODE}/statements/transaction?${new URLSearchParams({ height: String(height), pageSize: 50 })}`),
+        ]);
+        const blockJson = await blockRes.json();
+        const b = blockJson.block ?? {};
+        const meta = blockJson.meta ?? {};
+
+        const stJson = await stRes.json();
+        const statementItems = stJson.data ?? [];
+        const receipts = statementItems.flatMap((entry) => entry.statement?.receipts ?? []);
+
+        const toText = (atomic) =>
+          formatMosaicAmount(atomic, 6) + " XYM" + formatFiatSuffix(Number(atomic) / 1_000_000, jpyRate, usdRate);
+
+        // ------------------------------------------------------------
+        // Symbolのブロック報酬は「トランザクション手数料 + インフレ発行分」の
+        // 1つのプールとしてまとめて計算され、そのプールが
+        //   ・ネットワーク手数料シンク(harvestNetworkPercentage %)
+        //   ・委任先ノードのbeneficiary(harvestBeneficiaryPercentage %)
+        //   ・ハーベスター本人(残り)
+        // の3者にHarvest_Fee(type=8515)レシートとして配分される。
+        // Inflation(type=20803)レシートには宛先アドレスが存在せず、
+        // 「このブロックで新規発行された総額」を示すだけなので、
+        // 個別アドレス宛のインフレ報酬をレシートから直接読み取ることはできない。
+        // そのため、まず「プール総額」→「自分の受取総額」→「その中の
+        // ノード取り分」を求め、最後にプール内の手数料:インフレ比率を使って
+        // 案分することで、自分の取り分の中の内訳を算出する。
+        // ------------------------------------------------------------
+        const feeTotalBlock = BigInt(meta.totalFee ?? 0); // このブロックの実際の取引手数料合計
+        const inflationTotalBlock = receipts
+          .filter((r) => Number(r.type) === INFLATION_RECEIPT_TYPE)
+          .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n); // このブロックの新規発行総額
+        const poolTotal = feeTotalBlock + inflationTotalBlock; // 分配前のプール総額
+
+        // 自分のアドレス宛のHarvest_Feeレシート合計(=自分が実際に受け取った額。
+        // beneficiary=自分自身の場合はノード取り分もここに混ざって入っている)
+        const myReceivedAtomic = receipts
+          .filter((r) => Number(r.type) === HARVEST_FEE_RECEIPT_TYPE)
+          .filter((r) => normalizeReceiptAddress(r.targetAddress) === myAddress)
+          .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
+
+        const beneficiaryAddress = !isZeroAddressHex(b.beneficiaryAddress)
+          ? normalizeReceiptAddress(b.beneficiaryAddress)
+          : null;
+
+        let nodeRewardAtomic = 0n;
+        let harvesterCutAtomic = myReceivedAtomic;
+
+        if (beneficiaryAddress && beneficiaryAddress !== myAddress) {
+          // beneficiaryが自分とは別アドレス
+          // → 自分の受取額(myReceivedAtomic)は最初から自分の取り分のみで、
+          //   ノード取り分は混ざっていない。そのアドレス宛のレシートを
+          //   別途合算すれば、それがそのままノード取り分(参考情報)になる。
+          nodeRewardAtomic = receipts
+            .filter((r) => Number(r.type) === HARVEST_FEE_RECEIPT_TYPE)
+            .filter((r) => normalizeReceiptAddress(r.targetAddress) === beneficiaryAddress)
+            .reduce((sum, r) => sum + BigInt(r.amount ?? 0), 0n);
+        } else if (beneficiaryAddress && beneficiaryAddress === myAddress && poolTotal > 0n) {
+          // beneficiaryが自分自身と同じアドレス(自分のノードで自分自身を
+          // beneficiaryに設定している場合)
+          // → ノード取り分・ハーベスター取り分の両方が同じ宛先の別レシートとして
+          //   記録されており、宛先だけでは区別できない。
+          //   ネットワーク設定のharvestBeneficiaryPercentageから
+          //   プール総額に対するノード取り分を計算し、自分の受取額から差し引く。
+          nodeRewardAtomic = (poolTotal * BigInt(Math.round(beneficiaryPct * 100))) / 10000n;
+          harvesterCutAtomic = myReceivedAtomic - nodeRewardAtomic;
         }
-        // 委任先ノードの取り分(自分には入らない報酬)は表示しない。
-        // 自分のノードのbeneficiary取り分(=実際に自分の残高に反映される分)のみ表示する。
-        if (r.nodeRewardText && r.nodeRewardGoesToSelf) {
-          cards.push(rewardCardHtml(r.nodeRewardLabel, r.nodeRewardText, r));
+
+        // ハーベスター取り分(自分の純粋な報酬)を、プール内の手数料:インフレ比率で案分する
+        let harvesterFeeAtomic = 0n;
+        let harvesterInflationAtomic = 0n;
+        if (poolTotal > 0n && harvesterCutAtomic > 0n) {
+          harvesterInflationAtomic = (harvesterCutAtomic * inflationTotalBlock) / poolTotal;
+          harvesterFeeAtomic = harvesterCutAtomic - harvesterInflationAtomic;
         }
-        return cards;
-      })
-      .join("");
+
+        // 報酬合計:
+        // ・beneficiaryが自分自身の場合 → ノード取り分も実際に自分の残高に
+        //   反映されるので、合計に含める(= myReceivedAtomicと一致する)
+        // ・beneficiaryが自分とは別アドレスの場合 → そのお金は自分には
+        //   入らないため、合計には含めない
+        const totalAtomic = harvesterFeeAtomic + harvesterInflationAtomic + nodeRewardAtomic * (beneficiaryAddress === myAddress ? 1n : 0n);
+
+        totalText = toText(totalAtomic);
+        inflationText = toText(harvesterInflationAtomic);
+        feeText = toText(harvesterFeeAtomic);
+        feeIsZero = harvesterFeeAtomic === 0n;
+
+        // ノード報酬の行:
+        // ・beneficiaryAddressが判明していれば、それに基づいて表示する(従来通り)。
+        // ・kind==="node"(委任ハーベスティングで自分のリモート鍵が使われた
+        //   ブロック)は、委任先ノードのbeneficiary設定状況にかかわらず、
+        //   「委任先ノードの取り分」の行を必ず表示する。
+        //   以前はbeneficiaryAddressが取得できない(未設定 or 解析失敗)場合に
+        //   行ごと消えてしまい、委任した分のノード報酬が全く見えなくなる
+        //   バグがあったため、その場合は0円として明示する。
+        if (beneficiaryAddress) {
+          nodeRewardText = toText(nodeRewardAtomic);
+          nodeRewardLabel =
+            beneficiaryAddress === myAddress
+              ? "ノード報酬(自分のノードのbeneficiary取り分)"
+              : "ノード報酬(委任先ノードの取り分・自分には入りません)";
+          nodeRewardGoesToSelf = beneficiaryAddress === myAddress;
+        } else if (item.__harvestKind === "node") {
+          nodeRewardText = toText(0n);
+          nodeRewardLabel = "ノード報酬(委任先ノードの取り分・自分には入りません)";
+          nodeRewardGoesToSelf = false;
+        }
+      } catch (e) {
+        console.warn("ハーベスト報酬レシート取得失敗:", height, e);
+      }
+
+      const timeMs = item.block.timestamp && appState.epochAdjustment
+        ? Number(appState.epochAdjustment) * 1000 + Number(item.block.timestamp)
+        : null;
+
+      return { height, totalText, inflationText, feeText, feeIsZero, nodeRewardText, nodeRewardLabel, nodeRewardGoesToSelf, timeMs, kind: item.__harvestKind };
+    }
+
+    el.innerHTML = ""; // ローディング表示を消し、1件目から順に追加していく
+    for (const item of blocks) {
+      const row = await computeRewardRow(item);
+      el.insertAdjacentHTML("beforeend", rowToCardsHtml(row));
+    }
   } catch (e) {
     console.error("loadHarvestRewards error:", e);
     el.textContent = "取得に失敗しました";

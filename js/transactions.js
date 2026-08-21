@@ -420,7 +420,7 @@ function createTxCard(txInfo) {
   // 送金(単発 or アグリゲートに含まれる送金)を持つ場合。
   // アグリゲート(コンプリート/ボンデッド問わず)の場合は「送信(アグリゲート)」
   // 「受信(アグリゲート)」というラベルにする。
-  const { direction, transfers = [], isAggregate, myAddress } = txInfo;
+  const { direction, transfers = [], isAggregate, myAddress, signerAddress } = txInfo;
   const isSend = direction === "send";
   const baseLabel = isSend ? "送信" : "受信";
   const label = isAggregate ? `${baseLabel}(アグリゲート)` : baseLabel;
@@ -465,8 +465,12 @@ function createTxCard(txInfo) {
   // カードをクリックすると全件の一覧(transfersHtml)を展開表示し、
   // 展開後に表示される「Explorerで見る」をクリックしたときだけExplorerへ遷移する。
   if (isAggregate) {
-    const summaryLabel = isSend ? "送金元" : "受信先";
-    const summaryValue = myAddress ?? "---";
+    // 受信の場合は「送金元(実行アカウント)」と「受金先(自分)」の両方を表示する。
+    // 送信の場合はそもそも自分=実行アカウントなので、従来通り「送金元」1行のみでよい。
+    const summaryAddressHtml = isSend
+      ? `<div class="tx-address"><span class="tx-address-label">送金元</span><span class="tx-address-value">${myAddress ?? "---"}</span></div>`
+      : `<div class="tx-address"><span class="tx-address-label">送金元</span><span class="tx-address-value">${signerAddress ?? "---"}</span></div>
+         <div class="tx-address"><span class="tx-address-label">受金先</span><span class="tx-address-value">${myAddress ?? "---"}</span></div>`;
 
     let summaryMosaicHtml = "";
     if (!isSend) {
@@ -509,7 +513,7 @@ function createTxCard(txInfo) {
         <div class="tx-body" data-action="toggle-tx-detail" style="cursor:pointer;">
           <div class="tx-title ${labelClass}">${label}</div>
           <div class="tx-status">${state.toUpperCase()}</div>
-          <div class="tx-address"><span class="tx-address-label">${summaryLabel}</span><span class="tx-address-value">${summaryValue}</span></div>
+          ${summaryAddressHtml}
           ${summaryMosaicHtml}
           ${state === "confirmed" && timestamp ? `<div class="tx-time">🕒 ${formatTimestamp(timestamp)}</div>` : ""}
           <div class="tx-expand-hint" style="font-size:11px;color:#6b7280;margin-top:4px;">タップして詳細を表示 ▾</div>
@@ -573,11 +577,17 @@ function appendTx(txInfo) {
 }
 
 /* ============================================================
-   全件取得 (Symbol v3 REST API・ページング)
+   全件取得 (Symbol v3 REST API・ページング・逐次描画)
    ・以前は limit:10 で直近10件のみだったが、アクティビティは
      一部ではなく全件表示するよう変更した。
    ・REST APIの1ページあたりの最大件数(pageSize)は100が一般的なため、
      それを超える分はpageNumberを進めながら繰り返し取得する。
+   ・全ページを取得し終えるまで待ってからまとめて表示すると、
+     取引が多いアカウントほど表示までが遅く感じられるため、
+     1ページ取得できるたびに、そのページ分をすぐ画面に追加していく。
+     (アグリゲートの埋め込み内容がページの境目をまたいで分割される
+      ごく稀なケースでも、buildTxInfo側のフォールバック取得
+      (fetchAggregateDetail)により内容が空になることはない)
    ・暴走防止のため、念のためページ数に上限(MAX_PAGES)を設けている
      (pageSize100×200ページ = 最大2万件まで)。
 ============================================================ */
@@ -590,9 +600,9 @@ async function loadRecentTx(elId = "tx-list", targetAddress) {
   const PAGE_SIZE = 100;
   const MAX_PAGES = 200;
 
-  try {
-    const allItems = [];
+  let renderedCount = 0;
 
+  try {
     for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber++) {
       const params = new URLSearchParams({
         address,
@@ -607,56 +617,64 @@ async function loadRecentTx(elId = "tx-list", targetAddress) {
       const json = await res.json();
       const items = json.data ?? [];
 
-      allItems.push(...items);
-      if (allItems.length > 0) {
-        el.textContent = `読み込み中…（${allItems.length}件）`;
+      if (items.length === 0) break;
+
+      // このページ分のモザイク名を先に解決しておく(埋め込み分も含む)
+      const mosaicIds = items.flatMap(item => (item.transaction.mosaics || []).map(m => m.id));
+      await resolveMosaicNames(mosaicIds);
+
+      // embedded=true により、アグリゲートに埋め込まれたトランザクションも
+      // 別要素としてフラットに返ってくる。これらは親アグリゲートのハッシュ
+      // (meta.aggregateHash)ごとにまとめておき、アグリゲート本体のカードに
+      // まとめて表示する(個別の重複カードにはしない)。
+      const embeddedByAggregateHash = {};
+      for (const item of items) {
+        const aggHash = item.meta?.aggregateHash;
+        if (!aggHash) continue;
+        if (!embeddedByAggregateHash[aggHash]) embeddedByAggregateHash[aggHash] = [];
+        embeddedByAggregateHash[aggHash].push(item.transaction);
       }
+
+      // トップレベル(埋め込みでない)のトランザクションのみをカード表示する
+      const topLevelItems = items.filter(item => !item.meta?.aggregateHash);
+
+      const cardsHtml = (await Promise.all(topLevelItems.map(async item => {
+        const tx = item.transaction;
+        const meta = item.meta;
+
+        const txInfo = await buildTxInfo({
+          tx,
+          hash: meta.hash,
+          address,
+          state: "confirmed",
+          timestamp: meta.timestamp,
+          embeddedByAggregateHash
+        });
+
+        txMap[meta.hash] = txInfo;
+        return createTxCard(txInfo);
+      }))).join("");
+
+      if (renderedCount === 0) {
+        el.innerHTML = cardsHtml; // 最初のページで「読み込み中…」を置き換える
+      } else {
+        el.insertAdjacentHTML("beforeend", cardsHtml);
+      }
+      renderedCount += topLevelItems.length;
 
       if (items.length < PAGE_SIZE) break; // これが最後のページ
     }
 
-    // 事前に全モザイクのネームスペース名をまとめて解決しておく(埋め込み分も含む)
-    const allMosaicIds = allItems.flatMap(item => (item.transaction.mosaics || []).map(m => m.id));
-    await resolveMosaicNames(allMosaicIds);
-
-    // embedded=true により、アグリゲートに埋め込まれたトランザクションも
-    // 別要素としてフラットに返ってくる。これらは親アグリゲートのハッシュ
-    // (meta.aggregateHash)ごとにまとめておき、アグリゲート本体のカードに
-    // まとめて表示する(個別の重複カードにはしない)。
-    const embeddedByAggregateHash = {};
-    for (const item of allItems) {
-      const aggHash = item.meta?.aggregateHash;
-      if (!aggHash) continue;
-      if (!embeddedByAggregateHash[aggHash]) embeddedByAggregateHash[aggHash] = [];
-      embeddedByAggregateHash[aggHash].push(item.transaction);
+    if (renderedCount === 0) {
+      el.innerHTML = `<div style="color:#94a3b8;">トランザクション履歴はありません</div>`;
     }
-
-    // トップレベル(埋め込みでない)のトランザクションのみをカード表示する
-    const topLevelItems = allItems.filter(item => !item.meta?.aggregateHash);
-
-    const cards = await Promise.all(topLevelItems.map(async item => {
-      const tx = item.transaction;
-      const meta = item.meta;
-
-      const txInfo = await buildTxInfo({
-        tx,
-        hash: meta.hash,
-        address,
-        state: "confirmed",
-        timestamp: meta.timestamp,
-        embeddedByAggregateHash
-      });
-
-      txMap[meta.hash] = txInfo;
-      return createTxCard(txInfo);
-    }));
-
-    el.innerHTML = cards.length > 0
-      ? cards.join("")
-      : `<div style="color:#94a3b8;">トランザクション履歴はありません</div>`;
   } catch(e) {
     console.error(e);
-    el.textContent = "読み込みエラー";
+    if (renderedCount === 0) {
+      el.textContent = "読み込みエラー";
+    } else {
+      el.insertAdjacentHTML("beforeend", `<div style="color:#ef4444;font-size:12px;margin-top:8px;">これ以降の読み込みでエラーが発生しました。</div>`);
+    }
   }
 }
 
