@@ -330,6 +330,7 @@ async function buildTxInfo({ tx, hash, address, state, timestamp, embeddedByAggr
         isAggregate: true,
         typeLabel: getTransactionTypeLabel(tx.type),
         signerAddress,
+        myAddress: address,
         direction: info.direction,
         transfers: info.transfers,
         state,
@@ -419,7 +420,7 @@ function createTxCard(txInfo) {
   // 送金(単発 or アグリゲートに含まれる送金)を持つ場合。
   // アグリゲート(コンプリート/ボンデッド問わず)の場合は「送信(アグリゲート)」
   // 「受信(アグリゲート)」というラベルにする。
-  const { direction, transfers = [], isAggregate } = txInfo;
+  const { direction, transfers = [], isAggregate, myAddress } = txInfo;
   const isSend = direction === "send";
   const baseLabel = isSend ? "送信" : "受信";
   const label = isAggregate ? `${baseLabel}(アグリゲート)` : baseLabel;
@@ -457,6 +458,32 @@ function createTxCard(txInfo) {
     })
     .join("");
 
+  // アグリゲートの場合、いきなり関係する全アドレス(複数送信などで多数になりうる)を
+  // 表示すると見づらいため、まずは「自分のアドレスのみ」のコンパクト表示にする。
+  // カードをクリックすると全件の一覧(transfersHtml)を展開表示し、
+  // 展開後に表示される「Explorerで見る」をクリックしたときだけExplorerへ遷移する。
+  if (isAggregate) {
+    const summaryLabel = isSend ? "送金元" : "受信先";
+    const summaryValue = myAddress ?? "---";
+
+    return `
+      <div class="tx-item ${state === "unconfirmed" ? "unconfirmed" : "confirmed"}" id="tx-${hash}">
+        <div class="tx-body" data-action="toggle-tx-detail" style="cursor:pointer;">
+          <div class="tx-title ${labelClass}">${label}</div>
+          <div class="tx-status">${state.toUpperCase()}</div>
+          <div class="tx-address"><span class="tx-address-label">${summaryLabel}</span><span class="tx-address-value">${summaryValue}</span></div>
+          ${state === "confirmed" && timestamp ? `<div class="tx-time">🕒 ${formatTimestamp(timestamp)}</div>` : ""}
+          <div class="tx-expand-hint" style="font-size:11px;color:#6b7280;margin-top:4px;">タップして詳細を表示 ▾</div>
+        </div>
+        <div class="tx-detail-expand" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #374151;">
+          ${transfersHtml}
+          <div class="tx-explorer-open" data-action="open-tx-explorer" data-url="${explorer}" style="cursor:pointer;color:#93c5fd;text-align:right;font-size:13px;margin-top:8px;">Explorerで見る ↗</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // アグリゲートでない単発の送金は、これまで通りクリックで直接Explorerへ
   return `
     <div class="tx-item ${state === "unconfirmed" ? "unconfirmed" : "confirmed"}" id="tx-${hash}" onclick="window.open('${explorer}','_blank')">
       <div class="tx-body">
@@ -468,6 +495,35 @@ function createTxCard(txInfo) {
     </div>
   `;
 }
+
+/* ============================================================
+   アグリゲートカードのクリック挙動(委任):
+     1回目のクリック: 詳細(全送金の一覧)を展開/折りたたみ
+     展開後に表示される「Explorerで見る」のクリック: Explorerへ遷移
+   #tx-list に限らず、将来どのコンテナに描画されても効くようdocument委任にする。
+============================================================ */
+document.addEventListener("click", (e) => {
+  const explorerBtn = e.target.closest('[data-action="open-tx-explorer"]');
+  if (explorerBtn) {
+    e.stopPropagation();
+    const url = explorerBtn.dataset.url;
+    if (url) window.open(url, "_blank");
+    return;
+  }
+
+  const toggleEl = e.target.closest('[data-action="toggle-tx-detail"]');
+  if (toggleEl) {
+    const item = toggleEl.closest(".tx-item");
+    const detailEl = item?.querySelector(".tx-detail-expand");
+    if (!detailEl) return;
+
+    const willShow = detailEl.style.display === "none" || !detailEl.style.display;
+    detailEl.style.display = willShow ? "block" : "none";
+
+    const hintEl = toggleEl.querySelector(".tx-expand-hint");
+    if (hintEl) hintEl.textContent = willShow ? "タップして閉じる ▴" : "タップして詳細を表示 ▾";
+  }
+});
 
 /* ============================================================
    DOM追加
