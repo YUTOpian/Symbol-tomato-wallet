@@ -263,20 +263,39 @@ function getEmbeddedTxBodies(tx, aggregateHash, embeddedByAggregateHash) {
       レスポンスに含まれる transaction.transactions (埋め込み分のネスト)を使う。
       (apostille.js の searchApostilleTransactions と同じ手法)
 ============================================================ */
-async function fetchAggregateDetail(hash, state) {
+async function fetchAggregateDetail(hash, state, attempt = 1) {
   if (!appState.NODE) return [];
 
   const endpoint = state === "unconfirmed" ? "unconfirmed" : "confirmed";
 
   try {
     const res = await fetch(`${appState.NODE}/transactions/${endpoint}/${hash}`);
-    if (!res.ok) return [];
+
+    if (!res.ok) {
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 500));
+        return fetchAggregateDetail(hash, state, attempt + 1);
+      }
+      return [];
+    }
 
     const json = await res.json();
     const innerTxs = json.transaction?.transactions ?? [];
+
+    // 本来アグリゲートであれば埋め込み内容が0件になることはまず無いため、
+    // 0件だった場合は一時的な取得失敗の可能性を疑い、1回だけ再試行する
+    if (innerTxs.length === 0 && attempt < 2) {
+      await new Promise(r => setTimeout(r, 500));
+      return fetchAggregateDetail(hash, state, attempt + 1);
+    }
+
     return innerTxs.map(inner => inner.transaction).filter(Boolean);
   } catch (e) {
     console.warn("アグリゲート詳細の取得に失敗しました:", hash, e);
+    if (attempt < 2) {
+      await new Promise(r => setTimeout(r, 500));
+      return fetchAggregateDetail(hash, state, attempt + 1);
+    }
     return [];
   }
 }
@@ -580,25 +599,50 @@ function appendTx(txInfo) {
    全件取得 (Symbol v3 REST API・ページング・逐次描画)
    ・以前は limit:10 で直近10件のみだったが、アクティビティは
      一部ではなく全件表示するよう変更した。
-   ・REST APIの1ページあたりの最大件数(pageSize)は100が一般的なため、
-     それを超える分はpageNumberを進めながら繰り返し取得する。
+   ・1ページあたりの件数(pageSize)を50に抑えている(以前は100にしていたが、
+     1ページ内のアグリゲート数が多いと、埋め込み内容のフォールバック取得
+     (fetchAggregateDetail)が同時に大量発生しノードへの負荷が高まり、
+     一部のアグリゲートで内容が取得できず「実行アカウント」のみの
+     簡易表示になってしまうことがあったため)。
    ・全ページを取得し終えるまで待ってからまとめて表示すると、
      取引が多いアカウントほど表示までが遅く感じられるため、
      1ページ取得できるたびに、そのページ分をすぐ画面に追加していく。
+   ・1ページ内の処理も、件数分すべてを同時に(Promise.allで無制限に)
+     処理するとノードへの同時リクエストが集中しすぎるため、
+     同時実行数を制限したワーカープールで処理する。
      (アグリゲートの埋め込み内容がページの境目をまたいで分割される
-      ごく稀なケースでも、buildTxInfo側のフォールバック取得
-      (fetchAggregateDetail)により内容が空になることはない)
+      ごく稀なケースでも、buildTxInfo側のフォールバック取得により
+      内容が空になることはない)
    ・暴走防止のため、念のためページ数に上限(MAX_PAGES)を設けている
-     (pageSize100×200ページ = 最大2万件まで)。
+     (pageSize50×400ページ = 最大2万件まで)。
 ============================================================ */
+const TX_LIST_CONCURRENCY = 5;
+
+// items を順番を保ったまま、同時実行数を制限して非同期処理する
+async function mapWithConcurrency(items, concurrency, fn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < items.length) {
+      const i = cursor++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
+
 async function loadRecentTx(elId = "tx-list", targetAddress) {
   const el = document.getElementById(elId);
   if (!el) return;
   el.textContent = "読み込み中…";
 
   const address = targetAddress || appState.currentAddress.toString();
-  const PAGE_SIZE = 100;
-  const MAX_PAGES = 200;
+  const PAGE_SIZE = 50;
+  const MAX_PAGES = 400;
 
   let renderedCount = 0;
 
@@ -638,7 +682,7 @@ async function loadRecentTx(elId = "tx-list", targetAddress) {
       // トップレベル(埋め込みでない)のトランザクションのみをカード表示する
       const topLevelItems = items.filter(item => !item.meta?.aggregateHash);
 
-      const cardsHtml = (await Promise.all(topLevelItems.map(async item => {
+      const cardsHtmlArray = await mapWithConcurrency(topLevelItems, TX_LIST_CONCURRENCY, async item => {
         const tx = item.transaction;
         const meta = item.meta;
 
@@ -653,7 +697,8 @@ async function loadRecentTx(elId = "tx-list", targetAddress) {
 
         txMap[meta.hash] = txInfo;
         return createTxCard(txInfo);
-      }))).join("");
+      });
+      const cardsHtml = cardsHtmlArray.join("");
 
       if (renderedCount === 0) {
         el.innerHTML = cardsHtml; // 最初のページで「読み込み中…」を置き換える
