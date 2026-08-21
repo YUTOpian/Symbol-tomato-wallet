@@ -470,12 +470,28 @@ function createTxCard(txInfo) {
 
     let summaryMosaicHtml = "";
     if (!isSend) {
+      // 「自分が送信者でない」ではなく「受信先アドレスが自分自身」で絞り込む。
+      // (例: 複数送信アグリゲートに自分以外の受取人も含まれる場合、
+      //  direction==="receive"だけで判定すると他人宛のモザイクまで
+      //  混ざって表示されてしまうため)
       const receivedMosaics = transfers
-        .filter((t) => t.direction === "receive")
+        .filter((t) => t.recipient === myAddress)
         .flatMap((t) => t.mosaics || []);
 
-      if (receivedMosaics.length > 0) {
-        summaryMosaicHtml = receivedMosaics
+      // 同じモザイクを複数の埋め込み送金で受け取っていた場合は合算する
+      const mergedMosaics = [];
+      const indexById = new Map();
+      for (const m of receivedMosaics) {
+        if (indexById.has(m.id)) {
+          mergedMosaics[indexById.get(m.id)].amount += m.amount;
+        } else {
+          indexById.set(m.id, mergedMosaics.length);
+          mergedMosaics.push({ ...m });
+        }
+      }
+
+      if (mergedMosaics.length > 0) {
+        summaryMosaicHtml = mergedMosaics
           .map(
             (mosaic) => `
           <div class="tx-mosaic">
