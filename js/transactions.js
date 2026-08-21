@@ -573,7 +573,13 @@ function appendTx(txInfo) {
 }
 
 /* ============================================================
-   直近10件取得 (Symbol v3 REST API)
+   全件取得 (Symbol v3 REST API・ページング)
+   ・以前は limit:10 で直近10件のみだったが、アクティビティは
+     一部ではなく全件表示するよう変更した。
+   ・REST APIの1ページあたりの最大件数(pageSize)は100が一般的なため、
+     それを超える分はpageNumberを進めながら繰り返し取得する。
+   ・暴走防止のため、念のためページ数に上限(MAX_PAGES)を設けている
+     (pageSize100×200ページ = 最大2万件まで)。
 ============================================================ */
 async function loadRecentTx(elId = "tx-list", targetAddress) {
   const el = document.getElementById(elId);
@@ -581,20 +587,36 @@ async function loadRecentTx(elId = "tx-list", targetAddress) {
   el.textContent = "読み込み中…";
 
   const address = targetAddress || appState.currentAddress.toString();
-  const params = new URLSearchParams({
-    address,
-    embedded: true,
-    order: "desc",
-    limit: 10
-  });
-  const url = `${appState.NODE}/transactions/confirmed?${params}`;
+  const PAGE_SIZE = 100;
+  const MAX_PAGES = 200;
 
   try {
-    const res = await fetch(url);
-    const json = await res.json();
+    const allItems = [];
+
+    for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber++) {
+      const params = new URLSearchParams({
+        address,
+        embedded: true,
+        order: "desc",
+        pageNumber: String(pageNumber),
+        pageSize: String(PAGE_SIZE)
+      });
+      const url = `${appState.NODE}/transactions/confirmed?${params}`;
+
+      const res = await fetch(url);
+      const json = await res.json();
+      const items = json.data ?? [];
+
+      allItems.push(...items);
+      if (allItems.length > 0) {
+        el.textContent = `読み込み中…（${allItems.length}件）`;
+      }
+
+      if (items.length < PAGE_SIZE) break; // これが最後のページ
+    }
 
     // 事前に全モザイクのネームスペース名をまとめて解決しておく(埋め込み分も含む)
-    const allMosaicIds = json.data.flatMap(item => (item.transaction.mosaics || []).map(m => m.id));
+    const allMosaicIds = allItems.flatMap(item => (item.transaction.mosaics || []).map(m => m.id));
     await resolveMosaicNames(allMosaicIds);
 
     // embedded=true により、アグリゲートに埋め込まれたトランザクションも
@@ -602,7 +624,7 @@ async function loadRecentTx(elId = "tx-list", targetAddress) {
     // (meta.aggregateHash)ごとにまとめておき、アグリゲート本体のカードに
     // まとめて表示する(個別の重複カードにはしない)。
     const embeddedByAggregateHash = {};
-    for (const item of json.data) {
+    for (const item of allItems) {
       const aggHash = item.meta?.aggregateHash;
       if (!aggHash) continue;
       if (!embeddedByAggregateHash[aggHash]) embeddedByAggregateHash[aggHash] = [];
@@ -610,7 +632,7 @@ async function loadRecentTx(elId = "tx-list", targetAddress) {
     }
 
     // トップレベル(埋め込みでない)のトランザクションのみをカード表示する
-    const topLevelItems = json.data.filter(item => !item.meta?.aggregateHash);
+    const topLevelItems = allItems.filter(item => !item.meta?.aggregateHash);
 
     const cards = await Promise.all(topLevelItems.map(async item => {
       const tx = item.transaction;
@@ -629,7 +651,9 @@ async function loadRecentTx(elId = "tx-list", targetAddress) {
       return createTxCard(txInfo);
     }));
 
-    el.innerHTML = cards.join("");
+    el.innerHTML = cards.length > 0
+      ? cards.join("")
+      : `<div style="color:#94a3b8;">トランザクション履歴はありません</div>`;
   } catch(e) {
     console.error(e);
     el.textContent = "読み込みエラー";
