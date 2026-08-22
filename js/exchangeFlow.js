@@ -351,10 +351,37 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, 
         const { height, timestampRaw } = aggregateItems[i];
         for (const inner of detailResult.innerTxs) {
           const innerTx = inner.transaction;
-          if (innerTx && Number(innerTx.type) === TRANSFER_TYPE) {
-            debug.innerTransferCount++;
-            recordTransfer(innerTx, detailResult.hash, height, timestampRaw);
+          if (!innerTx || Number(innerTx.type) !== TRANSFER_TYPE) continue;
+
+          // このアグリゲートの埋め込み送金のうち、走査対象アドレス(address)が
+          // 実際に関与するもの(送信者 or 受信者)だけを対象にする。
+          // ------------------------------------------------------------
+          // 【重要なバグ修正】
+          // 以前はアグリゲート内の埋め込み送金を無条件に全件処理していたため、
+          // 例えば「MEXCがbitbankを含む複数の相手にまとめて送金(複数送信)」
+          // した場合、bitbankのアドレスをスキャンしているにもかかわらず、
+          // bitbank宛て以外(他の受取人)への送金まで一緒に処理されてしまい、
+          // それが誤って「bitbankからの流出」としてカウントされていた。
+          // (recipientAddressがbitbankではないため isInflow=false となり、
+          //  無関係な送金が丸ごと"流出"に計上されてしまう)
+          // これにより個別の取引所ごとの流入・流出、および全取引所合計の
+          // 両方が不正確になっていたため、対象アドレスが実際に送信者または
+          // 受信者であるものだけに絞り込むよう修正した。
+          // ------------------------------------------------------------
+          const innerRecipient = normalizeMaybeHexAddress(innerTx.recipientAddress);
+          let innerSigner = null;
+          try {
+            innerSigner = innerTx.signerPublicKey ? publicKeyToAddress(innerTx.signerPublicKey) : null;
+          } catch {
+            innerSigner = null;
           }
+
+          if (innerRecipient !== address && innerSigner !== address) {
+            continue; // このアドレスに無関係な埋め込み送金はスキップ
+          }
+
+          debug.innerTransferCount++;
+          recordTransfer(innerTx, detailResult.hash, height, timestampRaw);
         }
       });
     }
