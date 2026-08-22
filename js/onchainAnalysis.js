@@ -114,27 +114,33 @@ async function findHeightForTimestamp(targetMs, currentHeight, currentTimestampM
 }
 
 /* ============================================================
-   指定した高さ範囲内のXYM送金トランザクションを走査し、
-   総移動量・送金元/先アドレス集合・大口送金一覧を集計する。
-   あわせて、XYMに限らずモザイクを1つ以上含む送金(モザイク送信)の
-   件数もここで集計する(いずれもTransferTransactionが対象のため、
-   同じスキャンで済ませられる)。
+   指定した高さ範囲内の全トランザクション(埋め込み含む)を1回のスキャンで
+   走査し、以下をまとめて集計する:
+     (a) アクティブアドレス(送信元)の延べ集合
+     (b) 送信元以外の関係先アドレスの延べ集合(新規アドレス作成数の
+         受信ベース判定用)
+     (c) XYM送金の総移動量・件数・大口送金一覧
+     (d) モザイクを1つ以上含む送金(XYM含む)の件数
+   以前は(a)(b)を担うscanActiveAddresses(type指定なし・全種別)と、
+   (c)(d)を担うscanXymTransfers(type=Transferのみ)を別々に2回
+   スキャンしていたが、Transferは全種別の一部集合でしかないため、
+   type指定なしの1回のスキャンで両方を賄えるようにし、通信量を
+   ほぼ半分に削減した。
 ============================================================ */
-async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress) {
+async function scanBlockRangeCombined(fromHeight, toHeight, xymMosaicIdHex, onProgress) {
   const whaleThresholdAtomic = BigInt(WHALE_THRESHOLD_XYM) * 1_000_000n;
 
   let pageNumber = 1;
   let totalAmount = 0n;
   let transferCount = 0;
   let mosaicTransferCount = 0;
-  const senderPublicKeys = new Set();
-  const recipientAddresses = new Set();
+  const signerPublicKeys = new Set();
+  const targetAddresses = new Set();
   const whales = [];
   let truncated = false;
 
   while (pageNumber <= SCAN_MAX_PAGES) {
     const params = new URLSearchParams({
-      type: String(TRANSFER_TYPE),
       fromHeight: String(fromHeight),
       toHeight: String(toHeight),
       embedded: "true",
@@ -150,9 +156,20 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
 
     for (const item of items) {
       const tx = item.transaction;
-      const mosaics = tx.mosaics || [];
+      if (!tx) continue;
 
-      // モザイク送信件数(XYM含む。何らかのモザイクを1つ以上含む送金)
+      // (a) アクティブアドレス(送信元)
+      if (tx.signerPublicKey) signerPublicKeys.add(tx.signerPublicKey);
+
+      // (b) 送信元以外の関係先アドレス(新規アドレス作成数・受信ベース判定用)
+      for (const addr of extractTargetAddresses(tx)) {
+        targetAddresses.add(addr);
+      }
+
+      // (c)(d) Transferのみが対象
+      if (Number(tx.type) !== TRANSFER_TYPE) continue;
+
+      const mosaics = tx.mosaics || [];
       if (mosaics.length > 0) mosaicTransferCount++;
 
       const xymEntry = mosaics.find((m) => String(m.id).toUpperCase() === xymMosaicIdHex);
@@ -162,9 +179,7 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
       totalAmount += amount;
       transferCount++;
 
-      if (tx.signerPublicKey) senderPublicKeys.add(tx.signerPublicKey);
       const recipientAddr = normalizeMaybeHexAddress(tx.recipientAddress);
-      if (recipientAddr) recipientAddresses.add(recipientAddr);
 
       if (amount >= whaleThresholdAtomic) {
         whales.push({
@@ -195,12 +210,14 @@ async function scanXymTransfers(fromHeight, toHeight, xymMosaicIdHex, onProgress
     totalAmount,
     transferCount,
     mosaicTransferCount,
-    senderPublicKeys,
-    recipientAddresses,
+    signerPublicKeys,
+    targetAddresses,
     whales,
     truncated,
   };
 }
+
+
 
 /* ============================================================
    トランザクション本体(tx)から、署名者(送信者)以外の「関係先アドレス」を
@@ -261,62 +278,6 @@ function extractTargetAddresses(tx) {
 }
 
 /* ============================================================
-   指定した高さ範囲内の、全トランザクション種別(埋め込み含む)を対象に、
-   (a)「送信元」となったアドレスの延べ集合(アクティブアドレス数用)と、
-   (b)「送信元以外の関係先」となったアドレスの延べ集合
-      (受信・モザイク/ネームスペース操作対象・ハーベスト委任先など。
-       新規アドレス作成数の受信ベース判定用)
-   をまとめて集計する。
-   /transactions/confirmed は type を指定しなければ全種別が対象になり、
-   fromHeight/toHeightで絞り込めるため、/blocksを高さ1件ずつ取得するより
-   大幅に軽量に済む。(a)(b)とも同じスキャンから得られるため、追加の
-   通信は発生しない。
-============================================================ */
-async function scanActiveAddresses(fromHeight, toHeight, onProgress) {
-  let pageNumber = 1;
-  const signerPublicKeys = new Set();
-  const targetAddresses = new Set();
-  let truncated = false;
-
-  while (pageNumber <= SCAN_MAX_PAGES) {
-    const params = new URLSearchParams({
-      fromHeight: String(fromHeight),
-      toHeight: String(toHeight),
-      embedded: "true",
-      pageSize: String(SCAN_PAGE_SIZE),
-      pageNumber: String(pageNumber),
-      order: "asc",
-    });
-
-    const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`);
-    const json = await res.json();
-    const items = json.data ?? [];
-    if (items.length === 0) break;
-
-    for (const item of items) {
-      const tx = item.transaction;
-      if (!tx) continue;
-
-      const signerPublicKey = tx.signerPublicKey;
-      if (signerPublicKey) signerPublicKeys.add(signerPublicKey);
-
-      for (const addr of extractTargetAddresses(tx)) {
-        targetAddresses.add(addr);
-      }
-    }
-
-    onProgress?.(pageNumber);
-
-    if (items.length < SCAN_PAGE_SIZE) break;
-    pageNumber++;
-  }
-
-  if (pageNumber > SCAN_MAX_PAGES) truncated = true;
-
-  return { signerPublicKeys, targetAddresses, truncated };
-}
-
-/* ============================================================
    「新規アドレス」の判定: 指定したアドレスについて、この期間より前に
    送信・受信いずれのトランザクション履歴も一切ない(=このアドレスが
    関与する最初のトランザクションがこの期間内で発生した)かどうかを確認する。
@@ -332,6 +293,10 @@ async function countNewAddressesByAddress(addresses, fromHeight, onProgress) {
   let newCount = 0;
   let failCount = 0;
   let doneCount = 0;
+  // アドレスごとの判定結果("new" | "not-new" | "failed")。
+  // 複数の候補集合(受信ベース/送信ベース)に同じアドレスが含まれる場合、
+  // 呼び出し側でこれを再利用して重複問い合わせを避けられるようにする。
+  const resultByAddress = new Map();
 
   async function checkOne(address) {
     try {
@@ -343,15 +308,19 @@ async function countNewAddressesByAddress(addresses, fromHeight, onProgress) {
       const res = await fetch(`${appState.NODE}/transactions/confirmed?${params}`);
       if (!res.ok) {
         failCount++;
+        resultByAddress.set(address, "failed");
         return;
       }
       const json = await res.json();
       const first = (json.data ?? [])[0];
       const firstHeight = Number(first?.meta?.height ?? 0);
-      if (firstHeight >= fromHeight) newCount++;
+      const isNew = firstHeight >= fromHeight;
+      if (isNew) newCount++;
+      resultByAddress.set(address, isNew ? "new" : "not-new");
     } catch (e) {
       console.warn("countNewAddressesByAddress: 初回関与トランザクション確認に失敗しました:", address, e);
       failCount++;
+      resultByAddress.set(address, "failed");
     } finally {
       doneCount++;
       onProgress?.(doneCount, targets.length);
@@ -369,7 +338,7 @@ async function countNewAddressesByAddress(addresses, fromHeight, onProgress) {
   const workers = Array.from({ length: Math.min(NEW_ADDRESS_CHECK_CONCURRENCY, targets.length) }, worker);
   await Promise.all(workers);
 
-  return { newCount, failCount, checkedCount: targets.length };
+  return { newCount, failCount, checkedCount: targets.length, resultByAddress };
 }
 
 /* ============================================================
@@ -887,9 +856,12 @@ async function loadOnchainAnalysis(mode, customRange) {
 
     const xymId = getXymMosaicIdHex();
 
-    if (statusEl) statusEl.textContent = "XYM送金トランザクションを集計中...";
-    const result = await scanXymTransfers(scanFromHeight, toHeight, xymId, (page) => {
-      if (statusEl) statusEl.textContent = `XYM送金トランザクションを集計中...(${page}ページ目)`;
+    // XYM送金の集計とアクティブアドレスの集計は、以前は別々に2回
+    // ブロック範囲を走査していたが、後者(type指定なし)が前者を包含する
+    // ため、1回の走査にまとめて通信量を削減している。
+    if (statusEl) statusEl.textContent = "ブロック範囲を集計中...";
+    const result = await scanBlockRangeCombined(scanFromHeight, toHeight, xymId, (page) => {
+      if (statusEl) statusEl.textContent = `ブロック範囲を集計中...(${page}ページ目)`;
     });
 
     const suffix = result.truncated ? " 以上(件数が多いため打ち切り)" : "";
@@ -898,6 +870,10 @@ async function loadOnchainAnalysis(mode, customRange) {
     setText("onchain-xym-volume", formatMosaicAmount(result.totalAmount, 6) + " XYM" + suffix);
     setText("onchain-mosaic-transfer-count", result.mosaicTransferCount.toLocaleString("ja-JP") + " 件" + suffix);
     setText("onchain-whale-count", result.whales.length.toLocaleString("ja-JP") + " 件" + suffix);
+    setText(
+      "onchain-active-address-count",
+      result.signerPublicKeys.size.toLocaleString("ja-JP") + " アドレス" + suffix
+    );
 
     // 大口移動の円/ドル換算(日足終値ベース)をあらかじめここで取得しておく。
     // 詳細画面表示・CSV出力のどちらもこのキャッシュ済みMapを再利用することで、
@@ -911,17 +887,6 @@ async function loadOnchainAnalysis(mode, customRange) {
       .map((w) => Number(appState.epochAdjustment) * 1000 + Number(w.timestampRaw));
     const whaleRateMap = await buildHistoricalRateMap(whaleUnixMsList);
 
-    // アクティブアドレス数(全トランザクション種別・埋め込み含む、送信元ベース)
-    if (statusEl) statusEl.textContent = "アクティブアドレスを集計中...";
-    const activeResult = await scanActiveAddresses(scanFromHeight, toHeight, (page) => {
-      if (statusEl) statusEl.textContent = `アクティブアドレスを集計中...(${page}ページ目)`;
-    });
-    const activeSuffix = activeResult.truncated ? " 以上(件数が多いため打ち切り)" : "";
-    setText(
-      "onchain-active-address-count",
-      activeResult.signerPublicKeys.size.toLocaleString("ja-JP") + " アドレス" + activeSuffix
-    );
-
     // 新規アドレス作成数:
     //   (a) この期間より前に送信・受信いずれの履歴もないアドレスが、
     //       この期間中に初めて何らかのトランザクションの関係先(受取・
@@ -930,9 +895,14 @@ async function loadOnchainAnalysis(mode, customRange) {
     //   (b) この期間より前に送信・受信いずれの履歴もないアドレスが、
     //       この期間中に初めてトランザクションを「送った」数
     //   の合算(同一アドレスが両方に該当する場合は両方でカウントする)
-    const recipientCandidates = activeResult.targetAddresses;
+    //
+    // 以前は(a)(b)を別々に(重複アドレスがあっても)2回に分けて問い合わせて
+    // いたが、両方の候補集合の「和集合」に対して1回だけ問い合わせ、
+    // その結果を(a)(b)それぞれの集合に振り分けることで、重複分の
+    // 問い合わせを省略し、待ち時間も1回分に短縮している。
+    const recipientCandidates = result.targetAddresses;
     const senderCandidateAddresses = new Set();
-    for (const pubKey of activeResult.signerPublicKeys) {
+    for (const pubKey of result.signerPublicKeys) {
       try {
         senderCandidateAddresses.add(publicKeyToAddress(pubKey));
       } catch {
@@ -940,23 +910,27 @@ async function loadOnchainAnalysis(mode, customRange) {
       }
     }
 
-    let recipientNewResult = { newCount: 0, failCount: 0, checkedCount: 0 };
-    if (recipientCandidates.size > 0) {
-      recipientNewResult = await countNewAddressesByAddress(recipientCandidates, scanFromHeight, (done, total) => {
-        if (statusEl) statusEl.textContent = `新規アドレスを確認中(受信ベース)...(${done.toLocaleString("ja-JP")} / ${total.toLocaleString("ja-JP")} アドレス)`;
+    const combinedCandidates = new Set([...recipientCandidates, ...senderCandidateAddresses]);
+
+    let recipientNewCount = 0;
+    let senderNewCount = 0;
+    let newAddressFailCount = 0;
+
+    if (combinedCandidates.size > 0) {
+      const combinedResult = await countNewAddressesByAddress(combinedCandidates, scanFromHeight, (done, total) => {
+        if (statusEl) statusEl.textContent = `新規アドレスを確認中...(${done.toLocaleString("ja-JP")} / ${total.toLocaleString("ja-JP")} アドレス)`;
       });
+
+      for (const [address, status] of combinedResult.resultByAddress) {
+        if (status === "failed") newAddressFailCount++;
+        if (status !== "new") continue;
+        if (recipientCandidates.has(address)) recipientNewCount++;
+        if (senderCandidateAddresses.has(address)) senderNewCount++;
+      }
     }
 
-    let senderNewResult = { newCount: 0, failCount: 0, checkedCount: 0 };
-    if (senderCandidateAddresses.size > 0) {
-      senderNewResult = await countNewAddressesByAddress(senderCandidateAddresses, scanFromHeight, (done, total) => {
-        if (statusEl) statusEl.textContent = `新規アドレスを確認中(送信ベース)...(${done.toLocaleString("ja-JP")} / ${total.toLocaleString("ja-JP")} アドレス)`;
-      });
-    }
-
-    const newAddressTotal = recipientNewResult.newCount + senderNewResult.newCount;
-    const newAddressFailCount = recipientNewResult.failCount + senderNewResult.failCount;
-    const newAddressSuffix = activeResult.truncated ? " 以上(件数が多いため打ち切り)" : "";
+    const newAddressTotal = recipientNewCount + senderNewCount;
+    const newAddressSuffix = result.truncated ? " 以上(件数が多いため打ち切り)" : "";
     setText(
       "onchain-new-address-count",
       newAddressTotal.toLocaleString("ja-JP") + " アドレス" + newAddressSuffix +
@@ -981,8 +955,8 @@ async function loadOnchainAnalysis(mode, customRange) {
       totalAmountAtomic: result.totalAmount,
       transferTruncated: result.truncated,
       mosaicTransferCount: result.mosaicTransferCount,
-      activeAddressCount: activeResult.signerPublicKeys.size,
-      activeTruncated: activeResult.truncated,
+      activeAddressCount: result.signerPublicKeys.size,
+      activeTruncated: result.truncated,
       newAddressTotal,
       newAddressFailCount,
       whaleCount: result.whales.length,

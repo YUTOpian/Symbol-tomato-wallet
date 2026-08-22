@@ -68,6 +68,14 @@ const EXCHANGES = [
   { id: "gateio", label: "Gate.io", addresses: [{ label: null, address: "NBWKVE7QG7TNNPSHRKUP2BYQWMOGJBHI3DO4OTY" }] },
 ];
 
+// 追跡対象の全取引所アドレス(グループをまたいで横断的に持つ)。
+// 「全取引所合計」の計算で、追跡対象取引所同士の移動(例: MEXC→bitbank)を
+// 「外部との流入・流出」から除外するために使う(scanExchangeGroup内の
+// ownAddressSetは「同じ取引所グループ内」だけが対象なので、これとは別物)。
+const ALL_EXCHANGE_ADDRESSES = new Set(
+  EXCHANGES.flatMap((ex) => ex.addresses.map((a) => a.address.toUpperCase()))
+);
+
 
 const RANGE_LABELS = {
   "24h": "過去24時間",
@@ -450,6 +458,50 @@ function netColorOf(net) {
 }
 
 /* ============================================================
+   「全取引所合計」を、追跡対象取引所同士の移動を除外して正しく計算する。
+   ・各取引所ごとの流入・流出をそのまま合算すると、例えば MEXC→bitbank の
+     移動が「bitbankの流入」と「MEXCの流出」の両方でカウントされ、
+     実際の外部(未追跡のアドレス)との出入りより大きい数字になってしまう
+     (二重計上)。
+   ・そのため、各取引について相手方アドレス(counterpartyAddress)が
+     ALL_EXCHANGE_ADDRESSES(追跡対象の全取引所アドレス)に含まれる場合は、
+     「追跡対象同士の内部移動」とみなし、合計からは除外する
+     (個別の取引所ごとの流入・流出には引き続き反映される。これは
+     それぞれの取引所単体で見れば実際に増減しているため正しい)。
+============================================================ */
+function computeCombinedExternalTotals(okResults) {
+  let inflow = 0n;
+  let outflow = 0n;
+  let inflowCount = 0;
+  let outflowCount = 0;
+  let interExchangeAmount = 0n;
+  let interExchangeCount = 0;
+
+  for (const { result } of okResults) {
+    for (const tx of result.transactions) {
+      const counterparty = tx.counterpartyAddress ? tx.counterpartyAddress.toUpperCase() : null;
+      const isInterExchange = counterparty != null && ALL_EXCHANGE_ADDRESSES.has(counterparty);
+
+      if (isInterExchange) {
+        interExchangeAmount += tx.amount;
+        interExchangeCount++;
+        continue;
+      }
+
+      if (tx.direction === "in") {
+        inflow += tx.amount;
+        inflowCount++;
+      } else {
+        outflow += tx.amount;
+        outflowCount++;
+      }
+    }
+  }
+
+  return { inflow, outflow, inflowCount, outflowCount, interExchangeAmount, interExchangeCount };
+}
+
+/* ============================================================
    個別取引の金額に応じた強調色
    100万XYM以上: 赤 / 10万XYM以上: 黄 / それ未満: 通常色
 ============================================================ */
@@ -510,25 +562,24 @@ function rowHtml(ex, result) {
   `;
 }
 
-function renderSummary(results) {
+function renderSummary(results, combinedTotals) {
   const el = document.getElementById("exchange-flow-summary");
   if (!el) return;
 
   const okResults = results.filter((r) => !r.result.errored);
   const erroredExchanges = results.filter((r) => r.result.errored).map((r) => r.ex.label);
 
-  const totalInflow = okResults.reduce((s, r) => s + r.result.inflowAmount, 0n);
-  const totalOutflow = okResults.reduce((s, r) => s + r.result.outflowAmount, 0n);
-  const totalNet = totalInflow - totalOutflow;
+  const totalNet = combinedTotals.inflow - combinedTotals.outflow;
   const totalTruncated = okResults.some((r) => r.result.truncated);
   const netText = (totalNet > 0n ? "+" : "") + formatMosaicAmount(totalNet, 6) + " XYM";
 
   el.innerHTML = `
     <div class="harvest-history-item">
-      <div style="font-weight:bold;">全取引所合計${erroredExchanges.length > 0 ? "（取得失敗分を除く）" : ""}</div>
-      <div>合計流入: <b style="color:#4ade80;">${formatMosaicAmount(totalInflow, 6)} XYM</b></div>
-      <div>合計流出: <b style="color:#f87171;">${formatMosaicAmount(totalOutflow, 6)} XYM</b></div>
+      <div style="font-weight:bold;">全取引所合計(追跡対象取引所同士の移動は除く)${erroredExchanges.length > 0 ? "（取得失敗分を除く）" : ""}</div>
+      <div>合計流入: <b style="color:#4ade80;">${formatMosaicAmount(combinedTotals.inflow, 6)} XYM</b>（${combinedTotals.inflowCount.toLocaleString("ja-JP")}件）</div>
+      <div>合計流出: <b style="color:#f87171;">${formatMosaicAmount(combinedTotals.outflow, 6)} XYM</b>（${combinedTotals.outflowCount.toLocaleString("ja-JP")}件）</div>
       <div>合計純増減: <b style="color:${netColorOf(totalNet)};">${netText}</b></div>
+      ${combinedTotals.interExchangeCount > 0 ? `<div style="font-size:12px;color:#94a3b8;margin-top:4px;">うち、追跡対象取引所間の移動(合計から除外済み): ${formatMosaicAmount(combinedTotals.interExchangeAmount, 6)} XYM（${combinedTotals.interExchangeCount.toLocaleString("ja-JP")}件）</div>` : ""}
       ${totalTruncated ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">一部のアドレスで件数が多いため集計が打ち切られています</div>` : ""}
       ${erroredExchanges.length > 0 ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">⚠️ 取得に失敗しました: ${erroredExchanges.join("、")}</div>` : ""}
     </div>
@@ -602,41 +653,54 @@ async function loadExchangeFlowAnalysis(mode, customRange) {
       ? `${rangeLabelBase}（${fromText} 〜 現在）`
       : `${rangeLabelBase}（${fromText} 〜 ${toText}）`;
 
-    const results = [];
-    for (const ex of EXCHANGES) {
-      if (statusEl) statusEl.textContent = `${ex.label} を集計中...`;
-      let result;
-      try {
-        result = await scanExchangeGroup(ex.addresses, fromHeight, toHeight, xymMosaicIds, (page) => {
-          if (statusEl) statusEl.textContent = `${ex.label} を集計中...(${page}ページ目)`;
-        });
-      } catch (e) {
-        console.error(`exchangeFlow: ${ex.label} の集計中にエラーが発生しました:`, e);
-        result = {
-          inflowAmount: 0n,
-          outflowAmount: 0n,
-          inflowCount: 0,
-          outflowCount: 0,
-          truncated: false,
-          errored: true,
-          errorDetail: `例外: ${e.message || e}`,
-          rawItemCount: 0,
-          transactions: [],
-        };
-      }
-      results.push({ ex, result });
+    // 各取引所は互いに独立した(別アドレスへの)問い合わせのため、
+    // 順番に待つのではなくまとめて並列実行して待ち時間を短縮する。
+    if (statusEl) statusEl.textContent = `${EXCHANGES.length}取引所を集計中...`;
+
+    const results = await Promise.all(
+      EXCHANGES.map(async (ex) => {
+        let result;
+        try {
+          result = await scanExchangeGroup(ex.addresses, fromHeight, toHeight, xymMosaicIds, () => {
+            // 複数取引所を並列に集計しているため、ページ番号ベースの
+            // 詳細な進捗表示はせず、全体としてのステータスのみ更新する
+          });
+        } catch (e) {
+          console.error(`exchangeFlow: ${ex.label} の集計中にエラーが発生しました:`, e);
+          result = {
+            inflowAmount: 0n,
+            outflowAmount: 0n,
+            inflowCount: 0,
+            outflowCount: 0,
+            truncated: false,
+            errored: true,
+            errorDetail: `例外: ${e.message || e}`,
+            rawItemCount: 0,
+            transactions: [],
+          };
+        }
+        return { ex, result };
+      })
+    );
+
+    for (const { ex, result } of results) {
       lastResultsByExchangeId[ex.id] = { rangeLabel, result };
     }
 
     if (listEl) {
       listEl.innerHTML = results.map(({ ex, result }) => rowHtml(ex, result)).join("");
     }
-    renderSummary(results);
+
+    // 「全取引所合計」は、追跡対象取引所同士の移動を除外して計算する
+    // (renderSummary/CSV出力の両方でこの1回の計算結果を使い回す)
+    const combinedTotals = computeCombinedExternalTotals(results.filter((r) => !r.result.errored));
+    renderSummary(results, combinedTotals);
 
     // CSV出力用に、詳細な取引履歴(transactions)は含めずに保存する
     // (取引所フロー分析の詳細=流入・流出履歴はCSV出力の対象外とするため)
     lastExchangeFlowSummary = {
       rangeLabel,
+      combinedTotals,
       results: results.map(({ ex, result }) => ({
         ex,
         result: {
@@ -795,11 +859,14 @@ function exportExchangeFlowCsv() {
       return;
     }
 
-    const { rangeLabel, results } = lastExchangeFlowSummary;
-    const okResults = results.filter((r) => !r.result.errored);
+    const { rangeLabel, results, combinedTotals } = lastExchangeFlowSummary;
 
-    const totalInflow = okResults.reduce((s, r) => s + r.result.inflowAmount, 0n);
-    const totalOutflow = okResults.reduce((s, r) => s + r.result.outflowAmount, 0n);
+    // 「全取引所合計」は、追跡対象取引所同士の移動を除外した正しい値
+    // (集計実行時に計算済みのcombinedTotals)をそのまま使う。
+    // 各取引所ごとの流入・流出をここで単純合算すると、取引所間の移動が
+    // 二重計上されてしまうため使わない。
+    const totalInflow = combinedTotals.inflow;
+    const totalOutflow = combinedTotals.outflow;
     const totalNet = totalInflow - totalOutflow;
 
     const toXym = (atomic) => Number(atomic) / 1_000_000;
@@ -808,12 +875,16 @@ function exportExchangeFlowCsv() {
       ["取引所フロー分析 集計結果"],
       ["集計範囲", rangeLabel],
       [],
-      ["全取引所合計"],
+      ["全取引所合計(追跡対象取引所間の移動は除く)"],
       ["合計流入(XYM)", toXym(totalInflow)],
+      ["合計流入件数", combinedTotals.inflowCount],
       ["合計流出(XYM)", toXym(totalOutflow)],
+      ["合計流出件数", combinedTotals.outflowCount],
       ["合計純増減(XYM)", toXym(totalNet)],
+      ["除外した取引所間移動(XYM)", toXym(combinedTotals.interExchangeAmount)],
+      ["除外した取引所間移動 件数", combinedTotals.interExchangeCount],
       [],
-      ["取引所別内訳"],
+      ["取引所別内訳(参考: 各取引所単体で見た場合の流入・流出。取引所間の移動も含む)"],
       ["取引所", "アドレス", "流入(XYM)", "流入件数", "流出(XYM)", "流出件数", "純増減(XYM)", "打ち切り", "取得エラー"],
     ];
 
