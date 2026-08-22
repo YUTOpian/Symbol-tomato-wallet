@@ -68,6 +68,16 @@ const EXCHANGES = [
   { id: "gateio", label: "Gate.io", addresses: [{ label: null, address: "NBWKVE7QG7TNNPSHRKUP2BYQWMOGJBHI3DO4OTY" }] },
 ];
 
+// アドレス(大文字)→ その取引所名。全取引所合計の詳細表示で、
+// 「流入(Bitbank)」のように取引所名を併記するために使う
+// (アドレスの文字列だけではどの取引所か分からないため)。
+const ADDRESS_TO_EXCHANGE_LABEL = new Map(
+  EXCHANGES.flatMap((ex) => ex.addresses.map((a) => [a.address.toUpperCase(), ex.label]))
+);
+
+// 「全取引所合計」を、個別の取引所と同じ詳細画面の仕組みで表示するための仮想ID
+const COMBINED_EXCHANGE_ID = "__combined__";
+
 
 const RANGE_LABELS = {
   "24h": "過去24時間",
@@ -262,7 +272,7 @@ async function scanExchangeAddress(address, fromHeight, toHeight, xymMosaicIds, 
       outflowCount++;
     }
 
-    transactions.push({ direction: isInflow ? "in" : "out", amount, counterpartyAddress, hash, height, timestampRaw });
+    transactions.push({ direction: isInflow ? "in" : "out", amount, counterpartyAddress, hash, height, timestampRaw, ownAddress: address });
   }
 
   while (pageNumber <= SCAN_MAX_PAGES) {
@@ -549,14 +559,14 @@ function renderSummary(results, combinedResult) {
   const netText = (totalNet > 0n ? "+" : "") + formatMosaicAmount(totalNet, 6) + " XYM";
 
   el.innerHTML = `
-    <div class="harvest-history-item">
-      <div style="font-weight:bold;">全取引所合計(追跡対象の全アドレスを1つのアドレスとみなして計算)${erroredExchanges.length > 0 ? "（取得失敗分を除く）" : ""}</div>
+    <div class="harvest-history-item exchange-flow-row" data-exchange-id="${COMBINED_EXCHANGE_ID}" style="cursor:pointer;">
+      <div style="font-weight:bold;">全取引所合計${erroredExchanges.length > 0 ? "（取得失敗分を除く）" : ""}</div>
       <div>合計流入: <b style="color:#4ade80;">${formatMosaicAmount(combinedResult.inflowAmount, 6)} XYM</b>（${combinedResult.inflowCount.toLocaleString("ja-JP")}件）</div>
       <div>合計流出: <b style="color:#f87171;">${formatMosaicAmount(combinedResult.outflowAmount, 6)} XYM</b>（${combinedResult.outflowCount.toLocaleString("ja-JP")}件）</div>
       <div>合計純増減: <b style="color:${netColorOf(totalNet)};">${netText}</b></div>
-      <div style="font-size:12px;color:#94a3b8;margin-top:4px;">追跡対象アドレス同士(取引所間・同一取引所内問わず)の移動は、内部移動として合計から除外されています。</div>
       ${totalTruncated ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">一部のアドレスで件数が多いため集計が打ち切られています</div>` : ""}
       ${erroredExchanges.length > 0 ? `<div style="color:#f97316;font-size:12px;margin-top:4px;">⚠️ 取得に失敗しました: ${erroredExchanges.join("、")}</div>` : ""}
+      <div style="font-size:11px;color:#60a5fa;margin-top:4px;">クリックで取引履歴を見る →</div>
     </div>
   `;
 }
@@ -689,6 +699,7 @@ async function loadExchangeFlowAnalysis(mode, customRange) {
     for (const { ex, result } of results) {
       lastResultsByExchangeId[ex.id] = { rangeLabel, result };
     }
+    lastResultsByExchangeId[COMBINED_EXCHANGE_ID] = { rangeLabel, result: combinedResult };
 
     if (listEl) {
       listEl.innerHTML = results.map(({ ex, result }) => rowHtml(ex, result)).join("");
@@ -736,10 +747,15 @@ async function loadExchangeFlowAnalysis(mode, customRange) {
 
 /* ============================================================
    取引履歴1件分のHTML(詳細画面用)
+   showExchangeLabel: true の場合、「流入(Bitbank)」のように自分側の
+   アドレスがどの取引所のものかを併記する(全取引所合計の詳細表示専用。
+   複数の取引所のアドレスが混在するため、アドレスだけではどこの
+   取引所の分か分からないため)。
 ============================================================ */
-function txRowHtml(tx) {
+function txRowHtml(tx, showExchangeLabel = false) {
   const color = amountHighlightColor(tx.amount);
-  const dirLabel = tx.direction === "in" ? "↙ 流入" : "↗ 流出";
+  const exchangeLabel = showExchangeLabel && tx.ownAddress ? ADDRESS_TO_EXCHANGE_LABEL.get(tx.ownAddress) : null;
+  const dirLabel = (tx.direction === "in" ? "↙ 流入" : "↗ 流出") + (exchangeLabel ? `(${exchangeLabel})` : "");
   const dirColor = tx.direction === "in" ? "#4ade80" : "#f87171";
   const counterpartyLabel = tx.direction === "in" ? "送信元" : "送信先";
   const timeText =
@@ -768,17 +784,22 @@ function txRowHtml(tx) {
    詳細画面(exchange-flow-detail-page)を描画する
 ============================================================ */
 function renderExchangeDetail(exId) {
-  const ex = EXCHANGES.find((e) => e.id === exId);
+  const isCombined = exId === COMBINED_EXCHANGE_ID;
+  const ex = isCombined ? null : EXCHANGES.find((e) => e.id === exId);
   const titleEl = document.getElementById("exchange-flow-detail-title");
   const addressEl = document.getElementById("exchange-flow-detail-address");
   const rangeEl = document.getElementById("exchange-flow-detail-range");
   const summaryEl = document.getElementById("exchange-flow-detail-summary");
   const listEl = document.getElementById("exchange-flow-detail-list");
 
-  if (!ex) return;
+  if (!isCombined && !ex) return;
 
-  if (titleEl) titleEl.textContent = `${ex.label} の流入・流出履歴`;
-  if (addressEl) addressEl.innerHTML = addressListHtml(ex);
+  if (titleEl) titleEl.textContent = isCombined ? "全取引所合計 の流入・流出履歴" : `${ex.label} の流入・流出履歴`;
+  if (addressEl) {
+    addressEl.innerHTML = isCombined
+      ? EXCHANGES.map((e) => `<div style="margin-bottom:4px;"><b>${e.label}</b>${addressListHtml(e)}</div>`).join("")
+      : addressListHtml(ex);
+  }
 
   const entry = lastResultsByExchangeId[exId];
 
@@ -828,7 +849,7 @@ function renderExchangeDetail(exId) {
     }
 
     const visible = sorted.slice(0, DETAIL_MAX_SHOW);
-    let html = visible.map((tx) => txRowHtml(tx)).join("");
+    let html = visible.map((tx) => txRowHtml(tx, isCombined)).join("");
     if (sorted.length > DETAIL_MAX_SHOW) {
       html += `<div style="color:#94a3b8;font-size:12px;margin-top:6px;">他 ${sorted.length - DETAIL_MAX_SHOW} 件（新しい順に${DETAIL_MAX_SHOW}件のみ表示）</div>`;
     }
@@ -882,7 +903,7 @@ function exportExchangeFlowCsv() {
       ["取引所フロー分析 集計結果"],
       ["集計範囲", rangeLabel],
       [],
-      ["全取引所合計(追跡対象の全アドレスを1つのアドレスとみなして計算)"],
+      ["全取引所合計"],
       ["合計流入(XYM)", toXym(totalInflow)],
       ["合計流入件数", combinedTotals.inflowCount],
       ["合計流出(XYM)", toXym(totalOutflow)],
@@ -930,6 +951,13 @@ function exportExchangeFlowCsv() {
 function initExchangeFlowInteractions() {
   const listEl = document.getElementById("exchange-flow-list");
   listEl?.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-exchange-id]");
+    if (!row) return;
+    showExchangeDetail(row.getAttribute("data-exchange-id"));
+  });
+
+  const summaryEl = document.getElementById("exchange-flow-summary");
+  summaryEl?.addEventListener("click", (e) => {
     const row = e.target.closest("[data-exchange-id]");
     if (!row) return;
     showExchangeDetail(row.getAttribute("data-exchange-id"));
